@@ -51,35 +51,45 @@ try {
   assert.equal(after.lastFrom, 'me');
   await closeThread(page);
   assert.equal(await page.locator('#overlay').isVisible(), false);
-  // Recruiter filters: a Locations box left open must never get the skill typed into it
+  // Recruiter filters, built like Recruiter's real panel (saved 22 Sep): the + button is swapped
+  // for a text box inside the filter's own wrapper. A Locations box left open must never get the skill.
   {
     const { addFacet } = await import('../src/actions/recruiter.js');
-    const { SEL } = await import('../src/selectors.js');
     await page.setContent(`<div id="panel">
-      <section><h3>Locations</h3><div id="chipsL"></div><button aria-label="Add a Candidate geographic location">+</button>
-        <input id="loc" type="text" role="combobox" aria-controls="locList" style="display:none"><ul id="locList" role="listbox"></ul></section>
-      <section><h3>Skills and Assessments</h3><div id="chipsS"></div><button aria-label="Add Skill keywords anywhere on profile">+ Skill keywords anywhere on profile</button>
-        <input id="sk" type="text" role="combobox" aria-controls="skList" style="display:none"><ul id="skList" role="listbox"></ul></section></div>
+      <div class="search-facet-wrapper facet-locations" data-test-facet-locations><div class="typeahead-facet"><section class="search-facet">
+        <h2>Locations</h2><div class="chips"></div>
+        <button class="facet-edit-button" data-test-facet-edit aria-label="Add a Candidate geographic location" type="button"><span>Candidate geographic locations</span></button><div class="slot"></div></section></div></div>
+      <div class="search-facet-wrapper facet-skills" data-test-facet-skills><div class="typeahead-facet"><section class="search-facet">
+        <h2>Skills and Assessments</h2><div class="chips"></div>
+        <button class="facet-edit-button" data-test-facet-edit type="button"><span>Skill keywords anywhere on profile</span></button><div class="slot"></div></section></div></div></div>
+      <ul id="overlay" role="listbox"></ul>
       <ol id="res"><li data-test-paginated-profile-list-item-container><span data-test-row-lockup-full-name><a href="/talent/profile/r0">A</a></span></li></ol>
       <script>
         let n = 0; const bump = () => { document.querySelector('#res a').setAttribute('href', '/talent/profile/r' + (++n)); };
-        const box = (btn, input, list, opts) => {
-          document.querySelector(btn).onclick = () => { const i = document.querySelector(input); i.style.display = 'inline'; i.focus(); };
-          document.querySelector(input).oninput = e => { const v = e.target.value.toLowerCase();
-            document.querySelector(list).innerHTML = opts(v).map(o => '<li role="option">' + o + '</li>').join('');
-            document.querySelectorAll(list + ' li').forEach(li => li.onclick = () => { document.querySelector(list === '#locList' ? '#chipsL' : '#chipsS').insertAdjacentHTML('beforeend', '<span>' + li.textContent + '</span>'); window.__picked = (window.__picked || []).concat(li.textContent); document.querySelector(list).innerHTML = ''; bump(); }); };
+        window.__picked = [];
+        // like Recruiter: the button disappears and a box takes its place; suggestions may show outside the filter
+        const facet = (wrapSel, listInside, opts) => {
+          const wrap = document.querySelector(wrapSel);
+          wrap.querySelector('button').onclick = e => {
+            const input = document.createElement('input'); input.type = 'text'; input.setAttribute('role', 'combobox');
+            e.currentTarget.replaceWith(input); input.focus();
+            const list = listInside ? (wrap.querySelector('.slot').innerHTML = '<ul role="listbox"></ul>', wrap.querySelector('.slot ul')) : document.querySelector('#overlay');
+            input.oninput = () => { const v = input.value.toLowerCase();
+              list.innerHTML = opts(v).map(o => '<li role="option">' + o + '</li>').join('');
+              list.querySelectorAll('li').forEach(li => li.onclick = () => { wrap.querySelector('.chips').insertAdjacentHTML('beforeend', '<span>' + li.textContent + '</span>'); window.__picked.push(li.textContent); list.innerHTML = ''; bump(); }); };
+          };
         };
-        // like Recruiter: the Locations box suggests places for any text
-        box('[aria-label="Add a Candidate geographic location"]', '#loc', '#locList', v => ['Vermont, United States', ...(v.includes('new') ? ['New York, United States'] : [])]);
-        box('[aria-label="Add Skill keywords anywhere on profile"]', '#sk', '#skList', v => v.includes('azure') ? ['Microsoft Azure', 'Azure DevOps'] : []);
+        facet('.facet-locations', false, v => ['Vermont, United States', ...(v.includes('new') ? ['New York, United States'] : [])]);
+        facet('.facet-skills', true, v => v.includes('azure') ? ['Microsoft Azure', 'Azure DevOps'] : []);
       </script>`);
-    assert.equal(await addFacet(page, SEL.recruiterAddLocation, 'New York', 'location'), true);
-    await page.evaluate(() => document.querySelector('#loc').focus());      // left open, as Recruiter does
-    assert.equal(await addFacet(page, SEL.recruiterAddSkill, 'Azure', 'skill'), true);
+    assert.equal(await addFacet(page, 'location', 'New York'), true);
+    assert.equal(await addFacet(page, 'skill', 'Azure'), true);
     assert.deepEqual(await page.evaluate(() => window.__picked), ['New York, United States', 'Microsoft Azure']);
-    assert.doesNotMatch(await page.inputValue('#loc'), /azure/i);
+    assert.doesNotMatch(await page.inputValue('.facet-locations input'), /azure/i);
     // no suggestion that matches: nothing is picked
-    assert.equal(await addFacet(page, SEL.recruiterAddSkill, 'Quantum Basketweaving', 'skill'), false);
+    await page.evaluate(() => { const w = document.querySelector('.facet-skills'); w.querySelector('input').remove(); w.querySelector('section').insertAdjacentHTML('beforeend', '<button class="facet-edit-button" data-test-facet-edit type="button"><span>Skill keywords anywhere on profile</span></button>'); });
+    await page.evaluate(() => { const w = document.querySelector('.facet-skills'); const b = w.querySelector('button'); b.onclick = e => { const i = document.createElement('input'); i.type = 'text'; e.currentTarget.replaceWith(i); i.focus(); }; });
+    assert.equal(await addFacet(page, 'skill', 'Quantum Basketweaving'), false);
     assert.deepEqual(await page.evaluate(() => window.__picked), ['New York, United States', 'Microsoft Azure']);
   }
   console.log('browser e2e: all good');

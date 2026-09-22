@@ -65,8 +65,18 @@ test('connection notes: each gets a fair trial, then the best is sent 4 times in
   const s = new Store();
   const a = s.upsertLead({ url: 'linkedin.com/in/n1', campaign: 'c' }); s.setStatus(a.url, 'accepted', { acceptedAt: '2026-09-22T00:00:00Z' });
   s.upsertLead({ url: 'linkedin.com/in/n2', campaign: 'c' });
-  s.recordAction('connects', a.url, { noteIndex: 1, campaign: 'c' });
-  s.recordAction('connects', 'linkedin.com/in/n2', { noteIndex: 1, campaign: 'c' });
-  s.recordAction('connects', 'linkedin.com/in/n2', { noteIndex: 0, campaign: 'other' });
+  s.recordAction('connects', a.url, { noteTemplate: 'b', campaign: 'c' });
+  s.recordAction('connects', 'linkedin.com/in/n2', { noteTemplate: 'b', campaign: 'c' });
+  s.recordAction('connects', 'linkedin.com/in/n2', { noteTemplate: 'a', campaign: 'other' });
+  s.recordAction('connects', 'linkedin.com/in/n2', { noteTemplate: 'an old wording', campaign: 'c' });   // edited away: not counted
   assert.deepEqual(noteStats(notes, s, 'c'), [{ sent: 0, accepted: 0, rate: null }, { sent: 2, accepted: 1, rate: 0.5 }]);
+});
+
+test('automatic skips and 1st connections never count as Kai saying no', () => {
+  const leads = [...[1, 2, 3, 4, 5, 6].map(i => lead(i, `Senior Security Engineer | Azure ${i}`, { approved: true })),
+    ...[7, 8, 9].map(i => lead(i, 'Senior Security Engineer | Old chat', { status: 'skipped', autoSkip: true, error: 'they wrote last' })),
+    ...[10, 11, 12].map(i => lead(i, 'Senior Cloud Security Engineer | Azure | Fintech', { degree: '1st' }))];
+  const m = learn(leads, role);
+  assert.equal(m.active, false);
+  assert.equal(m.weights['degree:1st'], undefined);
 });
