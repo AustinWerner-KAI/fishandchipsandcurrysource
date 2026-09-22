@@ -53,6 +53,9 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'connects', new Date(), tz), max ?? Infinity);
   if (budget <= 0) { log('connect: daily cap reached'); return { sent: 0 }; }
 
+  // invites paused after repeated failures: try again after an hour, not every pass
+  const h = store.data.meta.health;
+  if (h?.at && Date.now() - new Date(h.at) < 60 * 60000) { log('connect: paused after earlier failures, trying again later'); return { sent: 0, paused: true }; }
   const clients = allClients();
   const candidates = store.leads({ campaign: cfg.name, status: 'new' })
     .filter(l => cfg.autoApprove || l.approved)

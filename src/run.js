@@ -5,6 +5,7 @@ import { stopRequested } from './stop.js';
 import { loadCampaign } from './config.js';
 import { runConnect } from './actions/connect.js';
 import { sweepAcceptances, runMessages, sweepReplies } from './actions/followup.js';
+import { runInMails } from './actions/inmail.js';
 import { log, warn } from './log.js';
 import { notify } from './notify.js';
 
@@ -12,7 +13,7 @@ import { notify } from './notify.js';
 // A slow page or a busy file skips that step for this cycle; only a security check or being
 // logged out stops the run.
 export async function cycle(page, store, cfg) {
-  const steps = [['acceptances', sweepAcceptances], ['messages', runMessages], ['replies', sweepReplies], ['connect', runConnect]];
+  const steps = [['acceptances', sweepAcceptances], ['messages', runMessages], ['replies', sweepReplies], ['connect', runConnect], ['inmail', runInMails]];
   for (const [what, fn] of steps) {
     if (stopRequested()) return;
     try { await fn(page, store, cfg); }

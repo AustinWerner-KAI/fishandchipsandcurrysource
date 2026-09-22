@@ -31,6 +31,14 @@ export const SEL = {
   recruiterFacetInput: ['.search-facet input[type="text"]:focus', '.typeahead-facet input:focus', 'input[role="combobox"]:focus:not(#system-search-typeahead):not([aria-label^="Search by job title"])'],
   recruiterFacetOption: ['[role="listbox"] [role="option"]', '.typeahead-facet [role="option"]', '.artdeco-typeahead__result'],
   recruiterNextPage: ['a[data-test-pagination-next]', 'button[data-test-pagination-next]', 'a[aria-label="Next"]', 'button[aria-label="Next"]', '[data-test-pagination-next-btn]'],
+  // Recruiter profile and its InMail composer (recorded from Kai's own send, 22 Sep 2026)
+  recruiterMessageButton: ['button[data-test-component="message-icon-btn"]', 'button[aria-label^="Message "]'],
+  recruiterComposer: ['.multi-message-composer', 'section:has(button[data-test-messaging-submit-btn])', 'form:has(.ql-editor)'],
+  recruiterComposerSubject: ['input[name="subject"]', 'input[placeholder*="subject" i]', 'input[aria-label*="subject" i]'],
+  recruiterComposerBody: ['.ql-editor[contenteditable="true"]', '.rich-text-editor__editor-elem .ql-editor', 'div[role="textbox"][contenteditable="true"]'],
+  recruiterComposerSend: ['button[data-test-messaging-submit-btn]', 'button[data-live-test-messaging-submit-btn]'],
+  recruiterComposerClose: ['button[data-test-close-composer]', '.multi-message-composer button[aria-label*="Close" i]', 'button[aria-label="Dismiss"]'],
+  recruiterCreditText: ['text=/InMail Credit/i'],
   recruiterPublicProfile: ['a[data-test-personal-info-profile-link]'],
 
   // Locations filter on the people search page (used to turn "Dubai" into LinkedIn's location id)

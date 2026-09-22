@@ -20,7 +20,8 @@ const DEFAULTS = {
     followUpAfterDays: 4,
     followUp: "Hi {firstName}, just bringing this back up in case it got buried. If the timing isn't right, no problem at all. Happy to keep you in mind for the next one. Kai",
   },
-  inmail: null,                  // Recruiter Lite lane, sent by hand: { afterDays: 7, subject, body, followUpAfterDays: 4, followUp }
+  // Recruiter Lite InMail lane. viaRecruiter sends it from the candidate's Recruiter profile.
+  inmail: null,                  // { afterDays, monthlyCredits, perDay, viaRecruiter, subject, body, followUpAfterDays, followUp }, sent by hand: { afterDays: 7, subject, body, followUpAfterDays: 4, followUp }
   dailyCaps: { ...DEFAULT_CAPS },
   workingHours: { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5], timezone: 'Asia/Dubai' },
   pauseBetweenActionsSec: [45, 180],
