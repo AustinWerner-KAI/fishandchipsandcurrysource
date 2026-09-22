@@ -8,34 +8,38 @@ LinkedIn sourcing and outreach that runs as you, in a real browser on your Mac, 
 
 1. Double-click `Sourcer.command`. It installs what it needs, then opens the app in your browser at http://localhost:4747. Keep the terminal window it opens; closing it stops everything. If macOS says it can't open the file, right-click it, choose Open, then Open again. Once is enough.
 2. Press **Log in to LinkedIn**. Chrome opens. Log in by hand. The window closes on its own.
-3. In **Campaign settings**, paste a LinkedIn people search URL and save. Or paste profile links under **Add people**.
-4. Press **Search**. Watch the activity log. People appear in the table as `new`.
-5. Tick **approved** next to the people you want to contact, or use **Approve all shown** on a filter. Or export the CSV, have Claude shortlist it, and paste the approved links back into Add people with "approve them straight away" ticked.
-6. Press **Run one pass** to watch it work once, then **Run all day**. It works inside the hours in settings. Keep the window open and the Mac awake. **Stop** ends it.
+3. Set up the role (below). Press **Search**. People appear in the table as `new`.
+4. Tick **approved** next to the people you want to contact, or use **Approve all shown** on a filter. Or export the CSV, have Claude shortlist it, and paste the approved links back into Add people with "approve them straight away" ticked.
+5. Press **Run one pass** to watch it work once, then **Run all day**. It works inside the hours in settings. Keep the window open and the Mac awake. **Stop** ends it.
 
-Everything the app does is also available from the terminal (`npm run ...`, below), and `npm run menu` gives the old text menu.
+## Setting up a role
 
-## How a new business campaign flows
+One role is one campaign. Press **+ new role** for the next one.
 
-- Connection request goes out with a note picked at random from `connectionNotes`.
-- When they accept, nothing is sent. They show up on the dashboard under **Accepted, waiting for a first message**.
-- Research them, pick the route (credibility, candidate tease, or market pulse), write the message, and press **Write message** next to their name in the app. Or press **Copy list for Claude**, paste it to Claude, and paste the JSON Claude returns into **Messages from Claude**. The JSON looks like this:
+1. **Paste the job spec** (or pick the .pdf / .docx / .txt) and press Read spec.
+2. **Check what it read**: title, office location, on site / hybrid / remote. For a remote role, say which countries candidates can be in. Countries work best.
+3. **Build the search.** It lists the job titles to look for, the industry words, optional must-have skills, and words that rule someone out (recruiters, by default). The boolean is built from those and kept simple: `(titles) AND (industry) [AND skills] NOT (recruiters)`. Edit it by hand if you like, then **Save and search LinkedIn**.
+
+Locations become LinkedIn's location filter. Common countries and cities are known already; anything else is looked up on LinkedIn the first time you press Search and remembered. If a place can't be found, the search runs without that filter and the log says so. Open the search on LinkedIn, set the location by hand, and paste the URL into the campaign settings to override.
+
+The first follow-up message names the role and location. Edit the templates in settings. Templates take `{firstName}`, `{name}`, `{company}`, `{headline}`.
+
+## What happens after Search
+
+- Connection request goes out to each approved person, with a note picked at random from the notes in settings.
+- When they accept, the follow-ups in settings go out on their timers (`days` counted from the previous message).
+- Any reply stops everything for that person and shows on the dashboard. No automated message ever follows a reply.
+- To send a specific message to a specific person, write it under **Hand-written messages** as JSON. Those go before the templates. From the terminal: `npm run queue <campaign> messages.json`.
 
 ```json
 [
-  { "url": "https://www.linkedin.com/in/someone/", "text": "Thanks for connecting Sara. How are you finding the market at the moment?", "note": "L2, raised in Aug, route: pulse" }
+  { "url": "https://www.linkedin.com/in/someone/", "text": "Hi Sara, the brief is attached. Happy to talk it through this week.", "note": "sent brief" }
 ]
 ```
 
-(From the terminal the same file goes in with `npm run queue <campaign> messages.json`.)
+`notBefore` (ISO date) holds a message until a date. Someone who has replied is frozen; after you have answered them by hand, add `"resume": true` to the next queued item to let it send.
 
-- Queued messages go out on the next pass. Any reply stops everything for that person and shows on the dashboard.
-- Ongoing nurture is the same: queue the next message when there is a reason to send one. `notBefore` (ISO date) holds a message until a date.
-- Someone who has replied is frozen. After you have answered them by hand, add `"resume": true` to the next queued item to let it send.
-
-## How a candidate campaign flows
-
-Set `"mode": "candidates"` and give `followUps` with `afterDays`. Templates take `{firstName}`, `{name}`, `{company}`, `{headline}`. See `campaigns/candidates-example.json`. Queued messages still take priority over templates, so you can hand-write for anyone.
+Everything the app does is also available from the terminal (`npm run ...`, below), and `npm run menu` gives the old text menu. The new-business (per-person) mode still exists for campaign files with `"mode": "newbusiness"`; see `campaigns/examples/`.
 
 ## Commands
 
@@ -73,7 +77,7 @@ All page selectors live in `src/selectors.js`. If connects or messages start fai
 - Never sends InMails. If LinkedIn opens the InMail composer instead of a normal thread, it backs out.
 - Once LinkedIn's weekly invitation limit is hit, no connection requests go out for 7 days.
 - Daily caps per campaign, validated to sane maximums (25 connects, 40 messages).
-- Working hours and days, Dubai time by default.
+- Working hours and days, in the timezone set on the campaign (Dubai by default).
 - Random pauses between actions and between passes.
 - Nothing is sent to a lead that is not approved (unless `autoApprove` is on).
 - A reply from anyone freezes that thread. No automated message ever follows a human reply.

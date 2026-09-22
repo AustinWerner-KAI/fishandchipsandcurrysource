@@ -40,7 +40,7 @@ Sourcer. LinkedIn sourcing and outreach that runs as you.
   npm run status [campaign]           quick counts in the terminal
   npm run menu                        simple menu (what the double-click launcher opens)
 
-Campaign files: campaigns/<name>.json (see campaigns/example.json). Data: ${HOME}
+Campaign files: campaigns/<name>.json (the app creates them; examples in campaigns/examples/). Data: ${HOME}
 `;
 
 async function withBrowser(fn, { requireLogin = true } = {}) {
@@ -139,7 +139,7 @@ async function menu() {
   const ask = q => rl.question(q);
   for (;;) {
     const campaigns = listCampaigns();
-    console.log(`\nSourcer\n  campaigns: ${campaigns.join(', ') || '(none yet, copy campaigns/example.json)'}\n`);
+    console.log(`\nSourcer\n  campaigns: ${campaigns.join(', ') || '(none yet, set up a role in the app)'}\n`);
     console.log('  1  Log in to LinkedIn\n  2  Search and collect leads\n  3  Open dashboard\n  4  Run campaign (all day)\n  5  Run one pass now\n  6  Status\n  q  Quit\n');
     const a = (await ask('> ')).trim();
     if (a === 'q') { rl.close(); process.exit(0); }

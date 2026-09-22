@@ -6,7 +6,7 @@ import { tmpHome } from './helpers.js';
 const home = tmpHome();
 const cdir = path.join(home, 'campaigns'); fs.mkdirSync(cdir);
 process.env.SOURCER_CAMPAIGNS = cdir;
-fs.copyFileSync(path.join(process.cwd(), 'campaigns', 'example.json'), path.join(cdir, 'example.json'));
+fs.copyFileSync(path.join(process.cwd(), 'campaigns', 'examples', 'newbusiness.json'), path.join(cdir, 'example.json'));
 const { createApp } = await import('../src/app.js');
 const { Store } = await import('../src/store.js');
 const { Jobs } = await import('../src/jobs.js');
@@ -86,3 +86,45 @@ test('jobs: unknown action rejected, one at a time, stop works', async () => {
 });
 
 test.after(() => server.close());
+
+test('role wizard: draft, boolean, save creates a candidates campaign, search url', async () => {
+  let r = await post('/api/role/draft', { text: 'Head of Compliance\nLocation: Dubai, UAE (hybrid)\nA licensed digital asset exchange. AML, VARA.' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.draft.title, 'Head of Compliance');
+  assert.equal(r.body.draft.workType, 'hybrid');
+  r = await post('/api/role/draft', { file: { name: 'spec.txt', base64: Buffer.from('Senior Rust Engineer\nFully remote, Europe.').toString('base64') } });
+  assert.equal(r.body.draft.workType, 'remote');
+  r = await post('/api/role/boolean', { title: 'Head of Compliance', domain: ['crypto'], skills: ['aml'], exclude: ['recruiter'] });
+  assert.match(r.body.boolean, /^\("Head of Compliance" OR .*\) AND crypto AND aml NOT recruiter$/);
+  const role = { title: 'Head of Compliance', location: 'Dubai, UAE', workType: 'hybrid', candidateLocations: ['Dubai, UAE'], titles: ['Head of Compliance'], domain: ['crypto'], skills: [], exclude: ['recruiter'], boolean: '"Head of Compliance" AND crypto NOT recruiter' };
+  r = await post('/api/role/save', { role });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.campaign, 'head-of-compliance-dubai-uae');
+  assert.equal(r.body.cfg.mode, 'candidates');
+  assert.equal(r.body.cfg.searchUrl, '');
+  assert.match(r.body.cfg.followUps[0].text, /Head of Compliance role in Dubai, UAE/);
+  assert.deepEqual(r.body.preview.locations, [{ name: 'Dubai, UAE', known: false }]);
+  assert.equal(new URL(r.body.preview.url).searchParams.get('keywords'), role.boolean);
+  // remote: candidate locations drive the search, known countries resolve without the browser
+  r = await post('/api/role/save', { campaign: 'head-of-compliance-dubai-uae', role: { ...role, workType: 'remote', candidateLocations: ['UAE', 'United Kingdom'] } });
+  assert.deepEqual(r.body.preview.locations.map(l => l.known), [true, true]);
+  assert.equal(new URL(r.body.preview.url).searchParams.get('geoUrn'), '["104305776","101165590"]');
+  r = await post('/api/role/save', { role: { title: '', boolean: 'x' } });
+  assert.equal(r.status, 400);
+  const s = await get('/api/state?c=head-of-compliance-dubai-uae');
+  assert.equal(s.cfg.role.title, 'Head of Compliance');
+  assert.ok(s.rolePreview.url.startsWith('https://www.linkedin.com/search/results/people/'));
+});
+
+test('search url for a role without a browser: known ids, country fallback, remembered', async () => {
+  const { urlForRole } = await import('../src/actions/search.js');
+  const { loadCampaign } = await import('../src/config.js');
+  await post('/api/role/save', { campaign: 'head-of-compliance-dubai-uae', role: { title: 'Head of Compliance', location: 'Dubai, UAE', workType: 'hybrid', candidateLocations: ['Dubai, UAE'], boolean: '"Head of Compliance" AND crypto' } });
+  const url = await urlForRole(null, loadCampaign('head-of-compliance-dubai-uae'));
+  assert.equal(new URL(url).searchParams.get('geoUrn'), '["104305776"]');
+  // the country stand-in is not remembered, so the city is asked for again next time
+  assert.deepEqual(loadCampaign('head-of-compliance-dubai-uae').role.geo, {});
+  await post('/api/role/save', { campaign: 'head-of-compliance-dubai-uae', role: { title: 'Head of Compliance', location: 'UAE', workType: 'onsite', candidateLocations: ['UAE'], boolean: 'x' } });
+  await urlForRole(null, loadCampaign('head-of-compliance-dubai-uae'));
+  assert.deepEqual(loadCampaign('head-of-compliance-dubai-uae').role.geo, { 'uae': '104305776' });
+});
