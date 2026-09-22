@@ -14,6 +14,7 @@ export class Jobs {
     this.n = 0;
     this.maxLines = maxLines;
     this.history = [];        // last few finished jobs
+    this.boot = Date.now();   // tells the page the log started again after an update
   }
 
   push(text) {
@@ -38,6 +39,7 @@ export class Jobs {
       startedAt: c?.startedAt || null,
       pid: c?.child?.pid || null,
       history: this.history.slice(-5),
+      boot: this.boot,
     };
   }
 
@@ -68,14 +70,15 @@ export class Jobs {
     return this.status();
   }
 
-  stop() {
+  // Polite first: a run finishes the person it is on (up to `grace`), then Chrome closes.
+  stop({ grace = 25000 } = {}) {
     const c = this.current;
     if (!c) return this.status();
     if (c.stopping) { killGroup(c.child, 'SIGKILL'); return this.status(); }   // second press: no waiting
     c.stopping = true;
     this.push(`>>> stopping ${c.name}`);
     c.child.kill('SIGINT');                                   // polite: Playwright closes Chrome and exits
-    setTimeout(() => { if (this.current === c) { this.push('>>> forcing stop'); killGroup(c.child, 'SIGKILL'); } }, 4000).unref();
+    setTimeout(() => { if (this.current === c) { this.push('>>> forcing stop'); killGroup(c.child, 'SIGKILL'); } }, c.name === 'run' || c.name === 'once' ? grace : 4000).unref();
     return this.status();
   }
 

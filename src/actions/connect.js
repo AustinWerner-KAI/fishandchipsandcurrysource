@@ -1,7 +1,8 @@
 import * as linkedin from '../linkedin.js';
 import { renderChecked, checkNote } from '../template.js';
-import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, pick, withinWorkingHours } from '../limits.js';
+import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, pauseFor, pick, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
+import { stopRequested } from '../stop.js';
 import { notify } from '../notify.js';
 import { isRecruiterUrl } from '../store.js';
 import { cleanLead } from '../rank.js';
@@ -29,7 +30,7 @@ export async function resolveRecruiterLead(page, store, lead, ops = linkedin, pa
     // a slow or dropped page is tried again next pass; three misses in a row and Kai is told
     if (cur.lookupFails >= 3 || !netErr) store.setStatus(lead.url, 'error', { error: 'could not find their normal LinkedIn profile from Recruiter' });
     store.save();
-    if (pause) await sleep(humanPauseMs([20, 60]));
+    if (pause) await pauseFor(humanPauseMs([20, 60]));
     return null;
   }
   const r = store.rekey(lead.url, pub);
@@ -41,7 +42,7 @@ export async function resolveRecruiterLead(page, store, lead, ops = linkedin, pa
   }
   store.save();
   log(`found ${lead.name}: ${pub}`);
-  if (pause) await sleep(humanPauseMs([8, 20]));
+  if (pause) await pauseFor(humanPauseMs([8, 20]));
   return r.lead;
 }
 
@@ -58,7 +59,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     .filter(l => cleanLead(l).degree !== '1st')          // already connected: they go in the 1st connections list
     .filter(l => !offLimits(l, clients));                // works at a client: never contacted
   // best match first, including what has been learned for this role
-  const model = learn(store.leads({ campaign: cfg.name }), cfg.role);
+  const model = learn(store.leads({ campaign: cfg.name }), cfg.role, Date.now(), clients);
   const order = new Map(rankLearned(candidates, cfg.role, model).map(l => [l.url, l.rank.score ?? 0]));
   candidates.sort((a, b) => (order.get(b.url) ?? 0) - (order.get(a.url) ?? 0) || a.createdAt.localeCompare(b.createdAt));
   if (!candidates.length) { log('connect: nothing approved and waiting'); return { sent: 0 }; }
@@ -67,7 +68,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   // A failure is tried again on a later pass; the person only shows as a problem after 3 tries.
   // Three failures in a row mean LinkedIn itself changed: invites pause and Kai is told why.
   const failed = (url, why) => {
-    const cur = store.refresh(url);
+    const cur = store.get(url);                 // no reload: the profile view just recorded must stay
     if (!cur) return;
     cur.attempts = (cur.attempts || 0) + 1;
     if (cur.attempts >= 3) store.setStatus(cur.url, 'error', { error: `could not send after 3 tries (${why})` });
@@ -83,7 +84,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     return true;
   };
   for (const picked of candidates) {
-    if (budget <= 0) break;
+    if (budget <= 0 || stopRequested()) break;
     if (!withinWorkingHours(cfg.workingHours)) { log('connect: working hours over'); break; }
     // a Recruiter find costs two views: the Recruiter profile, then their normal profile
     if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) < (isRecruiterUrl(picked.url) ? 2 : 1)) { log('connect: profile view cap reached'); break; }
@@ -96,6 +97,8 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     if (isRecruiterUrl(lead.url)) {
       lead = await resolveRecruiterLead(page, store, lead, ops, pause);
       if (!lead) continue;
+      // Kai may have excluded or un-ticked them during the lookup
+      if (lead.status !== 'new' || !(cfg.autoApprove || lead.approved)) continue;
     }
 
     // the note that gets accepted most is sent most (each note gets a fair trial first)
@@ -121,7 +124,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
       store.recordAction('profileViews', lead.url);
       store.save();
       if (tooManyFails()) break;
-      if (pause) await sleep(humanPauseMs([30, 90]));
+      if (pause) await pauseFor(humanPauseMs([30, 90]));
       continue;
     }
     const cur = store.refresh(lead.url) || lead;
@@ -133,7 +136,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     switch (r.result) {
       case 'sent':
         store.setStatus(cur.url, 'invited', { invitedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString() });
-        store.recordAction('connects', cur.url, { note: r.noteSent ? note : '', noteIndex, campaign: cfg.name });
+        store.recordAction('connects', cur.url, { note: r.noteSent ? note : '', noteTemplate: template, campaign: cfg.name });
         sent++; budget--; failStreak = 0;
         delete cur.attempts; delete cur.lastTryError;
         if (store.data.meta.health) delete store.data.meta.health;
@@ -149,6 +152,8 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
         log(`already connected: ${cur.name || cur.url}`);
         break;
       case 'pending':
+        // an earlier try that looked failed had in fact gone out: count it against the limits
+        if (cur.attempts) store.recordAction('connects', cur.url, { note: '', campaign: cfg.name, late: true });
         store.setStatus(cur.url, 'invited', { invitedAt: cur.invitedAt || new Date().toISOString() });
         log(`already pending: ${cur.name || cur.url}`);
         break;
@@ -168,7 +173,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     }
     store.save();
     if (tooManyFails()) break;
-    if (pause) await sleep(humanPauseMs(cfg.pauseBetweenActionsSec));
+    if (pause) await pauseFor(humanPauseMs(cfg.pauseBetweenActionsSec));
   }
   log(`connect: ${sent} sent this pass`);
   return { sent };
