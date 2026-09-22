@@ -239,12 +239,15 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = u => { let h=5381; for (const c of String(u)) h=((h*33)^c.codePointAt(0))>>>0; return 'k'+h.toString(36); };   // unique per URL, safe as an id
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const GROUPS = { todo: ['new'], first: ['new'], contacted: ['invited','accepted','messaged'], replied: ['replied'], closed: ['done','skipped','error'] };
-const GROUP_LABEL = { todo: 'To approve', first: '1st connections', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
+const GROUPS = { approved: ['new'], todo: ['new'], first: ['new'], contacted: ['invited','accepted','messaged'], replied: ['replied'], closed: ['done','skipped','error'] };
+const GROUP_LABEL = { approved: 'Approved', todo: 'To approve', first: '1st connections', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
 const isFirst = l => l.degree === '1st';
 // "To approve" is people to invite; 1st connections are already connected and get a free message instead
 // anyone at a client sits in Closed, whatever their status
-const inGroup = (l, g) => g === 'all' || (l.offLimits ? g === 'closed' : GROUPS[g].includes(l.status) && (g === 'todo' ? !isFirst(l) : g === 'first' ? isFirst(l) : true));
+// Approved = the people the next run invites. To approve = everyone still waiting for a decision.
+const isApproved = l => l.status === 'new' && l.approved && !isFirst(l) && !l.offLimits;
+const inGroup = (l, g) => g === 'all' || (l.offLimits ? g === 'closed' : GROUPS[g].includes(l.status) && (
+  g === 'approved' ? isApproved(l) : g === 'todo' ? !isFirst(l) && !l.approved : g === 'first' ? isFirst(l) : true));
 let firstOff = new Set();
 let S = null, campaign = '', filter = 'todo', sortBy = 'match', lastLog = 0, openComposer = null, settingsDirty = false, currentTz = 'Asia/Dubai', mode = 'role', boolOpen = false, R = null;
 try { campaign = localStorage.getItem('campaign') || ''; } catch {}
@@ -261,8 +264,10 @@ async function load(){
   const my = ++loadSeq, want = campaign;
   const s = await api('/api/state?c=' + encodeURIComponent(want));
   if (my !== loadSeq || want !== campaign) return;   // a newer load (another tab click) wins
+  const firstLoad = !S;
   S = s;
   if (S.campaign !== campaign) { campaign = S.campaign || ''; remember(campaign); }
+  if (firstLoad && S.leads.some(isApproved)) filter = 'approved';   // open on who gets invited
   if (!S.campaigns.length && mode !== 'wizard') { mode = 'wizard'; showStep(1); }
   render();
 }
@@ -452,7 +457,9 @@ function renderStart(){
   $('#btnApproveTop').classList.toggle('primary', !approved);
   if (!approved && !lined && !mine) { $('#startBar').innerHTML=''; return; }
   const cap=(S.caps&&S.caps.connects)||15, h=S.hours, wh=S.cfg.workingHours;
-  const what = [approved?`invite ${approved} ${approved===1?'person':'people'}`:'', lined?`message ${lined} 1st ${lined===1?'connection':'connections'}`:''].filter(Boolean).join(' and ');
+  const names = S.leads.filter(isApproved).sort((a,b)=>sc(b)-sc(a)).map(l=>l.name||l.url);
+  const who = approved ? ` <button class="link" onclick="filter='approved';render()">${names.slice(0,4).map(esc).join(', ')}${names.length>4?` and ${names.length-4} more`:''}</button>` : '';
+  const what = [approved?`invite ${approved} ${approved===1?'person':'people'}${who}`:'', lined?`message ${lined} 1st ${lined===1?'connection':'connections'}`:''].filter(Boolean).join(' and ');
   const when = !wh || h.open ? 'Starts now.' : `Outside working hours, so it starts ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'on the next working day'}.`;
   $('#startBar').innerHTML = mine
     ? `<div class="alert" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span><b>Outreach is running.</b> ${h.open?'Working through approved people now.':`Waiting for ${h.nextStart?whenIn(h.nextStart, wh.timezone):'working hours'}.`} Keep this page open and the Mac awake.</span><button class="small" onclick="job('stop')">Stop</button></div>`

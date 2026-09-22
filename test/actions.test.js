@@ -15,7 +15,7 @@ const cfg = {
   name: 'c1', mode: 'newbusiness', autoApprove: false, noteMaxLength: 300,
   connectionNotes: ['Hey {firstName}, would be great to connect.'],
   followUps: [], dailyCaps: { connects: 2, messages: 2, profileViews: 10 },
-  workingHours: { timezone: 'Asia/Dubai' }, pauseBetweenActionsSec: [0, 0],
+  workingHours: null, pauseBetweenActionsSec: [0, 0],   // no hours: tests must pass at any time of day
 };
 
 function fresh() {
