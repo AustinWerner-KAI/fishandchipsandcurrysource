@@ -2,8 +2,9 @@ import * as linkedin from '../linkedin.js';
 import { sameText } from '../linkedin.js';
 import { goto, humanScroll, snap } from '../browser.js';
 import { renderChecked } from '../template.js';
-import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, withinWorkingHours } from '../limits.js';
+import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, pauseFor, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
+import { stopRequested } from '../stop.js';
 import { notify } from '../notify.js';
 import { isRecruiterUrl } from '../store.js';
 import { resolveRecruiterLead } from './connect.js';
@@ -70,8 +71,11 @@ export function dueMessage(lead, cfg, now = new Date()) {
     if (q.notBefore && new Date(q.notBefore) > now) return null;
     return { text: q.text, source: 'queue', note: q.note, resume: !!q.resume };
   }
+  // once they have ever replied, only Kai's own queued messages go; no template, in any lane
+  if (lead.repliedAt) return null;
   // 1st connections Kai chose to message: one message, one follow-up, then stop
   if (lead.direct) {
+    if (lead.direct.stopped) return null;
     const fd = cfg.firstDegree || {};
     const steps = [{ days: 0, text: fd.message }, { days: fd.followUpAfterDays ?? 4, text: fd.followUp }];
     const done = lead.messages.filter(m => m.lane === 'direct');
@@ -100,7 +104,8 @@ function markReplied(store, lead, thread) {
 }
 
 function recordSent(store, lead, msg) {
-  if (msg.source === 'queue') lead.queue.shift();
+  // take out the message that went, not whatever is first now (Kai may have removed one meanwhile)
+  if (msg.source === 'queue') { const i = lead.queue.findIndex(q => q.text === msg.text); if (i >= 0) lead.queue.splice(i, 1); }
   lead.messages.push({ step: msg.stepIndex ?? null, text: msg.text, at: new Date().toISOString(), note: msg.note || '', ...(msg.lane ? { lane: msg.lane } : {}) });
   store.setStatus(lead.url, 'messaged');
   store.recordAction('messages', lead.url);
@@ -122,7 +127,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
   const clients = allClients();
   let sent = 0;
   for (const { lead: picked } of due) {
-    if (budget <= 0) break;
+    if (budget <= 0 || stopRequested()) break;
     if (!withinWorkingHours(cfg.workingHours)) { log('messages: working hours over'); break; }
     if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) <= 0) { log('messages: profile view cap reached'); break; }
 
@@ -145,6 +150,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) < 2) { log('messages: profile view cap reached'); break; }
       lead = await resolveRecruiterLead(page, store, lead, ops, pause);
       if (!lead) continue;
+      if (!dueMessage(lead, cfg, new Date())) continue;          // changed in the app during the lookup
     }
 
     let t;
@@ -155,7 +161,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       warn('open thread failed', lead.url, e.message);
       store.recordAction('profileViews', lead.url);   // the profile page still loaded
       store.save();
-      if (pause) await sleep(humanPauseMs([10, 30]));
+      if (pause) await pauseFor(humanPauseMs([10, 30]));
       continue;
     }
     lead = store.refresh(lead.url) || lead;
@@ -169,7 +175,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
         warn(`could not open thread for ${lead.url}: ${t.reason} (screenshot saved, nothing sent)`);
       }
       store.save();
-      if (pause) await sleep(humanPauseMs([10, 30]));
+      if (pause) await pauseFor(humanPauseMs([10, 30]));
       continue;
     }
     // Once they have written, only Kai's own reply (a queued message marked resume) may go.
@@ -177,10 +183,22 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     const kaiReply = msg.source === 'queue' && msg.resume;
     if (msg.lane === 'direct' && msg.stepIndex === 0 && t.lastFrom === 'them') {
       // an old chat where they wrote last: a cold message would read wrong
-      store.setStatus(lead.url, 'skipped', { error: 'they wrote last in an older chat: message them by hand', skippedByHand: true });
+      store.setStatus(lead.url, 'skipped', { error: 'they wrote last in an older chat: message them by hand', autoSkip: true });
       await ops.closeThread(page);
       store.save();
       continue;
+    }
+    // 1st connections follow-up: only when our own first message is still the last word.
+    // If Kai has written by hand since, the conversation is his: the lane stops.
+    if (msg.lane === 'direct' && msg.stepIndex > 0 && t.lastFrom !== 'them') {
+      const first = [...lead.messages].reverse().find(m => m.lane === 'direct');
+      if (!(t.lastFrom === 'me' && first && sameText(t.lastText, first.text))) {
+        lead.direct = { ...lead.direct, stopped: 'you are talking with them by hand' };
+        log(`${lead.name || lead.url}: you have written to them by hand, no follow-up sent`);
+        await ops.closeThread(page);
+        store.save();
+        continue;
+      }
     }
     // 1st connections: an old chat may hold their earlier words, so only a new last word counts
     const theyReplied = msg.lane === 'direct' ? t.lastFrom === 'them' : (t.theySpoke || t.lastFrom === 'them');
@@ -188,7 +206,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       markReplied(store, lead, t);
       await ops.closeThread(page);
       store.save();
-      if (pause) await sleep(humanPauseMs([10, 30]));
+      if (pause) await pauseFor(humanPauseMs([10, 30]));
       continue;
     }
     if (t.lastFrom === 'me' && sameText(t.lastText, msg.text)) {
@@ -217,7 +235,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     sent++; budget--;
     log(`messaged ${lead.name || lead.url} (${msg.source})`);
     store.save();
-    if (pause) await sleep(humanPauseMs(cfg.pauseBetweenActionsSec));
+    if (pause) await pauseFor(humanPauseMs(cfg.pauseBetweenActionsSec));
   }
   log(`messages: ${sent} sent this pass`);
   return { sent };
@@ -238,7 +256,7 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
     .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   let replies = 0;
   for (const picked of list) {
-    if (budget <= 0) break;
+    if (budget <= 0 || stopRequested()) break;
     if (!withinWorkingHours(cfg.workingHours)) break;
     let t;
     try { t = await ops.openThread(page, picked.url, ownName); }
@@ -249,7 +267,7 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
       store.refresh();
       store.recordAction('profileViews', picked.url);
       store.save();
-      if (pause) await sleep(humanPauseMs([10, 40]));
+      if (pause) await pauseFor(humanPauseMs([10, 40]));
       continue;
     }
     budget--;
@@ -267,7 +285,7 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
       store.setStatus(lead.url, 'skipped', { error: 'no longer a 1st degree connection' });
     }
     store.save();
-    if (pause) await sleep(humanPauseMs([10, 40]));
+    if (pause) await pauseFor(humanPauseMs([10, 40]));
   }
   log(`reply sweep: ${replies} new replies`);
   return replies;

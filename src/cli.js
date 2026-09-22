@@ -16,7 +16,7 @@ import { runCampaign } from './run.js';
 import { startDashboard, summarise } from './dashboard.js';
 import { startApp } from './app.js';
 import { CAMPAIGN_DIR, HOME } from './paths.js';
-import { log } from './log.js';
+import { log, warn } from './log.js';
 
 const [, , cmd, ...args] = process.argv;
 const flag = name => args.includes(`--${name}`);
@@ -107,6 +107,9 @@ async function main() {
     }
     case 'run': {
       const cfg = campaignArg();
+      // a polite stop: the person being contacted is finished first
+      const { stopFlag } = await import('./stop.js');
+      process.on('SIGINT', () => { if (stopFlag.on) process.exit(130); stopFlag.on = true; log('stopping after the current step'); });
       return runCampaign(cfg, { once: flag('once'), headless: flag('headless') });
     }
     case 'app': {
@@ -250,4 +253,4 @@ async function loginRecruiter() {
   }
 }
 
-main().catch(e => { console.error('\n' + (e.stack || e.message)); process.exit(1); });
+main().catch(e => { console.error('\n' + (e.stack || e.message)); warn('stopped with an error:', e.message); process.exit(1); });
