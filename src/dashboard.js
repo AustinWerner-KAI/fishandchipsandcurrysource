@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { Store, STATUSES } from './store.js';
 import { listCampaigns, loadCampaign } from './config.js';
-import { todayCount, startOfLocalDay } from './limits.js';
+import { ACCOUNT_TZ, todayCount, startOfLocalDay } from './limits.js';
 import { exportCsv } from './actions/import.js';
 import { log } from './log.js';
 
@@ -10,8 +10,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 export function summarise(store, campaignName) {
   const leads = store.leads({ campaign: campaignName });
   const counts = store.counts(campaignName);
-  let caps = null, tz = 'Asia/Dubai';
-  try { const cfg = loadCampaign(campaignName); caps = cfg.dailyCaps; tz = cfg.workingHours?.timezone || tz; } catch {}
+  let caps = null;
+  const tz = ACCOUNT_TZ;   // caps count per account day
+  try { caps = loadCampaign(campaignName).dailyCaps; } catch {}
   const today = {
     connects: todayCount(store, 'connects', new Date(), tz),
     messages: todayCount(store, 'messages', new Date(), tz),

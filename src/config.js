@@ -65,6 +65,14 @@ export function validate(cfg) {
   const pa = cfg.pauseBetweenActionsSec, pc = cfg.pauseBetweenCyclesMin;
   if (!Array.isArray(pa) || pa.length !== 2 || !(pa[0] >= 20) || !(pa[1] >= pa[0])) errs.push('pause between actions: at least 20 seconds, and the maximum not below the minimum');
   if (!Array.isArray(pc) || pc.length !== 2 || !(pc[0] >= 5) || !(pc[1] >= pc[0])) errs.push('pause between passes: at least 5 minutes');
+  const wh = cfg.workingHours;
+  if (wh) {
+    try { new Intl.DateTimeFormat('en', { timeZone: wh.timezone || 'Asia/Dubai' }); } catch { errs.push(`working hours: "${wh.timezone}" is not a timezone (try America/New_York)`); }
+    const hm = v => /^([01]\d|2[0-3]):[0-5]\d$/.test(v || '');
+    if (!hm(wh.start || '09:00') || !hm(wh.end || '18:00')) errs.push('working hours: start and end must look like 09:00');
+    else if ((wh.start || '09:00') >= (wh.end || '18:00')) errs.push('working hours: start must be before end');
+    if (wh.days !== undefined && (!Array.isArray(wh.days) || !wh.days.length || !wh.days.every(d => Number.isInteger(d) && d >= 0 && d <= 6))) errs.push('working hours: pick at least one day');
+  }
   if (cfg.role) {
     if (!cfg.role.title) errs.push('role.title is empty');
     if ((cfg.role.recruiterSkills || []).length > 2) errs.push('role.recruiterSkills: two at most');

@@ -6,8 +6,8 @@ import { SEL, firstVisible, anyPresent } from './selectors.js';
 import { log, warn } from './log.js';
 import { sleep, randomBetween } from './limits.js';
 
-export class CheckpointError extends Error {}
-export class NotLoggedInError extends Error {}
+export class CheckpointError extends Error { constructor(m) { super(m); this.name = 'CheckpointError'; } }
+export class NotLoggedInError extends Error { constructor(m) { super(m); this.name = 'NotLoggedInError'; } }
 
 // Uses the Mac's own timezone, locale and window size so the browser looks like the same person
 // who logs in by hand. SOURCER_CHROME can point at an installed Chrome instead of Playwright's Chromium.

@@ -14,7 +14,10 @@ const WATCH = () => {
   if (window.__srcRecOn) return;
   window.__srcRecOn = true;
   // Visible label text only. Never .value: that is what the person typed (passwords included).
-  const txt = el => (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || el.closest('[contenteditable=""], [contenteditable="true"], [role="textbox"]')) ? '' : (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  // Blank when the clicked element, or the element described, is or holds anything you type into.
+  const EDIT = 'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]';
+  const typing = el => !!el && el.nodeType === 1 && (el.matches(EDIT) || el.isContentEditable || !!el.closest(EDIT));
+  const txt = (el, target) => (typing(el) || typing(target) || el.querySelector(EDIT)) ? '' : (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80);
   const cssPath = el => {
     const out = [];
     for (let e = el; e && e.nodeType === 1 && out.length < 5; e = e.parentElement) {
@@ -27,10 +30,11 @@ const WATCH = () => {
     return out.join(' > ');
   };
   const describe = el => {
+    if (!el || el.nodeType !== 1) el = el?.parentElement || document.body;
     const t = el.closest('button, a, [role="button"], [role="option"], [role="tab"], [role="menuitem"], input, textarea, select, label, li') || el;
     const a = n => t.getAttribute(n) || undefined;
     return {
-      tag: t.tagName.toLowerCase(), text: txt(t), ariaLabel: a('aria-label'), role: a('role'), id: t.id || undefined,
+      tag: t.tagName.toLowerCase(), text: txt(t, el), ariaLabel: a('aria-label'), role: a('role'), id: t.id || undefined,
       name: a('name'), type: a('type'), placeholder: a('placeholder'), href: a('href'),
       dataTest: [...t.attributes].filter(x => /^data-(test|live-test|control-name|view-name)/.test(x.name)).map(x => `${x.name}=${x.value}`).slice(0, 3),
       css: cssPath(t),
@@ -47,6 +51,8 @@ const WATCH = () => {
   document.addEventListener('keydown', e => { if (e.key === 'Enter') send({ kind: 'enter', el: describe(e.target) }); }, true);
 };
 
+const PRIVATE = /\/(login|checkpoint|uas|authwall|signup)|\/messaging\//i;
+
 export async function recordRoute(name, startUrl, { maxMinutes = 20, onReady } = {}) {
   const safe = String(name || 'route').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'route';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -58,7 +64,7 @@ export async function recordRoute(name, startUrl, { maxMinutes = 20, onReady } =
   const save = () => fs.writeFileSync(path.join(dir, 'route.json'), JSON.stringify({ name: safe, startUrl, recordedAt: stamp, steps }, null, 1));
   const snap = async (p, label) => {
     if (busy) return null; busy = true;
-    try { const f = `${String(++shot).padStart(3, '0')}-${label}.png`; await p.screenshot({ path: path.join(dir, f) }); return f; }
+    try { const f = `${String(++shot).padStart(3, '0')}-${label}.png`; await p.screenshot({ path: path.join(dir, f), mask: [p.locator('input, textarea, [contenteditable=""], [contenteditable="true"], [role="textbox"]')] }); return f; }   // typing boxes are painted over
     catch { return null; } finally { busy = false; }
   };
   await context.exposeBinding('__srcRec', async (src, ev) => {
@@ -66,10 +72,11 @@ export async function recordRoute(name, startUrl, { maxMinutes = 20, onReady } =
     steps.push(step);
     log(`recorded ${ev.kind}: ${ev.el?.ariaLabel || ev.el?.text || ev.el?.placeholder || ev.el?.tag || ''}`.slice(0, 120));
     save();
-    setTimeout(async () => { step.screenshot = await snap(src.page, ev.kind); save(); }, 700);
+    // no screenshot after typing, or on login and security pages: the picture would show what was typed
+    if (ev.kind === 'click' && !PRIVATE.test(src.page.url())) setTimeout(async () => { if (!PRIVATE.test(src.page.url())) { step.screenshot = await snap(src.page, ev.kind); save(); } }, 700);
   });
   await context.addInitScript(WATCH);
-  const onNav = p => p.on('framenavigated', f => { if (f === p.mainFrame()) { steps.push({ at: new Date().toISOString(), kind: 'page', url: f.url() }); save(); saveSession(context).catch(() => {}); setTimeout(async () => { const s = steps[steps.length - 1]; if (s.kind === 'page' && !s.screenshot) { s.screenshot = await snap(p, 'page'); save(); } }, 2500); } });
+  const onNav = p => p.on('framenavigated', f => { if (f === p.mainFrame()) { steps.push({ at: new Date().toISOString(), kind: 'page', url: f.url() }); save(); saveSession(context).catch(() => {}); setTimeout(async () => { const s = steps[steps.length - 1]; if (s.kind === 'page' && !s.screenshot && !PRIVATE.test(p.url())) { s.screenshot = await snap(p, 'page'); save(); } }, 2500); } });
   context.pages().forEach(onNav);
   context.on('page', onNav);
   log(`recording "${safe}". Do the route in the browser window, then close the window to finish.`);

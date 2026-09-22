@@ -12,7 +12,7 @@ import { weeklyLimitActive } from './actions/connect.js';
 import { Jobs } from './jobs.js';
 import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
-import { nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
+import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
 import { scoreLead } from './rank.js';
 import { render } from './template.js';
 import { rankLeads } from './rank.js';
@@ -48,7 +48,7 @@ export function inmailList(store, cfg, now = new Date()) {
     if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000) firsts.push({ ...item, kind: 'inmail', text: render(im.body, l, cfg.role) });
   }
   // A new InMail costs a credit: offer only as many as are left this month, best matches first.
-  const credits = inmailCredits(store, im.monthlyCredits ?? 30, now, cfg.workingHours?.timezone);
+  const credits = inmailCredits(store, im.monthlyCredits ?? 30, now, ACCOUNT_TZ);
   firsts.sort((a, b) => b.score - a.score);
   return [...out, ...firsts.slice(0, credits.left)];
 }
@@ -100,7 +100,7 @@ export function state(jobs, campaignName) {
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
-    inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), cfg.workingHours?.timezone) : null,
+    inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), ACCOUNT_TZ) : null,
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
     leads: rankLeads(s.leads, cfg?.role).map(l => ({ ...l, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
@@ -175,6 +175,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (b.action === 'stop') return json(200, jobs.stop());
         const args = [];
         if (b.campaign && !NAME_RE.test(b.campaign)) return json(400, { error: 'bad role name' });
+        if (['run', 'once', 'search', 'connect', 'followup'].includes(b.action) && !readCampaignRaw(b.campaign)) return json(400, { error: 'Pick a role first' });
         if (b.action === 'search' && b.url) { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url)) return json(400, { error: 'search needs a linkedin.com URL' }); args.push(b.url); }
         if (b.action === 'record') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'record needs a linkedin.com URL' }); args.push(String(b.name || 'route').slice(0, 40), b.url); }
         if (b.action === 'probe') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'probe needs a linkedin.com URL' }); args.push(b.url); }
@@ -209,7 +210,10 @@ export function createApp({ jobs = new Jobs() } = {}) {
       if (u.pathname === '/api/unqueue') {
         const store = new Store();
         const l = store.get(b.url);
-        if (l) { l.queue.splice(b.index ?? 0, 1); store.save(); }
+        // matched by text, not position: the runner may have sent the first one meanwhile
+        const i = l ? l.queue.findIndex(q => q.text === b.text) : -1;
+        if (i < 0) return json(404, { error: 'That message is no longer waiting (it may have gone)' });
+        l.queue.splice(i, 1); store.save();
         return json(200, { ok: true });
       }
       if (u.pathname === '/api/import') {
@@ -264,6 +268,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (!b.campaign) return json(400, { error: 'no role chosen' });
         if (jobs.status().running) return json(400, { error: 'Stop the running job first' });
         const store = new Store();
+        if (b.dryRun) return json(200, { ok: true, n: store.clearUncontacted(b.campaign, { dryRun: true }) });
         const n = store.clearUncontacted(b.campaign);
         store.recordAction('cleared', '-', { campaign: b.campaign, n });
         store.save();
@@ -276,7 +281,9 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (!l) return json(404, { error: 'no such lead' });
         l.inmail = l.inmail || {};
         const at = new Date().toISOString();
-        if (b.kind === 'followUp') l.inmail.followUpAt = at; else l.inmail.sentAt = at;
+        const field = b.kind === 'followUp' ? 'followUpAt' : 'sentAt';
+        if (l.inmail[field]) return json(200, { ok: true, already: true });   // a double click never uses two credits
+        l.inmail[field] = at;
         store.recordAction(b.kind === 'followUp' ? 'inmailFollowUp' : 'inmail', l.url, {});
         store.save();
         return json(200, { ok: true });
@@ -286,8 +293,9 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const store = new Store();
         const l = store.get(b.url);
         if (!l) return json(404, { error: 'no such lead' });
-        l.inmail = { ...(l.inmail || {}), replied: new Date().toISOString() };
-        if (l.inmail.sentAt && Date.now() - new Date(l.inmail.sentAt) < 90 * 86400000) store.recordAction('inmailRefund', l.url, {});
+        const first = !l.inmail?.replied;               // the credit comes back once
+        l.inmail = { ...(l.inmail || {}), replied: l.inmail?.replied || new Date().toISOString() };
+        if (first && l.inmail.sentAt && Date.now() - new Date(l.inmail.sentAt) < 90 * 86400000) store.recordAction('inmailRefund', l.url, {});
         store.setStatus(l.url, 'replied', { repliedAt: new Date().toISOString(), lastReply: String(b.text || 'Replied to the InMail (see Recruiter)').slice(0, 500) });
         store.save();
         return json(200, { ok: true });

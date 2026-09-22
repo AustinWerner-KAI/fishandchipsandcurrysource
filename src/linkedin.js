@@ -51,6 +51,7 @@ async function topCardButtons(page, name) {
 // Returns one of: 'sent' | 'already-connected' | 'pending' | 'no-button' | 'weekly-limit' | 'email-required' | 'failed'
 export async function sendConnectionRequest(page, url, note) {
   const info = await openProfile(page, url);
+  if (!info.name) return { result: 'failed', info };   // without the name, a suggested-person card could be clicked
   const b = await topCardButtons(page, info.name);
   if (info.degree === '1st') return { result: 'already-connected', info };
   if (b.pending) return { result: 'pending', info };
@@ -59,7 +60,8 @@ export async function sendConnectionRequest(page, url, note) {
   if (!btn && b.more) {
     await b.more.click();
     await sleep(randomBetween(600, 1200));
-    btn = await firstVisible(page, withName(SEL.moreMenuConnect, info.name), 1500);
+    const menu = await firstVisible(page, SEL.moreMenu, 1500);
+    btn = menu ? await firstVisible(menu, withName(SEL.moreMenuConnect, info.name), 1500) : null;
     if (!btn) await page.keyboard.press('Escape').catch(() => {});
   }
   if (!btn) {
@@ -137,11 +139,20 @@ export async function dismissModal(page) {
 // reason: 'not-connected' (Connect button shown) | 'no-message-button' | 'inmail' | 'no-editor'
 export async function openThread(page, url, ownName) {
   const info = await openProfile(page, url);
+  if (!info.name) return { opened: false, info, reason: 'no-name' };   // cannot check whose thread opens
   const b = await topCardButtons(page, info.name);
   if (b.connect || b.pending || ['2nd', '3rd'].includes(info.degree)) return { opened: false, info, reason: 'not-connected' };
   if (!b.message) {
     await snap(page, 'no-message-button');
     return { opened: false, info, reason: 'no-message-button' };
+  }
+  // LinkedIn reopens old chat bubbles after a page load. Close them all first, so the only
+  // message box on the page is this person's.
+  await closeThread(page);
+  const openEditors = () => page.locator(SEL.msgEditor.join(', ')).locator('visible=true').count();
+  if (await openEditors()) {
+    await snap(page, 'other-thread-open');
+    return { opened: false, info, reason: 'other-thread-open' };
   }
   await b.message.click();
   await sleep(randomBetween(1500, 2600));
@@ -157,8 +168,29 @@ export async function openThread(page, url, ownName) {
     await snap(page, 'no-msg-editor');
     return { opened: false, info, reason: 'no-editor' };
   }
-  const thread = await readThread(page, ownName);
-  return { opened: true, info, editor, ...thread };
+  if ((await openEditors()) > 1) {
+    await snap(page, 'two-threads-open');
+    await closeThread(page);
+    return { opened: false, info, reason: 'other-thread-open' };
+  }
+  // everything below is read and clicked inside this person's chat bubble
+  const bubble = page.locator(SEL.msgBubble.join(', ')).locator('visible=true').filter({ has: page.locator(SEL.msgEditor.join(', ')) }).first();
+  const scope = (await bubble.count()) ? bubble : page;
+  if (scope !== page) {
+    const head = (await bubble.innerText().catch(() => '')).slice(0, 300);
+    if (!head.toLowerCase().includes((info.firstName || info.name).toLowerCase())) {
+      await snap(page, 'thread-name-mismatch');
+      await closeThread(page);
+      return { opened: false, info, reason: 'wrong-thread' };
+    }
+  }
+  const thread = await readThread(scope, ownName);
+  if (thread.unknown) {
+    await snap(page, 'thread-not-loaded');
+    await closeThread(page);
+    return { opened: false, info, reason: 'thread-not-loaded' };
+  }
+  return { opened: true, info, editor, scope, ...thread };
 }
 
 export const sameText = (a, b) => String(a || '').replace(/\s+/g, ' ').trim() === String(b || '').replace(/\s+/g, ' ').trim();
@@ -169,10 +201,21 @@ function sameName(a, b) {
 }
 
 // Who spoke last in the open thread. Compares the full sender name with our own full name.
-export async function readThread(page, ownName) {
+// `scope` is the chat bubble (or the page). Waits for the history to stop loading; if messages
+// show but no sender names can be read, the answer is { unknown: true } and nothing is sent.
+export async function readThread(scope, ownName, { settleMs = 4000 } = {}) {
   if (!ownName) throw new Error('own name unknown; cannot tell who spoke last');
-  const names = await page.locator(SEL.msgGroupName.join(', ')).allInnerTexts().catch(() => []);
-  const bodies = await page.locator(SEL.msgBody.join(', ')).allInnerTexts().catch(() => []);
+  const read = async () => [
+    await scope.locator(SEL.msgGroupName.join(', ')).allInnerTexts().catch(() => []),
+    await scope.locator(SEL.msgBody.join(', ')).allInnerTexts().catch(() => []),
+  ];
+  let [names, bodies] = await read();
+  for (let waited = 0, last = -1; waited < settleMs && (names.length + bodies.length) !== last; waited += 800) {
+    last = names.length + bodies.length;
+    await sleep(800);
+    [names, bodies] = await read();
+  }
+  if (!names.length && bodies.length) return { unknown: true, lastFrom: null, lastText: '', count: 0, theySpoke: false };
   if (!names.length) return { lastFrom: null, lastText: '', count: 0, theySpoke: false };
   const lastName = names[names.length - 1].trim();
   const lastText = (bodies[bodies.length - 1] || '').trim();
@@ -190,11 +233,11 @@ async function clearEditor(page, editor) {
 }
 
 // Types and sends. Confirms by the editor emptying, or failing that by the thread now ending with our text.
-export async function sendMessageInOpenThread(page, editor, text, ownName) {
+export async function sendMessageInOpenThread(page, editor, text, ownName, scope = page) {
   await clearEditor(page, editor);      // LinkedIn keeps drafts; never append to one
   await typeLikeHuman(editor, text);
   await sleep(randomBetween(700, 1500));
-  const send = await firstVisible(page, SEL.msgSend, 3000);
+  const send = await firstVisible(scope, SEL.msgSend, 3000);
   if (!send) {
     await snap(page, 'no-msg-send');
     await clearEditor(page, editor).catch(() => {});
@@ -207,17 +250,21 @@ export async function sendMessageInOpenThread(page, editor, text, ownName) {
   const left = (await editor.innerText().catch(() => '')).trim();
   if (left.length === 0) return true;
   await sleep(3000);
-  const t = await readThread(page, ownName).catch(() => null);
+  const t = await readThread(scope, ownName).catch(() => null);
   if (t && t.lastFrom === 'me' && sameText(t.lastText, text)) return true;
   await snap(page, 'send-unconfirmed');
   await clearEditor(page, editor).catch(() => {});   // leave no draft behind that a later pass could double-send
   return false;
 }
 
+// Closes every open chat bubble.
 export async function closeThread(page) {
-  const c = await firstVisible(page, SEL.msgOverlayClose, 1200);
-  if (c) await c.click().catch(() => {});
-  await sleep(400);
+  for (let i = 0; i < 6; i++) {
+    const c = await firstVisible(page, SEL.msgOverlayClose, i ? 500 : 1200);
+    if (!c) break;
+    await c.click().catch(() => {});
+    await sleep(400);
+  }
 }
 
 // Own display name, read once from /in/me/ and cached in the store's meta.

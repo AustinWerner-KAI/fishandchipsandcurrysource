@@ -73,7 +73,10 @@ async function addFacet(page, buttonSel, value, what) {
   const label = (await opt.innerText().catch(() => '')).split('\n')[0].trim();
   await opt.click();
   log(`recruiter ${what}: ${value} -> ${label || '(first match)'}`);
-  await waitForResults(page, 12000, before);
+  const changed = await waitForResults(page, 12000, before);
+  // the same person can still be first after a filter, so an unchanged list is fine when the chip shows
+  const chip = label ? await page.getByText(label, { exact: false }).locator('visible=true').count().catch(() => 0) : 0;
+  if (!changed && !chip) { await snap(page, `recruiter-${what}-not-applied`); warn(`Recruiter ${what} "${value}" did not apply`); return false; }
   await sleep(randomBetween(800, 1600));
   return true;
 }
@@ -109,12 +112,17 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
   await box.fill('');
   await typeLikeHuman(box, role.boolean);
   await sleep(randomBetween(800, 1400));
+  const before = await firstHref(page);          // rows from an earlier search must not be read
   await page.keyboard.press('Enter');
   log('recruiter search:', role.boolean);
-  await waitForResults(page, 20000);
+  await waitForResults(page, 20000, before);
   if (!searchLocations(role).length) warn('this role has no location, so Recruiter searches everywhere');
 
-  for (const loc of searchLocations(role)) await addFacet(page, SEL.recruiterAddLocation, loc, 'location');
+  // Without the location the list would be people from anywhere, so a location that will not apply stops the search.
+  const locs = searchLocations(role);
+  let placed = 0;
+  for (const loc of locs) if (await addFacet(page, SEL.recruiterAddLocation, loc, 'location')) placed++;
+  if (locs.length && !placed) throw new Error(`Recruiter would not take the location "${locs.join(', ')}". Nothing saved. Check the role's location with Edit role.`);
   for (const skill of recruiterSkills(role)) await addFacet(page, SEL.recruiterAddSkill, skill, 'skill');
 
   const pages = maxPages || cfg.maxSearchPages || 5;

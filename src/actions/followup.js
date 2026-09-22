@@ -2,7 +2,7 @@ import * as linkedin from '../linkedin.js';
 import { sameText } from '../linkedin.js';
 import { goto, humanScroll, snap } from '../browser.js';
 import { render } from '../template.js';
-import { remaining, humanPauseMs, sleep, withinWorkingHours } from '../limits.js';
+import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
 
 const DAY = 86400000;
@@ -25,6 +25,8 @@ export async function sweepAcceptances(page, store, cfg, { force = false } = {})
   const every = (cfg.acceptanceCheckEveryHours ?? 3) * HOUR;
   if (!force && last && Date.now() - new Date(last).getTime() < every) return 0;
 
+  // stamp the sweep first, so a page that keeps failing is not retried on every cycle
+  store.refresh(); store.data.meta.lastAcceptanceSweep = new Date().toISOString(); store.save();
   await goto(page, 'https://www.linkedin.com/mynetwork/invite-connect/connections/');
   await humanScroll(page, { steps: 6 });
   const slugs = await page.evaluate(() =>
@@ -59,6 +61,7 @@ export function dueMessage(lead, cfg, now = new Date()) {
   }
   if (cfg.mode !== 'candidates') return null;
   if (lead.preexisting) return null;   // they were already a contact; templates would read wrong
+  if (lead.inmail?.sentAt) return null; // already in an InMail conversation; connection templates would read wrong
   const stepIndex = lead.messages.length;
   const step = cfg.followUps[stepIndex];
   if (!step) return null;
@@ -81,7 +84,7 @@ function recordSent(store, lead, msg) {
 }
 
 export async function runMessages(page, store, cfg, { max, ops = linkedin, pause = true } = {}) {
-  const tz = cfg.workingHours?.timezone;
+  const tz = ACCOUNT_TZ;   // caps are per account, not per role
   store.load();
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'messages', new Date(), tz), max ?? Infinity);
   if (budget <= 0) { log('messages: daily cap reached'); return { sent: 0 }; }
@@ -110,6 +113,9 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     } catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
       warn('open thread failed', lead.url, e.message);
+      store.recordAction('profileViews', lead.url);   // the profile page still loaded
+      store.save();
+      if (pause) await sleep(humanPauseMs([10, 30]));
       continue;
     }
     lead = store.refresh(lead.url) || lead;
@@ -125,10 +131,10 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       if (pause) await sleep(humanPauseMs([10, 30]));
       continue;
     }
-    // They wrote last: only Kai's own reply (a queued message marked resume) may go.
-    // They ever wrote: no template ever goes again, even after Kai answered by hand.
+    // Once they have written, only Kai's own reply (a queued message marked resume) may go.
+    // No template or older queued message ever goes again, even after Kai answered by hand.
     const kaiReply = msg.source === 'queue' && msg.resume;
-    if ((t.lastFrom === 'them' && !kaiReply) || (t.theySpoke && msg.source === 'step')) {
+    if ((t.theySpoke || t.lastFrom === 'them') && !kaiReply) {
       markReplied(store, lead, t);
       await ops.closeThread(page);
       store.save();
@@ -145,7 +151,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     }
     let ok = false;
     try {
-      ok = await ops.sendMessageInOpenThread(page, t.editor, msg.text, ownName);
+      ok = await ops.sendMessageInOpenThread(page, t.editor, msg.text, ownName, t.scope);
     } catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
       warn('send failed', lead.url, e.message);
@@ -170,7 +176,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
 // Reply sweep for leads with nothing due: open the thread, look at who spoke last.
 // Throttled to once a day per lead and to the profile view budget.
 export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin, pause = true } = {}) {
-  const tz = cfg.workingHours?.timezone;
+  const tz = ACCOUNT_TZ;   // caps are per account, not per role
   store.load();
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz), max);
   const ownName = await ensureOwnName(page, store, ops);
@@ -188,7 +194,13 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
     try { t = await ops.openThread(page, picked.url, ownName); }
     catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
-      warn('reply check failed', picked.url, e.message); continue;
+      warn('reply check failed', picked.url, e.message);
+      budget--;
+      store.refresh();
+      store.recordAction('profileViews', picked.url);
+      store.save();
+      if (pause) await sleep(humanPauseMs([10, 40]));
+      continue;
     }
     budget--;
     const lead = store.refresh(picked.url) || picked;

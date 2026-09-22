@@ -18,6 +18,12 @@ export const STATUSES = ['new', 'invited', 'accepted', 'messaged', 'replied', 'd
 
 const EMPTY = () => ({ meta: {}, leads: {}, actions: [] });
 
+function parseDb(raw) {
+  const data = { ...EMPTY(), ...JSON.parse(raw) };
+  for (const l of Object.values(data.leads)) { l.queue ||= []; l.messages ||= []; }
+  return data;
+}
+
 export function normalizeUrl(input) {
   if (!input) return null;
   let s = String(input).trim();
@@ -57,15 +63,44 @@ export class Store {
     try {
       raw = fs.readFileSync(this.file, 'utf8');
     } catch (e) {
-      if (e.code === 'ENOENT') { this.data = EMPTY(); return this; }
+      if (e.code === 'ENOENT') { this.data = EMPTY(); this.snapshot(); return this; }
       throw e;
     }
-    const parsed = JSON.parse(raw);
-    this.data = { ...EMPTY(), ...parsed };
-    for (const l of Object.values(this.data.leads)) {
-      l.queue ||= []; l.messages ||= [];
-    }
+    this.data = parseDb(raw);
+    this.snapshot();
     return this;
+  }
+
+  // Remembers what was read, so save() can tell our changes apart from other processes' changes.
+  snapshot() {
+    this.base = Object.fromEntries(Object.entries(this.data.leads).map(([k, l]) => [k, JSON.stringify(l)]));
+    this.baseMeta = JSON.stringify(this.data.meta || {});
+    this.newActions = 0;
+  }
+
+  // Our copy merged onto what is on disk now: only the fields this process changed are written,
+  // so an approval ticked in the app while the runner was typing a message is never lost.
+  merged(disk) {
+    const out = { ...disk, leads: { ...disk.leads } };
+    for (const [k, l] of Object.entries(this.data.leads)) {
+      const was = this.base[k];
+      const now = JSON.stringify(l);
+      if (was === now) continue;                           // untouched by us: keep disk's copy
+      if (!was || !out.leads[k]) { out.leads[k] = l; continue; }
+      const old = JSON.parse(was), theirs = { ...out.leads[k] };
+      for (const f of new Set([...Object.keys(old), ...Object.keys(l)])) {
+        if (JSON.stringify(old[f]) !== JSON.stringify(l[f])) {
+          if (l[f] === undefined) delete theirs[f]; else theirs[f] = l[f];
+        }
+      }
+      out.leads[k] = theirs;
+    }
+    for (const k of Object.keys(this.base)) if (!this.data.leads[k]) delete out.leads[k];   // removed by us
+    if (JSON.stringify(this.data.meta || {}) !== this.baseMeta) out.meta = { ...disk.meta, ...this.data.meta };
+    const mine = this.newActions ? this.data.actions.slice(-this.newActions) : [];
+    out.actions = [...(disk.actions || []), ...mine];
+    if (out.actions.length > 20000) out.actions = out.actions.slice(-15000);
+    return out;
   }
 
   // Several processes touch this file (runner, dashboard, CLI). A lock directory serialises writes
@@ -84,9 +119,13 @@ export class Store {
       }
     }
     try {
+      let disk = EMPTY();
+      try { disk = parseDb(fs.readFileSync(this.file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+      this.data = this.merged(disk);
       const tmp = `${this.file}.${process.pid}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
       fs.renameSync(tmp, this.file);
+      this.snapshot();
     } finally {
       fs.rmSync(lock, { recursive: true, force: true });
     }
@@ -159,13 +198,13 @@ export class Store {
 
   // Remove people from a campaign who were never contacted (status new or skipped). Anyone invited,
   // messaged or replied stays, so a fresh search can never contact them twice.
-  clearUncontacted(campaign) {
+  clearUncontacted(campaign, { dryRun = false } = {}) {
     let n = 0;
     for (const [url, l] of Object.entries(this.data.leads)) {
       if (l.campaign !== campaign) continue;
       const touched = l.invitedAt || l.acceptedAt || (l.messages && l.messages.length) || (l.queue && l.queue.length) || l.inmail;
       const clearable = l.status === 'new' || (l.status === 'skipped' && l.skippedByHand);
-      if (clearable && !touched) { delete this.data.leads[url]; n++; }
+      if (clearable && !touched) { if (!dryRun) delete this.data.leads[url]; n++; }
     }
     return n;
   }
@@ -202,8 +241,7 @@ export class Store {
   // ---- actions (what we did, when; drives the daily caps) ----
   recordAction(type, url, extra = {}) {
     this.data.actions.push({ type, url: normalizeUrl(url) || url, at: new Date().toISOString(), ...extra });
-    // keep the action log bounded
-    if (this.data.actions.length > 20000) this.data.actions = this.data.actions.slice(-15000);
+    this.newActions++;
   }
 
   actionsSince(sinceIso, type) {

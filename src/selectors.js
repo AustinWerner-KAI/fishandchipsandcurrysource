@@ -41,6 +41,7 @@ export const SEL = {
   // relative to the top card; {name} is replaced with the profile's name
   connectButton: ['button[aria-label="Invite {name} to connect"]', 'button[aria-label$="to connect"]', 'button:has(span:text-is("Connect"))'],
   moreActionsButton: ['button[aria-label="More actions"]', 'button:has(span:text-is("More"))'],
+  moreMenu: ['.artdeco-dropdown__content--is-open', '.artdeco-dropdown__content:visible', '[role="menu"]:visible'],
   moreMenuConnect: ['[aria-label="Invite {name} to connect"]', '[role="button"][aria-label$="to connect"]'],
   pendingButton: ['button[aria-label^="Pending"]', 'button:has(span:text-is("Pending"))'],
   messageButton: ['button[aria-label="Message {name}"]', 'button[aria-label^="Message"]', 'button:has(span:text-is("Message"))'],
@@ -61,6 +62,7 @@ export const SEL = {
   emailRequiredInput: ['.artdeco-modal input[type="email"]', 'input[name="email"]'],
 
   // Messaging overlay (opens from the profile Message button)
+  msgBubble: ['.msg-overlay-conversation-bubble', '.msg-convo-wrapper'],
   msgOverlay: ['.msg-overlay-conversation-bubble', '.msg-overlay-bubble-header', '.msg-form'],
   msgEditor: ['.msg-form__contenteditable[contenteditable="true"]', 'div[role="textbox"][contenteditable="true"]'],
   msgSend: ['button.msg-form__send-button', 'button[type="submit"].msg-form__send-btn', '.msg-form button:has(span:text-is("Send"))'],

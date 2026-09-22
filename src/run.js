@@ -6,11 +6,17 @@ import { sweepAcceptances, runMessages, sweepReplies } from './actions/followup.
 import { log, warn } from './log.js';
 
 // One cycle: check acceptances, send due messages, look for replies, then send new connection requests.
+// A slow page or a busy file skips that step for this cycle; only a security check or being
+// logged out stops the run.
 export async function cycle(page, store, cfg) {
-  await sweepAcceptances(page, store, cfg);
-  await runMessages(page, store, cfg);
-  await sweepReplies(page, store, cfg);
-  await runConnect(page, store, cfg);
+  const steps = [['acceptances', sweepAcceptances], ['messages', runMessages], ['replies', sweepReplies], ['connect', runConnect]];
+  for (const [what, fn] of steps) {
+    try { await fn(page, store, cfg); }
+    catch (e) {
+      if (e instanceof CheckpointError || e instanceof NotLoggedInError) throw e;
+      warn(`${what} step failed, trying again next cycle:`, e.message);
+    }
+  }
 }
 
 export async function runCampaign(cfg, { once = false, headless = false } = {}) {

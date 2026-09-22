@@ -1,6 +1,6 @@
 import * as linkedin from '../linkedin.js';
 import { render, checkNote } from '../template.js';
-import { remaining, humanPauseMs, sleep, pick, withinWorkingHours } from '../limits.js';
+import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, pick, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
 import { isRecruiterUrl } from '../store.js';
 
@@ -11,7 +11,7 @@ export function weeklyLimitActive(store, now = Date.now()) {
 }
 
 export async function runConnect(page, store, cfg, { max, ops = linkedin, pause = true } = {}) {
-  const tz = cfg.workingHours?.timezone;
+  const tz = ACCOUNT_TZ;   // caps are per account, not per role
   store.load();
   if (weeklyLimitActive(store)) { log('connect: LinkedIn weekly invitation limit was hit in the last 7 days, not sending'); return { sent: 0, weeklyLimit: true }; }
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'connects', new Date(), tz), max ?? Infinity);
@@ -26,7 +26,8 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   for (const picked of candidates) {
     if (budget <= 0) break;
     if (!withinWorkingHours(cfg.workingHours)) { log('connect: working hours over'); break; }
-    if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) <= 0) { log('connect: profile view cap reached'); break; }
+    // a Recruiter find costs two views: the Recruiter profile, then their normal profile
+    if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) < (isRecruiterUrl(picked.url) ? 2 : 1)) { log('connect: profile view cap reached'); break; }
 
     // fresh copy: the dashboard may have un-approved this person since the list was built
     let lead = store.refresh(picked.url);

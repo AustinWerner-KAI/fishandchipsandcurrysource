@@ -2,13 +2,22 @@
 
 export const DEFAULT_CAPS = { connects: 15, messages: 25, profileViews: 60 };
 
+// The caps belong to the one LinkedIn account, so "today" is one day for every role (Kai's own, Dubai).
+// Working hours still follow each role's timezone.
+export const ACCOUNT_TZ = process.env.SOURCER_TZ || 'Asia/Dubai';
+
+// The UTC instant of local midnight at "Y-M-D" in timeZone, correct on daylight-saving change days.
+function localMidnight(ymd, timeZone) {
+  const local = Date.parse(`${ymd}T00:00:00Z`);
+  let t = local - tzOffsetMinutes(new Date(local), timeZone) * 60000;
+  t = local - tzOffsetMinutes(new Date(t), timeZone) * 60000;   // second probe, at the midnight itself
+  return new Date(t);
+}
+
 export function startOfLocalDay(now = new Date(), timeZone = 'Asia/Dubai') {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
     .formatToParts(now).reduce((o, p) => (o[p.type] = p.value, o), {});
-  // find the UTC instant for local midnight by probing the offset at "now"
-  const local = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00Z`);
-  const offsetMin = tzOffsetMinutes(now, timeZone);
-  return new Date(local.getTime() - offsetMin * 60000);
+  return localMidnight(`${parts.year}-${parts.month}-${parts.day}`, timeZone);
 }
 
 export function tzOffsetMinutes(date, timeZone) {
@@ -44,7 +53,7 @@ export function weekRemaining(store, caps, now = new Date()) {
 export const DEFAULT_INMAIL_CREDITS = 30;
 export function inmailCredits(store, total = DEFAULT_INMAIL_CREDITS, now = new Date(), timeZone = 'Asia/Dubai') {
   const p = new Intl.DateTimeFormat('en-GB', { timeZone, year: 'numeric', month: '2-digit' }).formatToParts(now).reduce((o, x) => (o[x.type] = x.value, o), {});
-  const monthStart = new Date(Date.parse(`${p.year}-${p.month}-01T00:00:00Z`) - tzOffsetMinutes(now, timeZone) * 60000).toISOString();
+  const monthStart = localMidnight(`${p.year}-${p.month}-01`, timeZone).toISOString();
   const sent = store.actionsSince(monthStart, 'inmail').length;
   const back = store.actionsSince(monthStart, 'inmailRefund').length;
   const used = Math.max(0, sent - back);
