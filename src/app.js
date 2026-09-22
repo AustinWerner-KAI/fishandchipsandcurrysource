@@ -28,6 +28,8 @@ const EDITABLE = ['mode', 'role', 'firstDegree', 'inmail', 'searchUrl', 'maxSear
 export const DEFAULT_INMAIL = {
   afterDays: 7,
   monthlyCredits: 30,
+  perDay: 10,
+  viaRecruiter: true,
   subject: '{role}, {location}',
   body: "Hi {firstName},\n\nI'm running a search for a {role} with a growing digital asset business in {location}. {workType}.\n\nYour background looks close to what they're after, which is why I'm reaching out directly rather than posting it.\n\nWould you be open to hearing a bit more? A yes or no is fine either way.\n\nKai",
   followUpAfterDays: 4,
@@ -132,6 +134,8 @@ export function state(jobs, campaignName) {
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
     client: cfg?.role?.client || null,
     health: store.data.meta.health || null,
+    inmailRehearsal: store.data.meta.inmailApprovedAt ? null : store.data.meta.inmailRehearsal || null,
+    inmailBalance: store.data.meta.inmailBalance ?? null,
     lastInvite: lastInvite(store, s.leads),
     learning: model ? { active: model.active, hardNo: model.hardNo, picks: model.picks, accepted: model.accepted, replied: model.replied, favours: model.favours, marksDown: model.marksDown } : null,
     noteStats: cfg?.connectionNotes ? noteStats(cfg.connectionNotes, store, c) : [],
@@ -353,6 +357,14 @@ export function createApp({ jobs = new Jobs() } = {}) {
         }
         store.save();
         return json(200, { ok: true, n });
+      }
+      if (u.pathname === '/api/inmail-approve') {
+        // Kai checked the rehearsal: from now on InMails go by themselves
+        const store = new Store();
+        if (b.ok) { store.data.meta.inmailApprovedAt = new Date().toISOString(); store.data.meta.inmailRehearsal = undefined; }
+        else store.data.meta.inmailRehearsal = undefined;   // rejected: it rehearses again next pass
+        store.save();
+        return json(200, { ok: true });
       }
       if (u.pathname === '/api/inmail-sent') {
         // { url, kind: 'inmail' | 'followUp' } Kai pressed "Sent" after pasting it into Recruiter Lite
