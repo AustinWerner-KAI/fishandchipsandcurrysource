@@ -5,6 +5,7 @@ import path from 'node:path';
 import { tmpHome } from './helpers.js';
 const home = tmpHome();
 const { Store } = await import('../src/store.js');
+const { CheckpointError } = await import('../src/browser.js');
 const { runConnect } = await import('../src/actions/connect.js');
 const { runMessages, dueMessage, sweepReplies } = await import('../src/actions/followup.js');
 const { weeklyLimitActive } = await import('../src/actions/connect.js');
@@ -88,7 +89,7 @@ test('checkpoint errors bubble up and stop the run', async () => {
   const s = fresh();
   s.upsertLead({ url: 'linkedin.com/in/x', campaign: 'c1', approved: true });
   s.save();
-  const err = new Error('checkpoint'); err.name = 'CheckpointError';
+  const err = new CheckpointError('checkpoint');
   const ops = { sendConnectionRequest: async () => { throw err; } };
   await assert.rejects(() => runConnect(null, s, cfg, { ops, pause: false }), /checkpoint/);
 });
@@ -274,4 +275,21 @@ test('invites: weekly ceiling across all roles; InMail credits: 30 a month, repl
   for (let i = 0; i < 29; i++) s.data.actions.push({ type: 'inmail', url: `z${i}`, at: now.toISOString() });
   s.data.actions.push({ type: 'inmailRefund', url: 'z1', at: now.toISOString() });
   assert.deepEqual(inmailCredits(s, 30, now, 'Asia/Dubai'), { total: 30, used: 28, left: 2 });
+});
+
+test('audit: templates never go to someone in an InMail conversation; old queued text never goes after they wrote', async () => {
+  const cand = { ...cfg, mode: 'candidates', followUps: [{ afterHours: 0, text: 'hi' }] };
+  const lead = { status: 'accepted', queue: [], messages: [], acceptedAt: '2026-09-20T00:00:00Z', inmail: { sentAt: '2026-09-19T00:00:00Z' } };
+  assert.equal(dueMessage(lead, cand, new Date('2026-09-22T00:00:00Z')), null);
+  const s = fresh();
+  const a = s.upsertLead({ url: 'linkedin.com/in/q', name: 'Q Q', campaign: 'c1' });
+  s.setStatus(a.url, 'accepted', { acceptedAt: '2026-09-20T00:00:00Z' });
+  a.queue.push({ text: 'old note' }); s.save();
+  const sent = [];
+  const ops = { readOwnName: async () => 'Kai Crayford', closeThread: async () => {},
+    openThread: async () => ({ opened: true, lastFrom: 'me', theySpoke: true, editor: {} }),
+    sendMessageInOpenThread: async (p, e, text) => { sent.push(text); return true; } };
+  await runMessages(null, s, cfg, { ops, pause: false });
+  assert.deepEqual(sent, []);
+  assert.equal(s.get(a.url).status, 'replied');
 });

@@ -69,3 +69,25 @@ test('two writers never lose each other\'s changes when each reloads before writ
 });
 
 function require_fs() { return fsMod; }
+
+test('audit: a save from a stale copy keeps changes another process made meanwhile', () => {
+  const file = path.join(home, 'merge.json');
+  const runner = new Store(file);
+  runner.upsertLead({ url: 'linkedin.com/in/m1', campaign: 'c' });
+  runner.upsertLead({ url: 'linkedin.com/in/m2', campaign: 'c' });
+  runner.save();
+  const app = new Store(file);
+  app.get('linkedin.com/in/m2').approved = true;
+  app.get('linkedin.com/in/m1').notes = 'keep';
+  app.recordAction('inmail', 'linkedin.com/in/m2');
+  app.save();
+  // runner never reloaded: its copy is stale
+  runner.get('linkedin.com/in/m1').status = 'invited';
+  runner.recordAction('connects', 'linkedin.com/in/m1');
+  runner.save();
+  const check = new Store(file);
+  assert.equal(check.get('linkedin.com/in/m1').status, 'invited');
+  assert.equal(check.get('linkedin.com/in/m1').notes, 'keep');
+  assert.equal(check.get('linkedin.com/in/m2').approved, true);
+  assert.deepEqual(check.data.actions.map(a => a.type).sort(), ['connects', 'inmail']);
+});

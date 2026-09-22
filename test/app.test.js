@@ -45,7 +45,10 @@ test('import, approve, status, queue, unqueue', async () => {
   assert.equal(bob.status, 'accepted');
   assert.equal(bob.queued, 1);
   assert.equal(bob.notes, 'route: pulse');
-  r = await post('/api/unqueue', { url: 'https://www.linkedin.com/in/bob/', index: 0 });
+  r = await post('/api/unqueue', { url: 'https://www.linkedin.com/in/bob/', text: 'not this one' });
+  assert.equal(r.status, 404);
+  const text = new Store().get('https://www.linkedin.com/in/bob/').queue[0].text;
+  r = await post('/api/unqueue', { url: 'https://www.linkedin.com/in/bob/', text });
   assert.equal(new Store().get('https://www.linkedin.com/in/bob/').queue.length, 0);
   r = await post('/api/status', { url: 'https://www.linkedin.com/in/bob/', status: 'nonsense' });
   assert.equal(r.status, 400);
@@ -260,4 +263,26 @@ test('InMail list never offers more new InMails than credits left, best match fi
   const list = inmailList(st, cfg);
   assert.equal(list.length, 2);
   assert.deepEqual(list.map(x => x.url), ['https://www.linkedin.com/in/cr-0/', 'https://www.linkedin.com/in/cr-2/']);
+});
+
+test('audit: InMail Sent and They replied count once; bad hours are refused; jobs need a role', async () => {
+  const { inmailCredits } = await import('../src/limits.js');
+  const st = new Store();
+  st.upsertLead({ url: 'linkedin.com/in/twice', name: 'Two Times', campaign: 'example' });
+  st.save();
+  const before = inmailCredits(new Store(), 30, new Date(), 'Asia/Dubai').used;
+  await post('/api/inmail-sent', { url: 'linkedin.com/in/twice', kind: 'inmail' });
+  await post('/api/inmail-sent', { url: 'linkedin.com/in/twice', kind: 'inmail' });
+  assert.equal(inmailCredits(new Store(), 30, new Date(), 'Asia/Dubai').used, before + 1);
+  await post('/api/inmail-replied', { url: 'linkedin.com/in/twice' });
+  await post('/api/inmail-replied', { url: 'linkedin.com/in/twice' });
+  assert.equal(inmailCredits(new Store(), 30, new Date(), 'Asia/Dubai').used, before);
+  let r = await post('/api/campaign', { name: 'example', config: { workingHours: { timezone: 'Mars/Olympus', start: '09:00', end: '18:00' } } });
+  assert.equal(r.status, 400);
+  r = await post('/api/campaign', { name: 'example', config: { workingHours: { timezone: 'Asia/Dubai', start: '9am', end: '18:00' } } });
+  assert.equal(r.status, 400);
+  r = await post('/api/job', { action: 'run' });
+  assert.equal(r.status, 400);
+  r = await post('/api/clear', { campaign: 'example', dryRun: true });
+  assert.equal(typeof r.body.n, 'number');
 });
