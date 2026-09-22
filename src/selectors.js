@@ -9,6 +9,10 @@ export const SEL = {
   searchResultLinks: ['a[href*="/in/"]'],
   searchNoResults: ['.search-reusables__no-results', 'h2:has-text("No results found")'],
 
+  // Recruiter Lite contract chooser (blocks Talent URLs when a person has more than one contract)
+  contractChooser: ['form[data-test-id="chooser-form"]', 'main:has-text("Choose a contract")', 'section:has(h1:has-text("Choose a contract"))'],
+  recruiterLiteContract: ['div:has-text("Recruiter Lite") button:has-text("Select")', 'section:has(h4:has-text("Recruiter Lite")) button:has-text("Select")', 'button[aria-label*="Select Recruiter Lite"]'],
+
   // Locations filter on the people search page (used to turn "Dubai" into LinkedIn's location id)
   locationsFilterButton: ['button#searchFilter_geoUrn', 'button[aria-label*="Locations filter"]', 'button:has-text("Locations")'],
   locationsInput: ['input[aria-label="Add a location"]', 'input[placeholder="Add a location"]', '.search-reusables__filter-value-item input[type="text"]'],

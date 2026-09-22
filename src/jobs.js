@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'cli.js');
-const BROWSER_JOBS = new Set(['login', 'search', 'run', 'once', 'followup', 'connect', 'probe']);
+const BROWSER_JOBS = new Set(['login', 'login-recruiter', 'search', 'run', 'once', 'followup', 'connect', 'probe']);
 
 export class Jobs {
   constructor({ maxLines = 400 } = {}) {
@@ -43,7 +43,7 @@ export class Jobs {
   start(name, { campaign, args = [], env = {} } = {}) {
     if (!BROWSER_JOBS.has(name)) throw new Error(`unknown job ${name}`);
     if (this.current) throw new Error(`${this.current.name} is already running. Stop it first.`);
-    const cliArgs = name === 'once' ? ['run', campaign, '--once'] : name === 'login' ? ['login'] : name === 'probe' ? ['probe', ...args] : [name, campaign, ...args];
+    const cliArgs = name === 'once' ? ['run', campaign, '--once'] : name === 'login' ? ['login'] : name === 'login-recruiter' ? ['login-recruiter'] : name === 'probe' ? ['probe', ...args] : [name, campaign, ...args];
     const child = spawn(process.execPath, [CLI, ...cliArgs], {
       cwd: process.cwd(),
       env: { ...process.env, ...env, FORCE_COLOR: '0' },

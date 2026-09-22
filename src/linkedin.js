@@ -245,7 +245,10 @@ export async function collectSearchResults(page, url, pageNo) {
       const nameIdx = clean.findIndex(t => t === name);
       const rest = clean.filter((t, i) => i !== nameIdx && t !== name);
       seen.add(m[1]);
-      out.push({ slug: m[1], name, headline: rest[0] || '', location: rest[1] || '' });
+      const degreeLine = /^[•·]?\s*(1st|2nd|3rd\+?)$/i;
+      const info = rest.filter(t => !degreeLine.test(t));
+      const degree = ((name.match(/[•·]\s*(1st|2nd|3rd\+?)\s*$/i) || rest.find(t => degreeLine.test(t))?.match(degreeLine) || [])[1]) || '';
+      out.push({ slug: m[1], name: name.replace(/\s*[•·]\s*(1st|2nd|3rd\+?)\s*$/i, '').trim(), degree, headline: info[0] || '', location: info[1] || '' });
     }
     return out;
   });

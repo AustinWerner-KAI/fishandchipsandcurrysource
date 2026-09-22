@@ -76,3 +76,17 @@ test('widening loosens the boolean one step at a time', () => {
   assert.deepEqual(widenBoolean('"Head of Sales"'), []);
   assert.deepEqual(widenBoolean('"Head of Sales" NOT recruiter').map(x => x.boolean), ['"Head of Sales"']);
 });
+
+test('ranking: main title beats a keyword list, recruiters score 0, degree comes off the name', async () => {
+  const { scoreLead, cleanLead } = await import('../src/rank.js');
+  const role = { title: 'Senior Cloud Security Engineer', titles: ['Security Engineer', 'Senior Security Engineer', 'Lead Security Engineer'], skills: ['Cloud'], domain: ['crypto', 'fintech'], suggestedSkills: ['aws'] };
+  const s = h => scoreLead({ name: 'A', headline: h }, role).score;
+  assert.ok(s('Lead Cloud Security Engineer') > s('IT Cloud Security Engineer'));
+  assert.ok(s('IT Cloud Security Engineer') > s('Network Engineer | Network Security Engineer | AWS Cloud'));
+  assert.ok(s('Senior Cloud Security Engineer at a crypto exchange') >= 85);
+  assert.equal(s('Technical Recruiter, Cloud Security'), 0);
+  assert.ok(s('Cloud Security Intern') < 20);
+  assert.deepEqual(cleanLead({ name: 'Edward Lee • 3rd+', headline: 'IT Cloud Security Engineer' }), { name: 'Edward Lee', degree: '3rd+', headline: 'IT Cloud Security Engineer' });
+  assert.deepEqual(cleanLead({ name: 'Derek Zellefrow', headline: '• 3rd+' }), { name: 'Derek Zellefrow', degree: '3rd+', headline: '' });
+  assert.equal(scoreLead({ name: 'D', headline: '• 3rd+' }, role).score, 15);
+});

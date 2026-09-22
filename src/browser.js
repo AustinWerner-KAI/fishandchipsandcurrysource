@@ -76,6 +76,26 @@ export async function goto(page, url, { waitFor = 'domcontentloaded' } = {}) {
   await page.goto(url, { waitUntil: waitFor });
   await sleep(randomBetween(1200, 2600));
   await guard(page);
+  await passContractChooser(page);
+}
+
+// When a Talent URL is opened for someone with more than one contract, LinkedIn shows a
+// "Choose a contract" page. Pick Recruiter Lite for them, so search and every follow-up land
+// on the real Recruiter surface without asking again.
+export async function passContractChooser(page) {
+  try {
+    if (!/\/talent\/contract-chooser/i.test(page.url())) return false;
+    const btn = await firstVisible(page, SEL.recruiterLiteContract, 4000);
+    if (!btn) { await snap(page, 'no-recruiter-lite-contract'); return false; }
+    log('picking Recruiter Lite contract');
+    await btn.click();
+    await sleep(randomBetween(1500, 3000));
+    await guard(page);
+    return true;
+  } catch (e) {
+    warn('contract chooser failed', e.message);
+    return false;
+  }
 }
 
 // Stop hard if LinkedIn throws a security checkpoint or logs us out. Never try to click through it.

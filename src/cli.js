@@ -27,6 +27,7 @@ const HELP = `
 Sourcer. LinkedIn sourcing and outreach that runs as you.
 
   npm run login                       open the browser, log in to LinkedIn by hand once
+  npm run login-recruiter             same for Recruiter Lite (it has its own sign-in)
   npm run search <campaign> [url]     collect people from a LinkedIn people search into the campaign
   npm run import <campaign> <file>    add profile URLs from a .txt (one per line) or .csv (url,name,...)
   npm run export <campaign>           print the campaign as CSV (for scoring in Claude)
@@ -63,6 +64,8 @@ async function main() {
   switch (cmd) {
     case 'login':
       return login();
+    case 'login-recruiter':
+      return loginRecruiter();
     case 'search': {
       const cfg = campaignArg();
       const url = positional[1];
@@ -201,6 +204,31 @@ async function login() {
       }
     }
     console.log('Timed out waiting for login.');
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
+// Recruiter Lite (linkedin.com/talent) asks for its own sign-in even when LinkedIn is logged in.
+// Same idea as login(): the person signs in by hand, we wait, then keep the cookies.
+async function loginRecruiter() {
+  const { context, page } = await openBrowser();
+  await page.goto('https://www.linkedin.com/talent/');
+  console.log('\nSign in to Recruiter in the browser window. It closes on its own once you are in.\n');
+  const deadline = Date.now() + 10 * 60 * 1000;
+  try {
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000));
+      const url = page.url();
+      if (/\/talent\//.test(url) && !/login|checkpoint|uas\//.test(url)) {
+        await new Promise(r => setTimeout(r, 4000));
+        const saved = await saveSession(context);
+        log(saved ? 'Recruiter signed in, session saved' : 'Recruiter signed in, but the session could not be saved');
+        const st = new Store(); st.data.meta.recruiterLoggedInAt = new Date().toISOString(); st.save();
+        return;
+      }
+    }
+    console.log('Timed out waiting for the Recruiter sign-in.');
   } finally {
     await context.close().catch(() => {});
   }

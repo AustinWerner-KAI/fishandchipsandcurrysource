@@ -57,6 +57,8 @@ a{color:var(--accent);text-decoration:none}
 .toast.show{opacity:1}
 details summary{cursor:pointer;color:var(--muted);font-size:12px}
 .muted{color:var(--muted)}
+.match{display:inline-block;min-width:34px;text-align:center;padding:3px 6px;border-radius:6px;font-weight:600;font-size:13px}
+.match.hi{background:var(--ok);color:#fff}.match.mid{border:1px solid var(--ok);color:var(--ok)}.match.lo{color:var(--muted);border:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -70,6 +72,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
     <div class="row">
       <span id="jobPill" class="pill"><span class="dot"></span><span id="jobText">idle</span></span>
       <button id="btnLogin" onclick="job('login')">Log in to LinkedIn</button>
+      <button id="btnLoginR" onclick="job('login-recruiter')" title="Recruiter Lite has its own sign-in">Log in to Recruiter</button>
       <button id="btnSearch" onclick="job('search')">Search</button>
       <button id="btnOnce" onclick="job('once')">Run one pass</button>
       <button id="btnRun" class="primary" onclick="job('run')">Run all day</button>
@@ -83,7 +86,12 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
     <div id="roleSummary" style="display:none">
       <div><b id="rsTitle"></b> <span class="sub" id="rsWhere"></span></div>
       <div class="sub" style="margin:6px 0;word-break:break-word"><code id="rsBoolean"></code></div>
-      <div class="row"><button class="small" onclick="editRole()">Edit role</button><a class="sub" id="rsLink" href="#" target="_blank">Open this search on LinkedIn</a><span class="sub" id="rsGeo"></span></div>
+      <div id="boolEdit" style="display:none;margin:6px 0">
+        <label for="boolText" class="sub" style="display:block;margin-bottom:3px">Boolean search. Use AND, OR, NOT, brackets and "quotes". Location stays as set in the role.</label>
+        <textarea id="boolText" style="min-height:80px;font-family:ui-monospace,Menlo,monospace;font-size:12px"></textarea>
+        <div class="row" style="margin-top:6px"><button class="small primary" onclick="saveBool(true)">Save and search</button><button class="small" onclick="saveBool(false)">Save</button><button class="small" onclick="closeBool()">Cancel</button><span class="sub" id="boolCheck"></span></div>
+      </div>
+      <div class="row"><button class="small" id="btnEditBool" onclick="openBool()">Edit search</button><button class="small" onclick="editRole()">Edit role</button><a class="sub" id="rsLink" href="#" target="_blank">Open this search on LinkedIn</a><span class="sub" id="rsGeo"></span></div>
       <div class="sub" id="rsHours" style="margin-top:4px"></div>
     </div>
 
@@ -150,13 +158,15 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
     <div class="row" style="justify-content:space-between;margin-bottom:8px">
       <h2 style="margin:0">People <span id="leadCount" class="muted"></span></h2>
       <div class="row">
+        <label class="sub">Sort <select id="sortBy" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">best match</option><option value="latest">latest</option></select></label>
+        <button class="small primary" onclick="approveTop()">Approve top <span id="topN">15</span></button>
         <button class="small" onclick="approveVisible(true)">Approve all shown</button>
         <button class="small" onclick="approveVisible(false)">Un-approve all shown</button>
         <a class="sub" id="exportLink" href="#">Export CSV</a>
       </div>
     </div>
     <div class="filters" id="filters"></div>
-    <div style="max-height:520px;overflow:auto"><table><thead><tr><th>Person</th><th>Status</th><th>Approved</th><th>Activity</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div style="max-height:520px;overflow:auto"><table><thead><tr><th>Match</th><th>Person</th><th>Status</th><th>Approved</th><th>Activity</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
   </div>
 
   <div class="grid2">
@@ -209,7 +219,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let S = null, campaign = localStorage.getItem('campaign') || '', filter = '', lastLog = 0, openComposer = null;
+let sortBy = 'match', S = null, campaign = localStorage.getItem('campaign') || '', filter = '', lastLog = 0, openComposer = null;
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 function toast(m, bad){ const t=$('#toast'); t.textContent=m; t.style.background=bad?'var(--bad)':'var(--ink)'; t.style.color='#fff'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
@@ -230,7 +240,7 @@ function applyJob(j){
   const h=S&&S.hours; const waiting = j.running && j.name==='run' && h && !h.open && h.nextStart;
   $('#jobText').textContent = j.running ? (waiting ? `running, waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}`) : 'idle';
   $('#jobSub').textContent = j.running ? `started ${when(j.startedAt)}` : (j.history.length ? `last: ${j.history[j.history.length-1].name} ${when(j.history[j.history.length-1].endedAt)}` : '');
-  for (const id of ['btnLogin','btnSearch','btnOnce','btnRun']) $('#'+id).disabled = j.running || (id!=='btnLogin' && !(S&&S.campaign));
+  for (const id of ['btnLogin','btnLoginR','btnSearch','btnOnce','btnRun']) $('#'+id).disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign));
   $('#btnStop').disabled = !j.running;
 }
 function render(){
@@ -247,7 +257,7 @@ function render(){
 
   const c=S.counts||{}, approved = S.leads.filter(l=>l.approved && l.status==='new').length;
   const steps=[
-    [!!S.loggedInAt, 'Log in to LinkedIn', S.loggedInAt ? `done ${when(S.loggedInAt)}` : 'Press the button top right. Log in by hand in the window that opens.'],
+    [!!S.loggedInAt, 'Log in to LinkedIn', S.loggedInAt ? `done ${when(S.loggedInAt)}${S.recruiterLoggedInAt ? ', Recruiter too' : '. Recruiter: press Log in to Recruiter'}` : 'Press the button top right. Log in by hand in the window that opens.'],
     [!!(S.cfg&&S.cfg.role), 'Set up the role', S.cfg&&S.cfg.role ? S.cfg.role.title : 'Paste the job spec in the Role box and follow the three steps.'],
     [S.leads.length>0, 'Find people', S.leads.length ? `${S.leads.length} people for this role` : 'Press Search. LinkedIn is searched with the boolean from the role.'],
     [approved>0 || (c.invited+c.accepted+c.messaged+c.replied)>0, 'Approve who to contact', approved ? `${approved} approved and waiting` : 'Tick the approved box next to each person, or send the CSV to Claude to shortlist.'],
@@ -272,16 +282,19 @@ function render(){
 
   const counts=S.counts||{};
   $('#filters').innerHTML = [['','all',S.leads.length],...S.statuses.map(s=>[s,s,counts[s]||0])].map(([f,l,n])=>`<button class="${f===filter?'on':''}" onclick="filter='${f}';render()">${l} ${n}</button>`).join('');
-  const rows = S.leads.filter(l=>!filter||l.status===filter).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+  const sc = l => l.rank && l.rank.score != null ? l.rank.score : -1;
+  const rows = S.leads.filter(l=>!filter||l.status===filter).sort((a,b)=> sortBy==='match' ? (sc(b)-sc(a) || (b.updatedAt||'').localeCompare(a.updatedAt||'')) : (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  $('#topN').textContent = (S.caps && S.caps.connects) || 15;
   $('#leadCount').textContent = `(${rows.length})`;
   $('#rows').innerHTML = rows.map(l=>`<tr>
-    <td><a href="${esc(l.url)}" target="_blank">${esc(l.name||l.url.replace('https://www.linkedin.com/in/',''))}</a><div class="sub">${esc(l.headline)}</div></td>
+    <td><span class="match ${sc(l)>=70?'hi':sc(l)>=45?'mid':'lo'}">${sc(l)<0?'':sc(l)}</span></td>
+    <td><a href="${esc(l.url)}" target="_blank">${esc(l.name||l.url.replace('https://www.linkedin.com/in/',''))}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''}<div class="sub">${esc(l.headline)}</div>${l.rank&&l.rank.reasons.length?`<div class="sub" style="margin-top:2px">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
     <td><span class="chip chip-${l.status}">${l.status}</span>${l.queued?`<div class="sub">${l.queued} queued</div>`:''}</td>
     <td><input type="checkbox" ${l.approved?'checked':''} ${l.status!=='new'?'disabled':''} onchange="approve('${esc(l.url)}', this.checked)"></td>
     <td class="sub">${l.sent} sent${l.invitedAt?`<br>invited ${when(l.invitedAt)}`:''}${l.acceptedAt?`<br>accepted ${when(l.acceptedAt)}`:''}</td>
     <td class="sub">${esc(l.error||l.notes||'')}</td>
     <td class="row">${['accepted','messaged','replied'].includes(l.status)?`<button class="small" onclick="compose('${esc(l.url)}')">Message</button>`:''}${l.status==='new'||l.status==='invited'?`<button class="small" onclick="setStatus('${esc(l.url)}','skipped')" title="Leave this person out. You can put them back.">Exclude</button>`:''}${l.status==='skipped'||l.status==='error'?`<button class="small" onclick="setStatus('${esc(l.url)}','new')">Put back</button>`:''}</td>
-  </tr>`).join('') || '<tr><td colspan="6" class="sub">Nobody here yet.</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="7" class="sub">Nobody here yet.</td></tr>';
 
   if (!settingsDirty) fillSettings();
   renderRole();
@@ -302,6 +315,7 @@ async function job(action){
 }
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
 async function approveVisible(on){ const urls = S.leads.filter(l=>(!filter||l.status===filter)&&l.status==='new').map(l=>l.url); if(!urls.length) return toast('No new people shown'); if(!confirm(`${on?'Approve':'Un-approve'} ${urls.length} people?`)) return; await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
+async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!l.approved&&l.rank&&l.rank.score>0).sort((a,b)=>b.rank.score-a.rank.score).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Connection requests go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
 async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 async function doImport(){ const text=$('#importText').value.trim(); if(!text) return; const r=await api('/api/import',{campaign:S.campaign,text,approve:$('#importApprove').checked}); toast(`${r.added} added, ${r.skipped} skipped`); $('#importText').value=''; load(); }
 async function queueJson(){ let items; try{ items=JSON.parse($('#queueJson').value); }catch{ return toast('That is not valid JSON', true);} const r=await api('/api/queue',{campaign:S.campaign, items:[].concat(items)}); toast(`${r.n} queued`); $('#queueJson').value=''; load(); }
@@ -358,7 +372,7 @@ let R=null, wizardOpen=false;
 function showStep(n){ for(const i of [1,2,3]) $('#w'+i).style.display = i===n?'':'none'; $('#roleSummary').style.display='none'; $('#roleStep').textContent=`step ${n} of 3`; wizardOpen=true; }
 function renderRole(){
   const role=S.cfg&&S.cfg.role;
-  if (wizardOpen) return;
+  if (wizardOpen || boolOpen) return;
   if (!role){ showStep(1); wizardOpen=false; return; }
   for(const i of [1,2,3]) $('#w'+i).style.display='none';
   $('#roleSummary').style.display=''; $('#roleStep').textContent='';
@@ -372,6 +386,13 @@ function renderRole(){
   const h=S.hours, wh=S.cfg.workingHours;
   $('#rsHours').textContent = wh ? (h.open ? `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Open now.` : `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Nothing sends until ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'the next working day'}.`) : '';
 }
+// ---- quick boolean edit ----
+let boolOpen=false;
+function boolProblems(b){ const p=[]; let d=0; for(const ch of b){ if(ch==='(') d++; if(ch===')') d--; if(d<0) break; } if(d!==0) p.push('brackets do not match'); if(((b.match(/"/g)||[]).length)%2) p.push('a quote is not closed'); if(/\b(and|or|not)\b/.test(b)) p.push('write AND, OR, NOT in capitals'); if(/[—–]/.test(b)) p.push('contains a long dash'); return p; }
+function openBool(){ boolOpen=true; $('#boolText').value=S.cfg.role.boolean||''; $('#boolEdit').style.display=''; $('#rsBoolean').style.display='none'; $('#btnEditBool').style.display='none'; const t=$('#boolText'); t.oninput=()=>{ const p=boolProblems(t.value); $('#boolCheck').textContent = p.length ? p.join(' · ') : `${t.value.length} characters`; $('#boolCheck').style.color = p.length ? 'var(--bad)' : ''; }; t.oninput(); t.focus(); }
+function closeBool(){ boolOpen=false; $('#boolEdit').style.display='none'; $('#rsBoolean').style.display=''; $('#btnEditBool').style.display=''; }
+async function saveBool(andSearch){ const b=$('#boolText').value.trim().replace(/\s+/g,' '); if(!b) return toast('The search is empty', true); const p=boolProblems(b); if(p.length) return toast(p[0], true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, boolean:b, booleanEdited:true}}); closeBool(); await load(); toast(andSearch?'Saved. Searching LinkedIn.':'Search saved'); if(andSearch) job('search'); }
+
 function newRole(){ R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); window.scrollTo({top:0,behavior:'smooth'}); }
 function editRole(){ const role=S.cfg.role; R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[]}; R.editing=S.campaign; fillStep2(); showStep(2); }
 async function readSpec(){
@@ -434,7 +455,7 @@ async function pollLog(){
   if (r.lines.length){ const el=$('#log'); if(lastLog===0) el.textContent=''; for(const l of r.lines){ const d=document.createElement('div'); d.textContent=l.text.replace(/^\d{4}-\d\d-\d\d /,''); if(/WARN|Error|error/.test(l.text)) d.className='w'; else if(/REPLY|accepted:|invited |messaged /.test(l.text)) d.className='r'; else if(/^[<>]{3}/.test(l.text)) d.className='s'; el.appendChild(d); lastLog=l.n; } el.scrollTop=el.scrollHeight; }
 }
 load().catch(()=>toast('Could not reach Sourcer. Is the window still open?', true));
-setInterval(()=>{ if(!settingsDirty && !openComposer) load().catch(()=>{}); }, 8000);
+setInterval(()=>{ if(!settingsDirty && !openComposer && !boolOpen) load().catch(()=>{}); }, 8000);
 setInterval(()=>pollLog().catch(()=>{}), 2500);
 pollLog().catch(()=>{});
 </script>

@@ -44,7 +44,7 @@ export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
   let added = 0;
   for (let p = 1; p <= pages; p++) {
     let rows = await collectSearchResults(page, searchUrl, p);
-    if (!rows.length && p === 1 && !url && cfg.role?.boolean) {
+    if (!rows.length && p === 1 && !url && cfg.role?.boolean && !cfg.role.booleanEdited) {
       // nothing at all: loosen the boolean step by step and keep the first version that returns people
       for (const w of widenBoolean(new URL(searchUrl).searchParams.get('keywords') || cfg.role.boolean)) {
         const u = new URL(searchUrl); u.searchParams.set('keywords', w.boolean);
@@ -55,12 +55,13 @@ export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
       }
     }
     log(`search page ${p}: ${rows.length} results`);
+    if (!rows.length && p === 1 && cfg.role?.booleanEdited) warn('your search found nobody on LinkedIn. Loosen it with Edit search (drop a NOT or an AND group) and search again.');
     if (!rows.length) break;
     let fresh = 0;
     for (const r of rows) {
       const url = `https://www.linkedin.com/in/${r.slug}/`;
       if (store.get(url)) continue;
-      store.upsertLead({ url, name: r.name, headline: r.headline, location: r.location, campaign: cfg.name });
+      store.upsertLead({ url, name: r.name, headline: r.headline, location: r.location, degree: r.degree, campaign: cfg.name });
       fresh++;
     }
     added += fresh;

@@ -14,6 +14,7 @@ import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
 import { nextWorkingStart, withinWorkingHours } from './limits.js';
 import { render } from './template.js';
+import { rankLeads } from './rank.js';
 import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
@@ -91,11 +92,12 @@ export function state(jobs, campaignName) {
     campaigns, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
-    leads: s.leads.map(l => ({ ...l, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
+    leads: rankLeads(s.leads, cfg?.role).map(l => ({ ...l, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
     weeklyLimit: weeklyLimitActive(store),
     ownName: store.data.meta.ownName || null,
     loggedInAt: store.data.meta.loggedInAt || null,
+    recruiterLoggedInAt: store.data.meta.recruiterLoggedInAt || null,
     job: jobs.status(),
     screenshots: shots,
     home: HOME,

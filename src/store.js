@@ -120,6 +120,7 @@ export class Store {
       name: partial.name || '',
       firstName: partial.firstName || firstNameOf(partial.name || ''),
       headline: partial.headline || '',
+      degree: partial.degree || '',
       company: partial.company || '',
       location: partial.location || '',
       campaign: partial.campaign || 'default',
