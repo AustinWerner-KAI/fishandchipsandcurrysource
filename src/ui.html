@@ -607,8 +607,12 @@ async function saveRole(andSearch){
   if (andSearch) job('search');
 }
 
+let logBoot = null;
 async function pollLog(){
-  const r = await api('/api/log?since='+lastLog);
+  let r = await api('/api/log?since='+lastLog);
+  // Sourcer restarted after an update: its log starts again from the top
+  if (logBoot && r.boot && r.boot !== logBoot) { lastLog = 0; $('#log').textContent = ''; r = await api('/api/log?since=0'); }
+  logBoot = r.boot || logBoot;
   if (S) { const was=S.job.running; S.job=r.job; applyJob(r.job); if (was && !r.job.running) load().catch(()=>{}); }
   if (r.lines.length){ const el=$('#log'); if(lastLog===0) el.textContent=''; for(const l of r.lines){ const d=document.createElement('div'); d.textContent=l.text.replace(/^\d{4}-\d\d-\d\d /,''); if(/WARN|Error|error/.test(l.text)) d.className='w'; else if(/REPLY|accepted:|invited |messaged /.test(l.text)) d.className='r'; else if(/^[<>]{3}/.test(l.text)) d.className='s'; el.appendChild(d); lastLog=l.n; } el.scrollTop=el.scrollHeight; }
 }
