@@ -11,12 +11,42 @@ import { exportCsv, importLeads, queueMessages } from './actions/import.js';
 import { weeklyLimitActive } from './actions/connect.js';
 import { Jobs } from './jobs.js';
 import { log } from './log.js';
-import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants } from './role.js';
+import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
+import { nextWorkingStart, withinWorkingHours } from './limits.js';
+import { render } from './template.js';
 import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
 
-const EDITABLE = ['mode', 'role', 'searchUrl', 'maxSearchPages', 'autoApprove', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
+const EDITABLE = ['mode', 'role', 'inmail', 'searchUrl', 'maxSearchPages', 'autoApprove', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
+
+// Recruiter Lite lane: for people who have not accepted the connection. Sent by hand; the app writes the text.
+export const DEFAULT_INMAIL = {
+  afterDays: 7,
+  subject: '{role}, {location}',
+  body: "Hi {firstName},\n\nI'm running a search for a {role} with a growing digital asset business in {location}. {workType}.\n\nYour background looks close to what they're after, which is why I'm reaching out directly rather than posting it.\n\nWould you be open to hearing a bit more? A yes or no is fine either way.\n\nKai",
+  followUpAfterDays: 4,
+  followUp: "Hi {firstName}, just bringing this back up in case it slipped past you. If the {role} role isn't for you right now, no problem at all. Happy to keep you in mind for the next one. Kai",
+};
+
+// People due an InMail: invited, not accepted after `afterDays`, plus those whose one follow-up is due.
+export function inmailList(store, cfg, now = new Date()) {
+  const im = cfg?.inmail; if (!im) return [];
+  const out = [];
+  for (const l of store.leads({ campaign: cfg.name })) {
+    if (l.status !== 'invited' || !l.invitedAt || l.preexisting) continue;
+    const sent = l.inmail || {};
+    if (sent.followUpAt) continue;                                           // both sent; lane over
+    if (sent.sentAt) {
+      if (now - new Date(sent.sentAt) >= (im.followUpAfterDays ?? 4) * 86400000)
+        out.push({ url: l.url, name: l.name, headline: l.headline, kind: 'followUp', subject: render(im.subject, l, cfg.role), text: render(im.followUp, l, cfg.role) });
+      continue;
+    }
+    if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000)
+      out.push({ url: l.url, name: l.name, headline: l.headline, kind: 'inmail', subject: render(im.subject, l, cfg.role), text: render(im.body, l, cfg.role) });
+  }
+  return out;
+}
 
 function readCampaignRaw(name) {
   const f = path.join(CAMPAIGN_DIR, `${name}.json`);
@@ -59,6 +89,8 @@ export function state(jobs, campaignName) {
   const shots = fs.existsSync(SCREENSHOT_DIR) ? fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('.png')).sort().slice(-5).reverse() : [];
   return {
     campaigns, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
+    inmail: cfg ? inmailList(store, cfg) : [],
+    hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
     leads: s.leads.map(l => ({ ...l, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
     weeklyLimit: weeklyLimitActive(store),
@@ -108,6 +140,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (b.action === 'stop') return json(200, jobs.stop());
         const args = [];
         if (b.action === 'search' && b.url) args.push(b.url);
+        if (b.action === 'probe') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'probe needs a linkedin.com URL' }); args.push(b.url); }
         return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
       }
       if (u.pathname === '/api/approve') {
@@ -174,15 +207,30 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const keep = existing?.role?.geo || {};
         const base = existing ? {} : {
           mode: 'candidates',
-          connectionNotes: ['Hi {firstName}, I run search for digital asset firms and your background caught my eye. Would be good to connect.'],
+          connectionNotes: ["Hey {firstName}, just wondering if you're on the market at the moment, as I have a new role, {role}, you might like. Let me know. Kai"],
           followUps: [
-            { afterDays: 0, text: `Thanks for connecting {firstName}. I'm working on a ${role.title} role${role.location ? ' in ' + role.location : ''} that looks close to what you've been doing. Open to a quick chat this week?` },
-            { afterDays: 4, text: "Hey {firstName}, just checking this didn't get buried. Happy to send the brief over if useful, no pressure." },
+            { afterDays: 0, afterHours: 3, text: "Thanks for connecting {firstName}. The {role} role is in {location}, {workType}. Happy to send the brief over if you're curious. Worth a look?" },
+            { afterDays: 4, text: "Hey {firstName}, just checking this didn't get buried. No pressure at all, but if the timing is wrong now I'm happy to keep you in mind for later." },
           ],
+          inmail: DEFAULT_INMAIL,
           dailyCaps: { connects: 15, messages: 25, profileViews: 60 },
         };
+        const tz = timezoneFor(role.location);
+        if (tz && (!existing || existing.role?.location !== role.location)) base.workingHours = { ...(existing?.workingHours || { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5] }), timezone: tz };
         const cfg = saveCampaign(name, { ...base, mode: 'candidates', ...(existing ? {} : { searchUrl: '' }), role: { ...role, geo: keep } });
         return json(200, { ok: true, campaign: name, cfg, preview: rolePreview(cfg) });
+      }
+      if (u.pathname === '/api/inmail-sent') {
+        // { url, kind: 'inmail' | 'followUp' } Kai pressed "Sent" after pasting it into Recruiter Lite
+        const store = new Store();
+        const l = store.get(b.url);
+        if (!l) return json(404, { error: 'no such lead' });
+        l.inmail = l.inmail || {};
+        const at = new Date().toISOString();
+        if (b.kind === 'followUp') l.inmail.followUpAt = at; else l.inmail.sentAt = at;
+        store.recordAction(b.kind === 'followUp' ? 'inmailFollowUp' : 'inmail', l.url, {});
+        store.save();
+        return json(200, { ok: true });
       }
       if (u.pathname === '/api/note') {
         const store = new Store();

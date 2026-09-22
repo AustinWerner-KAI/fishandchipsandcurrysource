@@ -21,13 +21,29 @@ export const KNOWN_GEO = {
 
 export const WORK_TYPES = ['onsite', 'hybrid', 'remote'];
 
+// Working hours follow the office. Anything not listed keeps the default (Dubai).
+const TIMEZONES = [
+  [/new york|nyc|boston|miami|toronto|montreal|washington|philadelphia|atlanta|united states|usa\b|\bus\b|america/i, 'America/New_York'],
+  [/chicago|austin|dallas|houston/i, 'America/Chicago'], [/san francisco|bay area|los angeles|seattle|vancouver|denver/i, 'America/Los_Angeles'],
+  [/london|manchester|edinburgh|united kingdom|\buk\b|britain|england|dublin|ireland|lisbon|portugal/i, 'Europe/London'],
+  [/berlin|frankfurt|munich|germany|paris|france|amsterdam|netherlands|zurich|zug|geneva|switzerland|madrid|barcelona|spain|milan|italy|stockholm|copenhagen|oslo|warsaw|vienna|brussels|luxembourg|prague/i, 'Europe/Berlin'],
+  [/dubai|abu dhabi|uae|emirates|riyadh|saudi|doha|qatar|bahrain|manama/i, 'Asia/Dubai'],
+  [/singapore|kuala lumpur|malaysia|manila|philippines/i, 'Asia/Singapore'], [/hong kong|shanghai|shenzhen|taipei|china/i, 'Asia/Hong_Kong'],
+  [/tokyo|japan|seoul|korea/i, 'Asia/Tokyo'], [/bangalore|bengaluru|mumbai|delhi|hyderabad|india/i, 'Asia/Kolkata'],
+  [/sydney|melbourne|australia/i, 'Australia/Sydney'], [/tel aviv|israel/i, 'Asia/Jerusalem'], [/istanbul|turkey/i, 'Europe/Istanbul'],
+];
+export function timezoneFor(location) {
+  const hit = TIMEZONES.find(([re]) => re.test(String(location || '')));
+  return hit ? hit[1] : null;
+}
+
 // Words that mean "this person is a recruiter, not a candidate".
 export const DEFAULT_EXCLUDE = ['recruiter', 'talent acquisition', 'headhunter'];
 
 // Domain words we look for in a spec. First match wins the domain group of the boolean.
 const DOMAINS = [
   { words: ['crypto', 'digital asset', 'digital assets', 'blockchain', 'web3', 'defi', 'exchange', 'custody', 'stablecoin', 'tokenis', 'tokeniz'],
-    boolean: ['crypto', '"digital asset"', 'blockchain', 'web3'] },
+    boolean: ['crypto', '"digital asset"', 'blockchain', 'web3', 'fintech', 'startup'] },
   { words: ['fintech', 'payments', 'neobank'], boolean: ['fintech', 'payments'] },
   { words: ['trading', 'market making', 'market maker', 'hedge fund', 'prop trading', 'quant'], boolean: ['trading', '"market making"', 'quant'] },
 ];
@@ -40,6 +56,13 @@ const SKILL_WORDS = [
   'sales', 'business development', 'partnerships', 'institutional', 'growth', 'marketing', 'product', 'tokenomics',
   'listings', 'ecosystem', 'devrel', 'developer relations', 'community',
 ];
+
+// Two-word phrases that stay together when a title is split into modifier + core ("Smart Contract Engineer").
+const COMPOUNDS = ['smart contract', 'business development', 'market making', 'digital asset', 'data science', 'machine learning',
+  'product marketing', 'talent acquisition', 'customer success', 'quality assurance', 'site reliability', 'information security',
+  'cyber security', 'software engineer', 'data engineer', 'security engineer', 'product manager', 'account executive', 'sales engineer',
+  'solutions engineer', 'research scientist', 'quant researcher', 'quantitative researcher', 'front end', 'back end', 'full stack'];
+const SENIORITY_PREFIX = /^(senior|lead|principal|staff|junior)\s+/i;
 
 const SENIORITY = /\b(chief|cxo|ceo|cto|cfo|coo|cco|cmo|ciso|cro|head of|head|vp|vice president|svp|evp|director|senior|lead|principal|staff|manager|associate|analyst|junior|intern)\b/i;
 
@@ -110,17 +133,35 @@ export function guessSkills(text, max = 4) {
   return out;
 }
 
+// "Senior Cloud Security Engineer" -> { seniority: 'Senior', modifiers: ['Cloud'], core: 'Security Engineer' }
+// The core is the last two words (or a known compound plus its noun); anything in front is a modifier
+// that becomes its own AND term, so the search also catches "Security Engineer, Cloud Platform".
+export function splitTitle(title) {
+  let t = clean(title);
+  const sm = t.match(SENIORITY_PREFIX);
+  const seniority = sm ? sm[1] : '';
+  if (sm) t = t.slice(sm[0].length);
+  const words = t.split(' ');
+  if (words.length <= 2 || /^(head|director|vp|chief|vice)\b/i.test(t) || /\bof\b/i.test(t)) return { seniority, modifiers: [], core: t };
+  const low = words.map(w => w.toLowerCase());
+  // core = last 2 words, or last 3 if the last two form a compound noun ("Smart Contract" + Engineer)
+  const coreLen = COMPOUNDS.includes(low.slice(-3, -1).join(' ')) ? 3 : 2;
+  return { seniority, modifiers: words.slice(0, -coreLen), core: words.slice(-coreLen).join(' ') };
+}
+
 // "Head of Compliance" -> ["Head of Compliance", "Compliance Director", "VP Compliance", "Compliance Lead"]
+// "Senior Cloud Security Engineer" -> ["Security Engineer", "Senior Security Engineer", "Lead Security Engineer", "Principal Security Engineer"]
 export function titleVariants(title) {
   const t = clean(title);
   if (!t) return [];
+  const split = splitTitle(t);
+  if (split.modifiers.length || split.seniority) { const c = split.core; return [c, `Senior ${c}`, `Lead ${c}`, `Principal ${c}`]; }
   const out = new Set([t]);
   let m;
   if ((m = t.match(/^head of (.+)$/i))) { const x = m[1]; out.add(`${x} Director`); out.add(`Director of ${x}`); out.add(`VP ${x}`); out.add(`${x} Lead`); }
   else if ((m = t.match(/^(?:vp|vice president)(?: of)? (.+)$/i))) { const x = m[1]; out.add(`Head of ${x}`); out.add(`${x} Director`); out.add(`SVP ${x}`); }
   else if ((m = t.match(/^director of (.+)$/i)) || (m = t.match(/^(.+) director$/i))) { const x = m[1]; out.add(`Head of ${x}`); out.add(`Director of ${x}`); out.add(`${x} Director`); out.add(`VP ${x}`); }
   else if ((m = t.match(/^chief (.+) officer$/i))) { const x = m[1]; out.add(`Head of ${x}`); out.add(`VP ${x}`); out.add(`${x} Director`); }
-  else if ((m = t.match(/^(senior|lead|principal|staff) (.+)$/i))) { const x = m[2]; out.add(x); out.add(`Senior ${x}`); out.add(`Lead ${x}`); out.add(`Principal ${x}`); }
   else if ((m = t.match(/^(.+) (engineer|developer)$/i))) { const x = m[1]; out.add(`${x} Engineer`); out.add(`${x} Developer`); out.add(`Senior ${x} Engineer`); }
   else if ((m = t.match(/^(.+) manager$/i))) { const x = m[1]; out.add(`${x} Lead`); out.add(`Head of ${x}`); }
   return [...out].map(clean).filter((v, i, a) => a.findIndex(o => o.toLowerCase() === v.toLowerCase()) === i).slice(0, 5);
@@ -129,9 +170,10 @@ export function titleVariants(title) {
 function quote(s) { s = clean(s).replace(/"/g, ''); return /\s/.test(s) ? `"${s}"` : s; }
 function group(items) { const q = items.map(quote).filter(Boolean); return q.length > 1 ? `(${q.join(' OR ')})` : q[0] || ''; }
 
-// Keeps it simple on purpose: titles AND domain [AND skills] NOT recruiters.
+// Keeps it simple on purpose: [must AND must] AND (titles) AND (industry) NOT (recruiters).
+// "skills" are must-haves: each one is its own AND term.
 export function buildBoolean({ titles = [], domain = [], skills = [], exclude = DEFAULT_EXCLUDE } = {}) {
-  const parts = [group(titles), group(domain), group(skills)].filter(Boolean);
+  const parts = [...skills.map(quote).filter(Boolean), group(titles), group(domain)].filter(Boolean);
   let b = parts.join(' AND ');
   const ex = exclude.map(quote).filter(Boolean);
   if (b && ex.length) b += ' NOT ' + (ex.length > 1 ? `(${ex.join(' OR ')})` : ex[0]);
@@ -169,15 +211,17 @@ export function draftRole(text) {
   const domain = guessDomain(text);
   const skills = guessSkills(text);
   const titles = titleVariants(title);
+  const required = splitTitle(title).modifiers;      // "Cloud" from "Senior Cloud Security Engineer"
   return {
     title, location, workType,
     // remote roles: where the candidate may sit. Starts equal to the office location; the recruiter widens it.
     candidateLocations: location ? [location] : [],
     titles,
     domain: domain ? domain.boolean : [],
+    required,
     skills,
     exclude: [...DEFAULT_EXCLUDE],
-    boolean: buildBoolean({ titles, domain: domain ? domain.boolean : [], skills: [], exclude: DEFAULT_EXCLUDE }),
+    boolean: buildBoolean({ titles, domain: domain ? domain.boolean : [], skills: required, exclude: DEFAULT_EXCLUDE }),
   };
 }
 
@@ -195,4 +239,21 @@ export async function extractText(filename, buffer) {
     return r.value || '';
   }
   return buffer.toString('utf8');
+}
+
+// When LinkedIn returns nothing, loosen the boolean one step at a time:
+// drop the NOT group, then the trailing AND groups, then all but the first title.
+export function widenBoolean(boolean) {
+  const b = String(boolean || '').trim();
+  const out = [];
+  let cur = b.replace(/\s+NOT\s+(\([^)]*\)|"[^"]*"|\S+)\s*$/i, '').trim();
+  if (cur && cur !== b) out.push({ step: 'without the exclude words', boolean: cur });
+  let m;
+  while ((m = cur.match(/^(.*\S)\s+AND\s+(\([^)]*\)|"[^"]*"|\S+)\s*$/))) {
+    cur = m[1].trim();
+    out.push({ step: 'without the last AND group', boolean: cur });
+  }
+  const first = cur.match(/^\(\s*("[^"]*"|\S+)\s+OR\s/);
+  if (first) out.push({ step: 'first title only', boolean: first[1] });
+  return out;
 }

@@ -32,7 +32,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     if (!lead || lead.status !== 'new' || !(cfg.autoApprove || lead.approved)) continue;
 
     const template = pick(cfg.connectionNotes);
-    const note = template ? render(template, lead) : '';
+    const note = template ? render(template, lead, cfg.role) : '';
     const problems = note ? checkNote(note, cfg.noteMaxLength) : [];
     if (problems.length) { warn('note rejected', problems, note); continue; }
 

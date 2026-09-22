@@ -43,6 +43,18 @@ export function withinWorkingHours(hours, now = new Date()) {
   return mins >= sh * 60 + sm && mins < eh * 60 + em;
 }
 
+// When the next working window opens, as a Date, or null if we are inside one now.
+export function nextWorkingStart(hours, now = new Date()) {
+  if (!hours || withinWorkingHours(hours, now)) return null;
+  const t = new Date(now.getTime());
+  t.setMinutes(Math.floor(t.getMinutes() / 15) * 15, 0, 0);   // walk on the quarter hour so 09:30 comes out as 09:30
+  for (let i = 0; i < 8 * 24 * 4; i++) {          // quarter hours, a week ahead
+    t.setTime(t.getTime() + 15 * 60000);
+    if (withinWorkingHours(hours, t)) return t;
+  }
+  return null;
+}
+
 export function randomBetween(min, max, rng = Math.random) {
   return min + rng() * (max - min);
 }

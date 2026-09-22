@@ -63,8 +63,8 @@ export function dueMessage(lead, cfg, now = new Date()) {
   if (!step) return null;
   const base = lead.messages.length ? lead.messages[lead.messages.length - 1].at : lead.acceptedAt;
   if (!base) return null;
-  if (new Date(base).getTime() + step.afterDays * DAY > now.getTime()) return null;
-  return { text: render(step.text, lead), source: 'step', stepIndex };
+  if (new Date(base).getTime() + (step.afterDays || 0) * DAY + (step.afterHours || 0) * 3600000 > now.getTime()) return null;
+  return { text: render(step.text, lead, cfg.role), source: 'step', stepIndex };
 }
 
 function markReplied(store, lead, thread) {

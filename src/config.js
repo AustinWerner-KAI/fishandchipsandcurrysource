@@ -12,7 +12,8 @@ const DEFAULTS = {
   autoApprove: false,            // false = only leads marked approved get a connection request
   connectionNotes: [],           // one or more; picked at random per lead. Empty = send without a note
   noteMaxLength: 300,
-  followUps: [],                 // candidates mode: [{ afterDays: 2, text: '...' }]
+  followUps: [],                 // candidates mode: [{ afterDays: 2, afterHours: 0, text: '...' }]
+  inmail: null,                  // Recruiter Lite lane, sent by hand: { afterDays: 7, subject, body, followUpAfterDays: 4, followUp }
   dailyCaps: { ...DEFAULT_CAPS },
   workingHours: { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5], timezone: 'Asia/Dubai' },
   pauseBetweenActionsSec: [45, 180],
@@ -67,6 +68,7 @@ export function validate(cfg) {
   if (cfg.mode === 'candidates') {
     cfg.followUps.forEach((f, i) => {
       if (typeof f.afterDays !== 'number' || f.afterDays < 0) errs.push(`followUps[${i}].afterDays must be a number of days`);
+      if (f.afterHours !== undefined && (typeof f.afterHours !== 'number' || f.afterHours < 0)) errs.push(`followUps[${i}].afterHours must be a number of hours`);
       if (!f.text) errs.push(`followUps[${i}].text is empty`);
     });
   }
