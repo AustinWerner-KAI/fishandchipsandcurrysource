@@ -1,6 +1,4 @@
 node_modules/
 campaigns/*.json
-!campaigns/example.json
-!campaigns/candidates-example.json
 .DS_Store
 *.log

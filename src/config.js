@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CAMPAIGN_DIR } from './paths.js';
 import { DEFAULT_CAPS } from './limits.js';
+import { WORK_TYPES } from './role.js';
 
 const DEFAULTS = {
   mode: 'candidates',            // 'candidates' (template follow-ups) or 'newbusiness' (per-person queued messages)
+  role: null,                    // { title, location, workType, candidateLocations, titles, domain, skills, exclude, boolean, geo: {name: id} }
   searchUrl: '',
   maxSearchPages: 5,
   autoApprove: false,            // false = only leads marked approved get a connection request
@@ -39,6 +41,15 @@ export function loadCampaign(name) {
   return cfg;
 }
 
+// Writes a few keys into the campaign file and returns the reloaded, validated config.
+export function patchCampaign(name, patch) {
+  const file = path.join(CAMPAIGN_DIR, `${name}.json`);
+  const raw = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  Object.assign(raw, patch);
+  fs.writeFileSync(file, JSON.stringify(raw, null, 2));
+  return loadCampaign(name);
+}
+
 export function validate(cfg) {
   const errs = [];
   if (!['candidates', 'newbusiness'].includes(cfg.mode)) errs.push(`mode must be candidates or newbusiness`);
@@ -48,6 +59,10 @@ export function validate(cfg) {
   for (const n of cfg.connectionNotes) {
     if (typeof n !== 'string') errs.push('connectionNotes must be strings');
     else if (n.length > cfg.noteMaxLength) errs.push(`connection note over ${cfg.noteMaxLength} chars: "${n.slice(0, 40)}..."`);
+  }
+  if (cfg.role) {
+    if (!cfg.role.title) errs.push('role.title is empty');
+    if (cfg.role.workType && !WORK_TYPES.includes(cfg.role.workType)) errs.push(`role.workType must be one of ${WORK_TYPES.join(', ')}`);
   }
   if (cfg.mode === 'candidates') {
     cfg.followUps.forEach((f, i) => {
