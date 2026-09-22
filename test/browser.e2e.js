@@ -15,6 +15,11 @@ try {
   assert.equal(await page.evaluate(() => window.__note), 'Hey Ann, would be great to connect.');
   assert.equal(r.info.name, 'Ann Example');
   assert.equal(r.info.degree, '2nd');
+  assert.deepEqual(await page.evaluate(() => window.__invited), ['Invite Ann Example to connect']);
+  // Connect hidden under "More": must invite Cara, never the "People you may know" stranger
+  r = await sendConnectionRequest(page, 'http://127.0.0.1:4790/in/follow-first/', 'Hey Cara.');
+  assert.equal(r.result, 'sent');
+  assert.deepEqual(await page.evaluate(() => window.__invited), ['Invite Cara Follow to connect']);
   // already pending
   r = await sendConnectionRequest(page, 'http://127.0.0.1:4790/in/pending/', 'x');
   assert.equal(r.result, 'pending');
@@ -26,7 +31,8 @@ try {
   assert.equal(t.opened, true);
   assert.equal(t.lastFrom, 'them');
   assert.equal(t.lastText, 'Thanks for the invite!');
-  const ok = await sendMessageInOpenThread(page, t.editor, 'Thanks for connecting Bob. How are you finding the market?');
+  const ok = await sendMessageInOpenThread(page, t.editor, 'Thanks for connecting Bob. How are you finding the market?', 'Kai Crayford');
+  assert.deepEqual(await page.evaluate(() => window.__sent), ['Thanks for connecting Bob. How are you finding the market?']);
   assert.equal(ok, true);
   const after = await readThread(page, 'Kai Crayford');
   assert.equal(after.lastFrom, 'me');

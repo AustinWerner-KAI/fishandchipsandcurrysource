@@ -9,7 +9,8 @@ fi
 if [ ! -d node_modules ]; then
   echo "First run: installing (a minute or two)..."
   npm install --silent || { echo "npm install failed"; read -n 1 -s -r; exit 1; }
-  npx playwright install chromium || { echo "browser install failed"; read -n 1 -s -r; exit 1; }
 fi
+# idempotent: only downloads when the matching browser build is missing
+npx playwright install chromium >/dev/null 2>&1 || { echo "browser install failed, check your internet connection"; read -n 1 -s -r; exit 1; }
 node src/cli.js menu
 echo; read -n 1 -s -r -p "Done. Press any key to close."

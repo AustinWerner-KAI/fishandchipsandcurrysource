@@ -46,23 +46,53 @@ export class Store {
     this.load();
   }
 
+  // Re-reads the file. A missing file means a fresh store; a corrupt file is an error, never silently wiped.
   load() {
+    let raw;
     try {
-      const raw = fs.readFileSync(this.file, 'utf8');
-      const parsed = JSON.parse(raw);
-      this.data = { ...EMPTY(), ...parsed };
-    } catch {
-      this.data = EMPTY();
+      raw = fs.readFileSync(this.file, 'utf8');
+    } catch (e) {
+      if (e.code === 'ENOENT') { this.data = EMPTY(); return this; }
+      throw e;
+    }
+    const parsed = JSON.parse(raw);
+    this.data = { ...EMPTY(), ...parsed };
+    for (const l of Object.values(this.data.leads)) {
+      l.queue ||= []; l.messages ||= [];
     }
     return this;
   }
 
+  // Several processes touch this file (runner, dashboard, CLI). A lock directory serialises writes
+  // and the temp file carries the pid so two writers never rename each other's half-written file.
   save() {
     ensureDirs();
-    const tmp = this.file + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
-    fs.renameSync(tmp, this.file);
+    const lock = this.file + '.lock';
+    const deadline = Date.now() + 3000;
+    for (;;) {
+      try { fs.mkdirSync(lock); break; } catch (e) {
+        if (e.code !== 'EEXIST') throw e;
+        // a lock older than 10s belongs to a dead process
+        try { if (Date.now() - fs.statSync(lock).mtimeMs > 10000) { fs.rmSync(lock, { recursive: true, force: true }); continue; } } catch {}
+        if (Date.now() > deadline) throw new Error('db.json is locked by another process');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+      }
+    }
+    try {
+      const tmp = `${this.file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+      fs.renameSync(tmp, this.file);
+    } finally {
+      fs.rmSync(lock, { recursive: true, force: true });
+    }
     return this;
+  }
+
+  // Reload from disk and return the current copy of one lead. Call this right before mutating,
+  // so an approval ticked on the dashboard or a message queued from the CLI is never overwritten.
+  refresh(url) {
+    this.load();
+    return url ? this.get(url) : undefined;
   }
 
   // ---- leads ----

@@ -1,22 +1,29 @@
 import * as linkedin from '../linkedin.js';
-import { goto, humanScroll } from '../browser.js';
+import { goto, humanScroll, snap } from '../browser.js';
 import { render } from '../template.js';
-import { remaining, humanPauseMs, sleep } from '../limits.js';
+import { remaining, humanPauseMs, sleep, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
 
 const DAY = 86400000;
+const HOUR = 3600000;
 
 export async function ensureOwnName(page, store, ops = linkedin) {
   if (store.data.meta.ownName) return store.data.meta.ownName;
   const name = await ops.readOwnName(page);
-  if (name) { store.data.meta.ownName = name; store.save(); }
+  if (name) { store.refresh(); store.data.meta.ownName = name; store.save(); }
   return name;
 }
 
 // Cheap acceptance sweep: one page listing recent connections, matched against invited leads.
-export async function sweepAcceptances(page, store, cfg) {
+// Runs at most once every cfg.acceptanceCheckEveryHours.
+export async function sweepAcceptances(page, store, cfg, { force = false } = {}) {
+  store.load();
   const invited = store.leads({ campaign: cfg.name, status: 'invited' });
   if (!invited.length) return 0;
+  const last = store.data.meta.lastAcceptanceSweep;
+  const every = (cfg.acceptanceCheckEveryHours ?? 3) * HOUR;
+  if (!force && last && Date.now() - new Date(last).getTime() < every) return 0;
+
   await goto(page, 'https://www.linkedin.com/mynetwork/invite-connect/connections/');
   await humanScroll(page, { steps: 6 });
   const slugs = await page.evaluate(() =>
@@ -24,8 +31,10 @@ export async function sweepAcceptances(page, store, cfg) {
       .map(a => (a.getAttribute('href').match(/\/in\/([^/?#]+)/) || [])[1])
       .filter(Boolean));
   const set = new Set(slugs.map(s => decodeURIComponent(s).toLowerCase()));
+  if (!set.size) await snap(page, 'connections-empty');
+  store.refresh();
   let n = 0;
-  for (const l of invited) {
+  for (const l of store.leads({ campaign: cfg.name, status: 'invited' })) {
     const slug = (l.url.match(/\/in\/([^/]+)/) || [])[1];
     if (slug && set.has(slug.toLowerCase())) {
       store.setStatus(l.url, 'accepted', { acceptedAt: new Date().toISOString() });
@@ -33,6 +42,7 @@ export async function sweepAcceptances(page, store, cfg) {
       n++;
     }
   }
+  store.data.meta.lastAcceptanceSweep = new Date().toISOString();
   store.save();
   log(`acceptance sweep: ${n} newly accepted (${set.size} recent connections seen)`);
   return n;
@@ -47,6 +57,7 @@ export function dueMessage(lead, cfg, now = new Date()) {
     return { text: q.text, source: 'queue', note: q.note };
   }
   if (cfg.mode !== 'candidates') return null;
+  if (lead.preexisting) return null;   // they were already a contact; templates would read wrong
   const stepIndex = lead.messages.length;
   const step = cfg.followUps[stepIndex];
   if (!step) return null;
@@ -61,11 +72,20 @@ function markReplied(store, lead, thread) {
   log(`REPLY from ${lead.name || lead.url}: ${thread.lastText?.slice(0, 120)}`);
 }
 
+function recordSent(store, lead, msg) {
+  if (msg.source === 'queue') lead.queue.shift();
+  lead.messages.push({ step: msg.stepIndex ?? null, text: msg.text, at: new Date().toISOString(), note: msg.note || '' });
+  store.setStatus(lead.url, 'messaged');
+  store.recordAction('messages', lead.url);
+}
+
 export async function runMessages(page, store, cfg, { max, ops = linkedin, pause = true } = {}) {
   const tz = cfg.workingHours?.timezone;
+  store.load();
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'messages', new Date(), tz), max ?? Infinity);
   if (budget <= 0) { log('messages: daily cap reached'); return { sent: 0 }; }
   const ownName = await ensureOwnName(page, store, ops);
+  if (!ownName) { warn('messages: could not read your own LinkedIn name, so replies cannot be told apart. Not sending.'); return { sent: 0 }; }
   const now = new Date();
   const due = store.leads({ campaign: cfg.name, status: ['accepted', 'messaged'] })
     .map(l => ({ lead: l, msg: dueMessage(l, cfg, now) }))
@@ -73,8 +93,16 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
   if (!due.length) { log('messages: nothing due'); return { sent: 0 }; }
 
   let sent = 0;
-  for (const { lead, msg } of due) {
+  for (const { lead: picked } of due) {
     if (budget <= 0) break;
+    if (!withinWorkingHours(cfg.workingHours)) { log('messages: working hours over'); break; }
+    if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) <= 0) { log('messages: profile view cap reached'); break; }
+
+    // fresh copy: a reply may have been recorded, or the queue edited, since the list was built
+    let lead = store.refresh(picked.url);
+    const msg = lead && dueMessage(lead, cfg, new Date());
+    if (!msg) continue;
+
     let t;
     try {
       t = await ops.openThread(page, lead.url, ownName);
@@ -83,13 +111,14 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       warn('open thread failed', lead.url, e.message);
       continue;
     }
+    lead = store.refresh(lead.url) || lead;
     store.recordAction('profileViews', lead.url);
     lead.lastCheckedAt = new Date().toISOString();
     if (!t.opened) {
       if (t.reason === 'not-connected') {
         store.setStatus(lead.url, 'skipped', { error: 'no longer a 1st degree connection' });
       } else {
-        warn(`could not open thread for ${lead.url}: ${t.reason}`);
+        warn(`could not open thread for ${lead.url}: ${t.reason} (screenshot saved, nothing sent)`);
       }
       store.save();
       if (pause) await sleep(humanPauseMs([10, 30]));
@@ -102,17 +131,28 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       if (pause) await sleep(humanPauseMs([10, 30]));
       continue;
     }
-    const ok = await ops.sendMessageInOpenThread(page, t.editor, msg.text);
+    if (t.lastFrom === 'me' && t.lastText === msg.text.trim()) {
+      // an earlier pass sent this but could not confirm it; do not send twice
+      log(`already sent to ${lead.name || lead.url}, recording it`);
+      recordSent(store, lead, msg);
+      await ops.closeThread(page);
+      store.save();
+      continue;
+    }
+    let ok = false;
+    try {
+      ok = await ops.sendMessageInOpenThread(page, t.editor, msg.text, ownName);
+    } catch (e) {
+      if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
+      warn('send failed', lead.url, e.message);
+    }
     await ops.closeThread(page);
     if (!ok) {
       warn('message not confirmed sent', lead.url);
       store.save();
       continue;
     }
-    if (msg.source === 'queue') lead.queue.shift();
-    lead.messages.push({ step: msg.stepIndex ?? null, text: msg.text, at: new Date().toISOString(), note: msg.note || '' });
-    store.setStatus(lead.url, 'messaged');
-    store.recordAction('messages', lead.url);
+    recordSent(store, lead, msg);
     sent++; budget--;
     log(`messaged ${lead.name || lead.url} (${msg.source})`);
     store.save();
@@ -126,24 +166,27 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
 // Throttled to once a day per lead and to the profile view budget.
 export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin, pause = true } = {}) {
   const tz = cfg.workingHours?.timezone;
+  store.load();
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz), max);
   const ownName = await ensureOwnName(page, store, ops);
+  if (!ownName) { warn('reply sweep: own name unknown, skipping'); return 0; }
   const now = Date.now();
-  const list = store.leads({ campaign: cfg.name, status: ['messaged', 'accepted'] })
+  const list = store.leads({ campaign: cfg.name, status: 'messaged' })
     .filter(l => !dueMessage(l, cfg))
     .filter(l => !l.lastCheckedAt || now - new Date(l.lastCheckedAt).getTime() > DAY)
-    .filter(l => l.messages.length || l.status === 'accepted')
     .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   let replies = 0;
-  for (const lead of list) {
+  for (const picked of list) {
     if (budget <= 0) break;
+    if (!withinWorkingHours(cfg.workingHours)) break;
     let t;
-    try { t = await ops.openThread(page, lead.url, ownName); }
+    try { t = await ops.openThread(page, picked.url, ownName); }
     catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
-      warn('reply check failed', lead.url, e.message); continue;
+      warn('reply check failed', picked.url, e.message); continue;
     }
     budget--;
+    const lead = store.refresh(picked.url) || picked;
     store.recordAction('profileViews', lead.url);
     lead.lastCheckedAt = new Date().toISOString();
     if (t.opened) {

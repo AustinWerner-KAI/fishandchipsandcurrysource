@@ -8,15 +8,15 @@ import { sleep, randomBetween } from './limits.js';
 export class CheckpointError extends Error {}
 export class NotLoggedInError extends Error {}
 
-export async function openBrowser({ headless = false, timezone = 'Asia/Dubai' } = {}) {
+// Uses the Mac's own timezone, locale and window size so the browser looks like the same person
+// who logs in by hand. SOURCER_CHROME can point at an installed Chrome instead of Playwright's Chromium.
+export async function openBrowser({ headless = false } = {}) {
   ensureDirs();
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless,
     ...(process.env.SOURCER_CHROME ? { executablePath: process.env.SOURCER_CHROME } : {}),
-    viewport: { width: 1360, height: 860 },
-    locale: 'en-GB',
-    timezoneId: timezone,
-    args: ['--disable-blink-features=AutomationControlled'],
+    viewport: headless ? { width: 1360, height: 860 } : null,
+    args: ['--disable-blink-features=AutomationControlled', '--window-size=1360,900'],
     ignoreDefaultArgs: ['--enable-automation'],
   });
   const page = context.pages()[0] || (await context.newPage());
@@ -33,7 +33,8 @@ export async function goto(page, url, { waitFor = 'domcontentloaded' } = {}) {
 // Stop hard if LinkedIn throws a security checkpoint or logs us out. Never try to click through it.
 export async function guard(page) {
   const url = page.url();
-  if (/\/checkpoint\/|\/challenge\/|\/uas\/|security-verification/i.test(url)) {
+  if (/\/checkpoint\/lg\/login|\/uas\/login/i.test(url)) throw new NotLoggedInError('Not logged in. Run: npm run login');
+  if (/\/checkpoint\/|\/challenge\/|security-verification/i.test(url)) {
     await snap(page, 'checkpoint');
     throw new CheckpointError(`LinkedIn is showing a security check at ${url}. Stopping. Open the browser, complete it by hand, then run again.`);
   }

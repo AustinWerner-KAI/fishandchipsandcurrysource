@@ -1,18 +1,29 @@
 // A tiny fake of the LinkedIn pages Sourcer touches, using the same markup shapes as selectors.js.
 import http from 'node:http';
 
-const profile = (slug, { degree = '2nd', pending = false, name = 'Ann Example' } = {}) => `<!doctype html><html><body>
+const profile = (slug, { degree = '2nd', pending = false, name = 'Ann Example', connectUnderMore = false } = {}) => `<!doctype html><html><body>
 <nav id="global-nav">nav</nav>
 <main>
+<section class="pv-top-card">
 <h1 class="text-heading-xlarge">${name}</h1>
 <span class="dist-value">${degree}</span>
 <div class="text-body-medium break-words">Head of Talent at Example Labs</div>
 <div class="pvs-profile-actions">
 ${degree === '1st' ? `<button aria-label="Message ${name}"><span>Message</span></button>` :
   pending ? `<button aria-label="Pending, click to withdraw invitation sent to ${name}"><span>Pending</span></button>` :
+  connectUnderMore ? `<button aria-label="Follow ${name}"><span>Follow</span></button>` :
   `<button aria-label="Invite ${name} to connect"><span>Connect</span></button>`}
 <button aria-label="More actions"><span>More</span></button>
+<div id="more-menu" style="display:none" class="artdeco-dropdown__content">
+  ${connectUnderMore ? `<div role="button" aria-label="Invite ${name} to connect">Connect</div>` : ''}
+  <div role="button" aria-label="Report or block">Report</div>
 </div>
+</div>
+</section>
+<section class="pv-profile-card"><h2>People you may know</h2>
+  <ul><li><a href="/in/stranger-one/">Stranger One</a><button aria-label="Invite Stranger One to connect"><span>Connect</span></button></li>
+      <li><a href="/in/stranger-two/">Stranger Two</a><button aria-label="Message Stranger Two"><span>Message</span></button></li></ul>
+</section>
 </main>
 <div id="modal" style="display:none" class="artdeco-modal">
   <button aria-label="Add a note">Add a note</button>
@@ -30,10 +41,10 @@ ${degree === '1st' ? `<button aria-label="Message ${name}"><span>Message</span><
 </div>
 <script>
 const $=s=>document.querySelector(s);
-const connect=$('button[aria-label^="Invite"]');
-if(connect) connect.onclick=()=>{$('#modal').style.display='block'};
 $('button[aria-label="Add a note"]').onclick=()=>{$('#custom-message').style.display='block';$('button[aria-label="Send without a note"]').style.display='none';$('button[aria-label="Send invitation"]').style.display='inline'};
-const sent=()=>{$('#modal').style.display='none';window.__note=$('#custom-message').value;const b=$('button[aria-label^="Invite"]');b.setAttribute('aria-label','Pending, click to withdraw');b.innerHTML='<span>Pending</span>'};
+const sent=()=>{$('#modal').style.display='none';window.__note=$('#custom-message').value;window.__invited=(window.__invited||[]).concat(window.__clicked);const top=$('.pv-top-card .pvs-profile-actions');const old=top.querySelector('button[aria-label^="Invite"],button[aria-label^="Follow"]');const b=document.createElement('button');b.setAttribute('aria-label','Pending, click to withdraw');b.innerHTML='<span>Pending</span>';old.replaceWith(b)};
+document.querySelectorAll('[aria-label^="Invite"]').forEach(el=>el.addEventListener('click',()=>{window.__clicked=el.getAttribute('aria-label');$('#modal').style.display='block'}));
+$('button[aria-label="More actions"]').onclick=()=>{$('#more-menu').style.display='block'};
 $('button[aria-label="Send invitation"]').onclick=sent;$('button[aria-label="Send without a note"]').onclick=sent;
 const msg=$('button[aria-label^="Message"]');
 if(msg) msg.onclick=()=>{$('#overlay').style.display='block'};
@@ -47,6 +58,7 @@ export function startFake(port = 4790) {
     res.setHeader('content-type', 'text/html');
     if (u.pathname.startsWith('/in/connected')) return res.end(profile('connected', { degree: '1st', name: 'Bob Connected' }));
     if (u.pathname.startsWith('/in/pending')) return res.end(profile('pending', { pending: true }));
+    if (u.pathname.startsWith('/in/follow-first')) return res.end(profile('follow-first', { connectUnderMore: true, name: 'Cara Follow' }));
     if (u.pathname.startsWith('/in/')) return res.end(profile('ann'));
     res.end('<main>nothing</main>');
   });

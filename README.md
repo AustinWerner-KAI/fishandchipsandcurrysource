@@ -6,7 +6,7 @@ LinkedIn sourcing and outreach that runs as you, in a real browser on your Mac, 
 
 ## First run
 
-1. Double-click `Sourcer.command`. It installs what it needs and opens a menu.
+1. Double-click `Sourcer.command`. It installs what it needs and opens a menu. If macOS says it can't open it, right-click the file, choose Open, then Open again. Once is enough.
 2. Pick **1 Log in**. A browser opens. Log in to LinkedIn by hand. The window closes on its own.
 3. Copy `campaigns/example.json` to `campaigns/<name>.json` and edit it. Paste in a LinkedIn people search URL.
 4. Pick **2 Search** to collect people into the campaign.
@@ -29,6 +29,7 @@ LinkedIn sourcing and outreach that runs as you, in a real browser on your Mac, 
 
 - Queued messages go out on the next pass. Any reply stops everything for that person and shows on the dashboard.
 - Ongoing nurture is the same: queue the next message when there is a reason to send one. `notBefore` (ISO date) holds a message until a date.
+- Someone who has replied is frozen. After you have answered them by hand, add `"resume": true` to the next queued item to let it send.
 
 ## How a candidate campaign flows
 
@@ -64,6 +65,10 @@ All page selectors live in `src/selectors.js`. If connects or messages start fai
 ## Safety rails built in
 
 - Hard stop on any LinkedIn security check. It never tries to click through one.
+- Connect and Message buttons are matched by the person's name inside their own profile card, so a "People you may know" card is never clicked.
+- A message is only recorded as sent when LinkedIn confirms it, and a thread that already ends with our text is never sent to again.
+- Never sends InMails. If LinkedIn opens the InMail composer instead of a normal thread, it backs out.
+- Once LinkedIn's weekly invitation limit is hit, no connection requests go out for 7 days.
 - Daily caps per campaign, validated to sane maximums (25 connects, 40 messages).
 - Working hours and days, Dubai time by default.
 - Random pauses between actions and between passes.

@@ -7,6 +7,7 @@ const home = tmpHome();
 const { Store } = await import('../src/store.js');
 const { runConnect } = await import('../src/actions/connect.js');
 const { runMessages, dueMessage, sweepReplies } = await import('../src/actions/followup.js');
+const { weeklyLimitActive } = await import('../src/actions/connect.js');
 const { importLeads, exportCsv, approveLeads, queueMessages, parseCsv } = await import('../src/actions/import.js');
 
 const cfg = {
@@ -19,6 +20,7 @@ const cfg = {
 function fresh() {
   const s = new Store(path.join(home, `db-${Math.random()}.json`));
   s.data.meta.ownName = 'Kai Crayford';
+  s.save();
   return s;
 }
 
@@ -28,6 +30,7 @@ test('connect only touches approved leads and stops at the cap', async () => {
   s.upsertLead({ url: 'linkedin.com/in/b', name: 'Bob B', campaign: 'c1', approved: true });
   s.upsertLead({ url: 'linkedin.com/in/c', name: 'Cat C', campaign: 'c1', approved: true });
   s.upsertLead({ url: 'linkedin.com/in/d', name: 'Dan D', campaign: 'c1' }); // not approved
+  s.save();
   const sent = [];
   const ops = { sendConnectionRequest: async (page, url, note) => { sent.push({ url, note }); return { result: 'sent', info: {} }; } };
   const r = await runConnect(null, s, cfg, { ops, pause: false });
@@ -46,17 +49,45 @@ test('connect handles LinkedIn outcomes', async () => {
   const s = fresh();
   s.upsertLead({ url: 'linkedin.com/in/x', name: 'X', campaign: 'c1', approved: true });
   s.upsertLead({ url: 'linkedin.com/in/y', name: 'Y', campaign: 'c1', approved: true });
+  s.save();
   const results = { 'https://www.linkedin.com/in/x/': 'already-connected', 'https://www.linkedin.com/in/y/': 'weekly-limit' };
   const ops = { sendConnectionRequest: async (p, url) => ({ result: results[url], info: {} }) };
   const r = await runConnect(null, s, { ...cfg, dailyCaps: { ...cfg.dailyCaps, connects: 10 } }, { ops, pause: false });
   assert.equal(s.get('linkedin.com/in/x').status, 'accepted');
   assert.equal(r.weeklyLimit, true);
   assert.equal(s.get('linkedin.com/in/y').status, 'new');
+  assert.equal(s.get('linkedin.com/in/x').preexisting, true);
+  // the weekly limit is remembered: no more connects for 7 days
+  assert.equal(weeklyLimitActive(s), true);
+  const r2 = await runConnect(null, s, cfg, { ops: { sendConnectionRequest: async () => { throw new Error('must not be called'); } }, pause: false });
+  assert.equal(r2.sent, 0);
+  assert.equal(r2.weeklyLimit, true);
+});
+
+test('connect picks up a dashboard change made mid-run', async () => {
+  const s = fresh();
+  s.upsertLead({ url: 'linkedin.com/in/a', name: 'Ann A', campaign: 'c1', approved: true });
+  s.upsertLead({ url: 'linkedin.com/in/b', name: 'Bob B', campaign: 'c1', approved: true });
+  s.save();
+  const ops = { sendConnectionRequest: async (p, url) => {
+    if (url.includes('/a/')) { // while Ann is being invited, the dashboard un-approves Bob and queues a note
+      const other = new Store(s.file); other.get('linkedin.com/in/b').approved = false; other.get('linkedin.com/in/b').notes = 'hold'; other.save();
+    }
+    return { result: 'sent', info: {} };
+  } };
+  const r = await runConnect(null, s, { ...cfg, dailyCaps: { ...cfg.dailyCaps, connects: 10 } }, { ops, pause: false });
+  assert.equal(r.sent, 1);
+  const disk = new Store(s.file);
+  assert.equal(disk.get('linkedin.com/in/a').status, 'invited');
+  assert.equal(disk.get('linkedin.com/in/b').status, 'new');
+  assert.equal(disk.get('linkedin.com/in/b').approved, false);
+  assert.equal(disk.get('linkedin.com/in/b').notes, 'hold'); // not overwritten by the runner's stale copy
 });
 
 test('checkpoint errors bubble up and stop the run', async () => {
   const s = fresh();
   s.upsertLead({ url: 'linkedin.com/in/x', campaign: 'c1', approved: true });
+  s.save();
   const err = new Error('checkpoint'); err.name = 'CheckpointError';
   const ops = { sendConnectionRequest: async () => { throw err; } };
   await assert.rejects(() => runConnect(null, s, cfg, { ops, pause: false }), /checkpoint/);
@@ -75,6 +106,9 @@ test('dueMessage: queue first, then template steps by day', () => {
   assert.equal(dueMessage(lead, cand, new Date('2026-09-23T01:00:00Z')).text, 'custom');
   // new business mode never sends templates
   assert.equal(dueMessage({ ...lead, queue: [] }, cfg, new Date('2026-09-30')), null);
+  // someone who was already a contact never gets "thanks for connecting"
+  assert.equal(dueMessage({ ...lead, queue: [], messages: [], status: 'accepted', preexisting: true }, cand, new Date('2026-09-30')), null);
+  assert.equal(dueMessage({ ...lead, queue: [{ text: 'hand written' }], messages: [], status: 'accepted', preexisting: true }, cand, new Date('2026-09-30')).text, 'hand written');
   assert.equal(dueMessage({ ...lead, status: 'replied' }, cand, new Date('2026-09-30')), null);
 });
 
@@ -87,6 +121,7 @@ test('messages: sends queued text, detects replies, respects cap', async () => {
   a.queue.push({ text: 'Thanks for connecting Ann. How are you finding the market?' });
   b.queue.push({ text: 'Hi Bob' });
   c.queue.push({ text: 'Hi Cat' });
+  s.save();
   const sent = [];
   const ops = {
     readOwnName: async () => 'Kai Crayford',
@@ -109,11 +144,42 @@ test('messages: sends queued text, detects replies, respects cap', async () => {
   assert.equal(r2.sent, 0); // cap of 2 used
 });
 
+test('messages: never sends twice, and stops when own name is unknown', async () => {
+  const s = fresh();
+  const a = s.upsertLead({ url: 'linkedin.com/in/a', name: 'Ann A', campaign: 'c1' });
+  s.setStatus(a.url, 'accepted', { acceptedAt: '2026-09-20T00:00:00Z' });
+  a.queue.push({ text: 'Hey Ann, how are you finding the market?' });
+  s.save();
+  let sends = 0;
+  // thread already ends with exactly this text from us: an earlier pass sent it but could not confirm
+  const ops = {
+    readOwnName: async () => 'Kai Crayford',
+    openThread: async () => ({ opened: true, lastFrom: 'me', lastText: 'Hey Ann, how are you finding the market?', editor: {} }),
+    sendMessageInOpenThread: async () => { sends++; return true; },
+    closeThread: async () => {},
+  };
+  const r = await runMessages(null, s, cfg, { ops, pause: false });
+  assert.equal(sends, 0);
+  assert.equal(r.sent, 0);
+  assert.equal(s.get(a.url).status, 'messaged');
+  assert.equal(s.get(a.url).queue.length, 0);
+  assert.equal(s.get(a.url).messages.length, 1);
+
+  // unknown own name: refuse to send rather than guess who spoke last
+  const s2 = fresh(); s2.data.meta.ownName = ''; s2.save();
+  const b = s2.upsertLead({ url: 'linkedin.com/in/b', name: 'Bob', campaign: 'c1' });
+  s2.setStatus(b.url, 'accepted', { acceptedAt: '2026-09-20T00:00:00Z' }); b.queue.push({ text: 'x' }); s2.save();
+  const r2 = await runMessages(null, s2, cfg, { ops: { ...ops, readOwnName: async () => '' }, pause: false });
+  assert.equal(r2.sent, 0);
+  assert.equal(s2.get(b.url).status, 'accepted');
+});
+
 test('reply sweep finds replies on quiet threads', async () => {
   const s = fresh();
   const a = s.upsertLead({ url: 'linkedin.com/in/a', name: 'Ann A', campaign: 'c1' });
   s.setStatus(a.url, 'messaged');
   a.messages.push({ text: 'hi', at: '2026-09-20T00:00:00Z' });
+  s.save();
   const ops = { readOwnName: async () => 'Kai', openThread: async () => ({ opened: true, lastFrom: 'them', lastText: 'yes' }), closeThread: async () => {} };
   const n = await sweepReplies(null, s, cfg, { ops, pause: false });
   assert.equal(n, 1);
@@ -137,6 +203,14 @@ test('import, approve, queue, export', () => {
   assert.equal(s.get('linkedin.com/in/one').notes, 'builds an L2');
   fs.writeFileSync(q, JSON.stringify([{ url: 'linkedin.com/in/one', text: 'Hey — no' }]));
   assert.throws(() => queueMessages(s, cfg, q), /dash/);
+  // a replied lead stays frozen unless resume is explicit
+  s.setStatus('linkedin.com/in/two', 'replied'); s.save();
+  fs.writeFileSync(q, JSON.stringify([{ url: 'linkedin.com/in/two', text: 'follow' }]));
+  queueMessages(s, cfg, q);
+  assert.equal(s.get('linkedin.com/in/two').status, 'replied');
+  fs.writeFileSync(q, JSON.stringify([{ url: 'linkedin.com/in/two', text: 'follow', resume: true }]));
+  queueMessages(s, cfg, q);
+  assert.equal(s.get('linkedin.com/in/two').status, 'messaged');
   const out = exportCsv(s, cfg);
   assert.equal(out.split('\n').length, 5); // header + 3 rows + trailing newline
   assert.match(out, /"Three, T"/);

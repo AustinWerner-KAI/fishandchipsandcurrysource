@@ -127,13 +127,14 @@ async function main() {
 
 async function menu() {
   const rl = readline.createInterface({ input, output });
+  let dash = null;
   const ask = q => rl.question(q);
   for (;;) {
     const campaigns = listCampaigns();
     console.log(`\nSourcer\n  campaigns: ${campaigns.join(', ') || '(none yet, copy campaigns/example.json)'}\n`);
     console.log('  1  Log in to LinkedIn\n  2  Search and collect leads\n  3  Open dashboard\n  4  Run campaign (all day)\n  5  Run one pass now\n  6  Status\n  q  Quit\n');
     const a = (await ask('> ')).trim();
-    if (a === 'q') break;
+    if (a === 'q') { rl.close(); process.exit(0); }
     try {
       const pickCampaign = async () => {
         if (campaigns.length === 1) return loadCampaign(campaigns[0]);
@@ -142,7 +143,7 @@ async function menu() {
       };
       if (a === '1') await login();
       else if (a === '2') { const cfg = await pickCampaign(); await withBrowser((p, s) => runSearch(p, s, cfg)); }
-      else if (a === '3') { startDashboard({}); exec('open http://localhost:4747'); console.log('Dashboard running. Leave this window open. Press q to stop.'); }
+      else if (a === '3') { if (!dash) dash = startDashboard({}); exec('open http://localhost:4747'); console.log('Dashboard running while this window is open.'); }
       else if (a === '4') { const cfg = await pickCampaign(); rl.close(); return runCampaign(cfg); }
       else if (a === '5') { const cfg = await pickCampaign(); await runCampaign(cfg, { once: true }); }
       else if (a === '6') { const store = new Store(); for (const n of campaigns) console.log(n, summarise(store, n).counts); }

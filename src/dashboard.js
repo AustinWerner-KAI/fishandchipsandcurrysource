@@ -124,6 +124,10 @@ export function startDashboard({ port = 4747 } = {}) {
       res.writeHead(500); res.end(String(e.message));
     }
   });
+  server.on('error', e => {
+    if (e.code === 'EADDRINUSE') log(`dashboard already running at http://localhost:${port} (nothing to do)`);
+    else log('dashboard error', e.message);
+  });
   server.listen(port, '127.0.0.1', () => log(`dashboard on http://localhost:${port}`));
   return server;
 }

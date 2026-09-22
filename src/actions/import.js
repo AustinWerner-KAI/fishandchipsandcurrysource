@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import { normalizeUrl } from '../store.js';
-import { log } from '../log.js';
+import { log, warn } from '../log.js';
 
 // Accepts a .txt (one URL per line) or a .csv with a header row containing url (and optionally name, headline, company).
 export function importLeads(store, cfg, file, { approve = false } = {}) {
   const raw = fs.readFileSync(file, 'utf8');
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  store.load();
   let added = 0, skipped = 0;
   const isCsv = file.toLowerCase().endsWith('.csv') && lines.length && /url/i.test(lines[0]);
   const rows = isCsv ? parseCsv(lines) : lines.map(l => ({ url: l }));
@@ -58,6 +59,7 @@ export function exportCsv(store, cfg, { status } = {}) {
 
 // approve: a file with one URL per line, or '--all'
 export function approveLeads(store, cfg, fileOrAll) {
+  store.load();
   let n = 0;
   if (fileOrAll === '--all') {
     for (const l of store.leads({ campaign: cfg.name })) { l.approved = true; n++; }
@@ -73,15 +75,23 @@ export function approveLeads(store, cfg, fileOrAll) {
   return n;
 }
 
-// queue: JSON array [{ url, text, notBefore?, note? }] of per-person messages (new business mode, or one-offs)
+// queue: JSON array [{ url, text, notBefore?, note?, resume? }] of per-person messages (new business mode, or one-offs).
+// A lead that has replied is frozen; pass "resume": true on the item to send anyway (you have answered them by hand).
 export function queueMessages(store, cfg, file) {
   const items = JSON.parse(fs.readFileSync(file, 'utf8'));
   if (!Array.isArray(items)) throw new Error('Queue file must be a JSON array');
+  store.load();
   let n = 0;
   for (const it of items) {
     const lead = store.get(it.url) || store.upsertLead({ url: it.url, campaign: cfg.name });
     if (!it.text) continue;
     if (/[—–]/.test(it.text)) throw new Error(`Message for ${it.url} contains a dash. Tone rules: no dashes.`);
+    if (lead.status === 'replied') {
+      if (it.resume) store.setStatus(lead.url, 'messaged');
+      else warn(`${lead.name || lead.url} has replied, so this stays queued until you add "resume": true`);
+    } else if (!['accepted', 'messaged'].includes(lead.status)) {
+      warn(`${lead.name || lead.url} is "${lead.status}"; queued text only sends once they are connected`);
+    }
     lead.queue.push({ text: it.text, notBefore: it.notBefore || null, note: it.note || '' });
     if (it.note) lead.notes = [lead.notes, it.note].filter(Boolean).join(' | ');
     n++;

@@ -15,7 +15,7 @@ const DEFAULTS = {
   workingHours: { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5], timezone: 'Asia/Dubai' },
   pauseBetweenActionsSec: [45, 180],
   pauseBetweenCyclesMin: [15, 40],
-  acceptanceCheckEveryHours: 12,
+  acceptanceCheckEveryHours: 3,          // how often to look at the connections page for new acceptances
 };
 
 export function listCampaigns() {

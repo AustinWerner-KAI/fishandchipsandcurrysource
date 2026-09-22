@@ -1,22 +1,29 @@
 // Profile-level operations. Each returns a plain result and never throws on "LinkedIn looks different",
 // only on checkpoint / logged out (see browser.guard).
-import { SEL, firstVisible, anyPresent } from './selectors.js';
-import { goto, humanScroll, snap, typeLikeHuman } from './browser.js';
+//
+// Every action button is looked up inside the profile's top card AND by the person's name
+// ("Invite Jane Doe to connect"), so a suggested-people card further down the page is never clicked.
+import { SEL, firstVisible, anyPresent, withName } from './selectors.js';
+import { goto, guard, humanScroll, snap, typeLikeHuman } from './browser.js';
 import { sleep, randomBetween } from './limits.js';
 import { log, warn } from './log.js';
 import { normalizeUrl, firstNameOf } from './store.js';
 
-async function textOf(page, candidates) {
-  const loc = await firstVisible(page, candidates, 1500);
+async function textOf(scope, candidates) {
+  const loc = await firstVisible(scope, candidates, 1500);
   if (!loc) return '';
   return (await loc.innerText()).trim();
+}
+
+async function topCard(page) {
+  return (await firstVisible(page, SEL.topCard, 2500)) || page.locator('main');
 }
 
 export async function readProfile(page) {
   const name = await textOf(page, SEL.profileName);
   const headline = await textOf(page, SEL.profileHeadline);
   const degreeRaw = await textOf(page, SEL.profileDegree);
-  const degree = (degreeRaw.match(/1st|2nd|3rd/) || [''])[0];
+  const degree = (degreeRaw.match(/\b(1st|2nd|3rd)\b/) || [''])[0];
   return { name, firstName: firstNameOf(name), headline, degree };
 }
 
@@ -24,30 +31,46 @@ export async function openProfile(page, url) {
   await goto(page, normalizeUrl(url) || url);
   await humanScroll(page, { steps: 2 });
   const info = await readProfile(page);
+  if (!info.name) {
+    await snap(page, 'no-profile-name');
+    warn('could not read the profile name; buttons will only be matched inside the top card');
+  }
   return info;
+}
+
+// What the top card offers for this person.
+async function topCardButtons(page, name) {
+  const card = await topCard(page);
+  const connect = await firstVisible(card, withName(SEL.connectButton, name), 1200);
+  const pending = await firstVisible(card, SEL.pendingButton, 600);
+  const message = await firstVisible(card, withName(SEL.messageButton, name), 800);
+  const more = await firstVisible(card, SEL.moreActionsButton, 600);
+  return { card, connect, pending, message, more };
 }
 
 // Returns one of: 'sent' | 'already-connected' | 'pending' | 'no-button' | 'weekly-limit' | 'email-required' | 'failed'
 export async function sendConnectionRequest(page, url, note) {
   const info = await openProfile(page, url);
+  const b = await topCardButtons(page, info.name);
   if (info.degree === '1st') return { result: 'already-connected', info };
-  if (await anyPresent(page, SEL.pendingButton, 800)) return { result: 'pending', info };
+  if (b.pending) return { result: 'pending', info };
 
-  let btn = await firstVisible(page, SEL.connectButton, 1500);
-  if (!btn) {
-    const more = await firstVisible(page, SEL.moreActionsButton, 1500);
-    if (more) {
-      await more.click();
-      await sleep(randomBetween(600, 1200));
-      btn = await firstVisible(page, SEL.moreMenuConnect, 1500);
-    }
+  let btn = b.connect;
+  if (!btn && b.more) {
+    await b.more.click();
+    await sleep(randomBetween(600, 1200));
+    btn = await firstVisible(page, withName(SEL.moreMenuConnect, info.name), 1500);
+    if (!btn) await page.keyboard.press('Escape').catch(() => {});
   }
   if (!btn) {
+    // no Connect anywhere for this person. If there is a Message button and no Connect, they are already connected.
+    if (b.message && !info.degree) return { result: 'already-connected', info };
     await snap(page, 'no-connect-button');
     return { result: 'no-button', info };
   }
   await btn.click();
   await sleep(randomBetween(900, 1800));
+  await guard(page);
 
   if (await anyPresent(page, SEL.weeklyLimitText, 1000)) {
     await snap(page, 'weekly-limit');
@@ -59,6 +82,7 @@ export async function sendConnectionRequest(page, url, note) {
     return { result: 'email-required', info };
   }
 
+  let noteSent = false;
   if (note) {
     const addNote = await firstVisible(page, SEL.addNoteButton, 2000);
     if (addNote) {
@@ -69,8 +93,10 @@ export async function sendConnectionRequest(page, url, note) {
     if (ta) {
       await typeLikeHuman(ta, note);
       await sleep(randomBetween(500, 1200));
+      noteSent = true;
     } else {
-      warn('note box not found, sending without a note');
+      await snap(page, 'no-note-box');
+      warn('note box not found (monthly personalised-invite limit?), sending without a note');
     }
   }
 
@@ -82,20 +108,20 @@ export async function sendConnectionRequest(page, url, note) {
   }
   await send.click();
   await sleep(randomBetween(1200, 2200));
+  await guard(page);
 
   if (await anyPresent(page, SEL.weeklyLimitText, 800)) {
     await snap(page, 'weekly-limit');
     await dismissModal(page);
     return { result: 'weekly-limit', info };
   }
-  // confirm: the Connect button should now read Pending (or be gone)
-  const pending = await anyPresent(page, SEL.pendingButton, 2500);
-  const stillConnect = await anyPresent(page, SEL.connectButton, 500);
-  if (!pending && stillConnect) {
+  // confirm: the top card should now show Pending (or at least no Connect)
+  const after = await topCardButtons(page, info.name);
+  if (!after.pending && after.connect) {
     await snap(page, 'send-unconfirmed');
     return { result: 'failed', info };
   }
-  return { result: 'sent', info };
+  return { result: 'sent', info, noteSent };
 }
 
 export async function dismissModal(page) {
@@ -107,14 +133,25 @@ export async function dismissModal(page) {
 }
 
 // Opens the message overlay from a profile and reads the thread.
-// Returns { opened, lastFrom: 'them'|'me'|null, lastText, ownName }
+// Returns { opened, reason?, info, editor?, lastFrom: 'them'|'me'|null, lastText }
+// reason: 'not-connected' (Connect button shown) | 'no-message-button' | 'inmail' | 'no-editor'
 export async function openThread(page, url, ownName) {
   const info = await openProfile(page, url);
-  if (info.degree !== '1st') return { opened: false, info, reason: 'not-connected' };
-  const btn = await firstVisible(page, SEL.messageButton, 2000);
-  if (!btn) return { opened: false, info, reason: 'no-message-button' };
-  await btn.click();
+  const b = await topCardButtons(page, info.name);
+  if (b.connect || b.pending || ['2nd', '3rd'].includes(info.degree)) return { opened: false, info, reason: 'not-connected' };
+  if (!b.message) {
+    await snap(page, 'no-message-button');
+    return { opened: false, info, reason: 'no-message-button' };
+  }
+  await b.message.click();
   await sleep(randomBetween(1500, 2600));
+  await guard(page);
+  if (await anyPresent(page, SEL.inmailMarker, 800)) {
+    // InMail composer means we are not connected; never send InMails automatically
+    await snap(page, 'inmail-composer');
+    await closeThread(page);
+    return { opened: false, info, reason: 'inmail' };
+  }
   const editor = await firstVisible(page, SEL.msgEditor, 6000);
   if (!editor) {
     await snap(page, 'no-msg-editor');
@@ -124,32 +161,53 @@ export async function openThread(page, url, ownName) {
   return { opened: true, info, editor, ...thread };
 }
 
+function sameName(a, b) {
+  const n = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return n(a) && n(a) === n(b);
+}
+
+// Who spoke last in the open thread. Compares the full sender name with our own full name.
 export async function readThread(page, ownName) {
-  const names = await page.locator(SEL.msgGroupName[0]).allInnerTexts().catch(() => []);
-  const bodies = await page.locator(SEL.msgBody[0]).allInnerTexts().catch(() => []);
+  if (!ownName) throw new Error('own name unknown; cannot tell who spoke last');
+  const names = await page.locator(SEL.msgGroupName.join(', ')).allInnerTexts().catch(() => []);
+  const bodies = await page.locator(SEL.msgBody.join(', ')).allInnerTexts().catch(() => []);
   if (!names.length) return { lastFrom: null, lastText: '', count: 0 };
   const lastName = names[names.length - 1].trim();
   const lastText = (bodies[bodies.length - 1] || '').trim();
-  const me = ownName && lastName.toLowerCase().startsWith(ownName.split(' ')[0].toLowerCase());
-  return { lastFrom: me ? 'me' : 'them', lastText, count: names.length, lastName };
+  return { lastFrom: sameName(lastName, ownName) ? 'me' : 'them', lastText, count: names.length, lastName };
 }
 
-export async function sendMessageInOpenThread(page, editor, text) {
+async function clearEditor(page, editor) {
+  await editor.click();
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+  await page.keyboard.press(`${mod}+A`);
+  await page.keyboard.press('Backspace');
+  await sleep(200);
+}
+
+// Types and sends. Confirms by the editor emptying, or failing that by the thread now ending with our text.
+export async function sendMessageInOpenThread(page, editor, text, ownName) {
+  await clearEditor(page, editor);      // LinkedIn keeps drafts; never append to one
   await typeLikeHuman(editor, text);
   await sleep(randomBetween(700, 1500));
   const send = await firstVisible(page, SEL.msgSend, 3000);
   if (!send) {
     await snap(page, 'no-msg-send');
+    await clearEditor(page, editor).catch(() => {});
     return false;
   }
-  if (await send.isDisabled().catch(() => false)) {
-    await sleep(800);
-  }
+  for (let i = 0; i < 6 && (await send.isDisabled().catch(() => false)); i++) await sleep(500);
   await send.click();
   await sleep(randomBetween(1500, 2500));
-  // sent if the editor is empty again
+  await guard(page);
   const left = (await editor.innerText().catch(() => '')).trim();
-  return left.length === 0;
+  if (left.length === 0) return true;
+  await sleep(3000);
+  const t = await readThread(page, ownName).catch(() => null);
+  if (t && t.lastFrom === 'me' && t.lastText === text.trim()) return true;
+  await snap(page, 'send-unconfirmed');
+  await clearEditor(page, editor).catch(() => {});   // leave no draft behind that a later pass could double-send
+  return false;
 }
 
 export async function closeThread(page) {
@@ -162,6 +220,7 @@ export async function closeThread(page) {
 export async function readOwnName(page) {
   await goto(page, 'https://www.linkedin.com/in/me/');
   const name = await textOf(page, SEL.profileName);
+  if (!name) await snap(page, 'own-name-missing');
   log('own name', name || '(not found)');
   return name;
 }
@@ -190,5 +249,7 @@ export async function collectSearchResults(page, url, pageNo) {
     }
     return out;
   });
-  return rows.filter(r => r.name && !/^linkedin member$/i.test(r.name));
+  const usable = rows.filter(r => r.name && !/^linkedin member$/i.test(r.name));
+  if (!usable.length) await snap(page, `search-empty-p${pageNo}`);
+  return usable;
 }

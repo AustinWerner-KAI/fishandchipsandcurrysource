@@ -15,7 +15,7 @@ export async function cycle(page, store, cfg) {
 
 export async function runCampaign(cfg, { once = false, headless = false } = {}) {
   const store = new Store();
-  const { context, page } = await openBrowser({ headless, timezone: cfg.workingHours?.timezone });
+  const { context, page } = await openBrowser({ headless });
   try {
     if (!(await isLoggedIn(page))) throw new NotLoggedInError('Not logged in. Run: npm run login');
     log(`campaign "${cfg.name}" (${cfg.mode}) caps`, cfg.dailyCaps, 'hours', cfg.workingHours || 'any');

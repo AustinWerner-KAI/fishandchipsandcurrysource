@@ -9,25 +9,20 @@ export const SEL = {
   searchResultLinks: ['a[href*="/in/"]'],
   searchNoResults: ['.search-reusables__no-results', 'h2:has-text("No results found")'],
 
-  // Profile page
+  // Profile page. Action buttons are looked up inside the top card (the section holding the h1)
+  // and by the person's name, so a "People you may know" card further down can never be clicked.
+  topCard: ['main section:has(h1)', 'main .pv-top-card', 'main'],
   profileName: ['main h1', 'h1.text-heading-xlarge'],
   profileHeadline: ['main .text-body-medium.break-words', 'main div.text-body-medium'],
   profileDegree: ['main span.dist-value', 'main .distance-badge span.dist-value', 'main span:has-text("1st")'],
-  connectButton: [
-    'main button[aria-label^="Invite"][aria-label$="to connect"]',
-    'main button[aria-label*="to connect"]',
-    'main .pvs-profile-actions button:has-text("Connect")',
-    'main button:has(span:text-is("Connect"))',
-  ],
-  moreActionsButton: ['main button[aria-label="More actions"]', 'main .pvs-profile-actions button:has-text("More")', 'main button:has(span:text-is("More"))'],
-  moreMenuConnect: [
-    'div[aria-label*="to connect"]',
-    '.artdeco-dropdown__content div[role="button"]:has-text("Connect")',
-    'li:has-text("Connect") div[role="button"]',
-  ],
-  pendingButton: ['main button[aria-label^="Pending"]', 'main button:has(span:text-is("Pending"))'],
-  messageButton: ['main button[aria-label^="Message"]', 'main a[href*="/messaging/"]', 'main button:has(span:text-is("Message"))'],
-  followButton: ['main button[aria-label^="Follow"]'],
+  // relative to the top card; {name} is replaced with the profile's name
+  connectButton: ['button[aria-label="Invite {name} to connect"]', 'button[aria-label$="to connect"]', 'button:has(span:text-is("Connect"))'],
+  moreActionsButton: ['button[aria-label="More actions"]', 'button:has(span:text-is("More"))'],
+  moreMenuConnect: ['[aria-label="Invite {name} to connect"]', '[role="button"][aria-label$="to connect"]'],
+  pendingButton: ['button[aria-label^="Pending"]', 'button:has(span:text-is("Pending"))'],
+  messageButton: ['button[aria-label="Message {name}"]', 'button[aria-label^="Message"]', 'button:has(span:text-is("Message"))'],
+  followButton: ['button[aria-label^="Follow"]'],
+  inmailMarker: ['input[name="subject"]', '.msg-form input[placeholder*="Subject"]', 'text=/InMail/i'],
 
   // Invitation modal
   addNoteButton: ['button[aria-label="Add a note"]', 'button:has(span:text-is("Add a note"))'],
@@ -55,11 +50,22 @@ export const SEL = {
   ],
 };
 
-// Returns the first candidate selector that exists on the page, or null.
-export async function firstVisible(page, candidates, timeout = 1500) {
+// CSS attribute-value escaping for names with quotes or backslashes.
+export function cssStr(v) {
+  return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+export function withName(candidates, name) {
+  return candidates
+    .filter(sel => !sel.includes('{name}') || name)
+    .map(sel => sel.replace('{name}', cssStr(name || '')));
+}
+
+// Returns the first candidate selector that exists on the page (or within `scope`), or null.
+export async function firstVisible(scope, candidates, timeout = 1500) {
   for (const sel of candidates) {
     try {
-      const loc = page.locator(sel).first();
+      const loc = scope.locator(sel).first();
       await loc.waitFor({ state: 'visible', timeout });
       return loc;
     } catch {
