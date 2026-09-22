@@ -151,6 +151,7 @@ details.card[open]>summary{margin-bottom:10px}
         <select class="hide" id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite</option><option value="linkedin">LinkedIn</option></select>
         <span id="rsSkillsWrap" class="row"><label class="sub" for="rsSkills">Skills (1 or 2)</label><input type="text" id="rsSkills" style="width:200px;padding:3px 8px" placeholder="AWS, Cloud Security"><button class="small" onclick="saveSkills()">Save</button></span></span>
         <button class="link" onclick="editRole()">Edit role</button>
+        <button class="link" id="btnRecord2" onclick="recordRoute()">Show me once</button>
       </div>
       <div class="sub" id="rsSkillHint" style="margin-top:4px"></div>
       <div class="sub" id="rsHours" style="margin-top:4px"></div>
@@ -287,7 +288,7 @@ function applyJob(j){
   const h=S&&S.hours, waiting = j.running && mine && j.name==='run' && h && !h.open && h.nextStart;
   const other = j.running && j.campaign && !mine ? ` (${((S&&S.roles)||[]).find(r=>r.name===j.campaign)?.title || j.campaign})` : '';
   $('#jobText').textContent = j.running ? (j.stopping ? 'stopping' : waiting ? `waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}${other}`) : 'idle';
-  for (const id of ['btnLogin','btnLoginR','btnSearch','btnRun','btnOnce','btnRecord']) { const b=$('#'+id); if(b) b.disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign)); }
+  for (const id of ['btnLogin','btnLoginR','btnSearch','btnRun','btnOnce','btnRecord','btnRecord2']) { const b=$('#'+id); if(b) b.disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign)); }
   $('#btnStop').disabled = !j.running;
   $('#btnStop').textContent = j.stopping ? 'Force stop' : 'Stop';
   if (j.running) $('#activity').open = true;
@@ -503,10 +504,14 @@ async function job(action, confirmed){
   load(); pollLog();
 }
 async function recordRoute(){
-  const what = prompt('What will you show me?\n1 = Recruiter search and a profile\n2 = Sending an InMail in Recruiter', '1'); if (what===null) return;
-  const name = what.trim()==='2' ? 'recruiter-inmail' : 'recruiter-search';
-  alert('A browser opens. Do it once at a normal pace, then quit that Chrome with Cmd+Q. Nothing you type is recorded.');
-  await api('/api/job',{action:'record', campaign:S.campaign, name, url:'https://www.linkedin.com/talent/home'}); lastLog=0; $('#log').textContent=''; $('#activity').open=true; load(); pollLog();
+  const what = prompt('What will you show me?\n1 = Connect with a note, on one person\'s profile\n2 = Sending an InMail in Recruiter Lite', '1'); if (what===null) return;
+  const inmail = what.trim()==='2';
+  const name = inmail ? 'recruiter-inmail' : 'connect-with-note';
+  const url = inmail ? 'https://www.linkedin.com/talent/home' : 'https://www.linkedin.com/mynetwork/';
+  alert(inmail
+    ? 'A browser opens in Recruiter. Open one candidate, send them an InMail as you normally would, then quit that Chrome with Cmd+Q. Nothing you type is recorded.'
+    : 'A browser opens. Go to one person you want to invite, press Connect (or ... then Connect), add your note and send it, then quit that Chrome with Cmd+Q. Nothing you type is recorded.');
+  await api('/api/job',{action:'record', campaign:S.campaign, name, url}); lastLog=0; $('#log').textContent=''; $('#activity').open=true; load(); pollLog();
 }
 async function doImport(){ const text=$('#importText').value.trim(); if(!text) return; const r=await api('/api/import',{campaign:S.campaign,text,approve:$('#importApprove').checked}); toast(`${r.added} added, ${r.skipped} skipped`); $('#importText').value=''; load(); }
 async function queueJson(){ let items; try{ items=JSON.parse($('#queueJson').value); }catch{ return toast('That is not valid JSON', true);} const r=await api('/api/queue',{campaign:S.campaign, items:[].concat(items)}); toast(`${r.n} queued`); $('#queueJson').value=''; load(); }
