@@ -4,7 +4,7 @@
 // Every action button is looked up inside the profile's top card AND by the person's name
 // ("Invite Jane Doe to connect"), so a suggested-people card further down the page is never clicked.
 import { SEL, firstVisible, anyPresent, withName } from './selectors.js';
-import { goto, guard, humanScroll, snap, typeLikeHuman } from './browser.js';
+import { goto, guard, humanScroll, snap, saveDom, typeLikeHuman } from './browser.js';
 import { sleep, randomBetween } from './limits.js';
 import { log, warn } from './log.js';
 import { normalizeUrl, firstNameOf } from './store.js';
@@ -16,15 +16,43 @@ async function textOf(scope, candidates) {
   return (await loc.innerText()).trim();
 }
 
-async function topCard(page) {
-  return (await firstVisible(page, SEL.topCard, 2500)) || page.locator('main');
+// The profile's own top card. When LinkedIn's layout has no h1, it is found from the person's name:
+// the nearest block around the name that also holds buttons. Null when it cannot be found, and
+// then nothing is clicked.
+async function topCard(page, name) {
+  const byClass = await firstVisible(page, SEL.topCard.slice(0, 2), 2500);
+  if (byClass) return byClass;
+  if (!name) return null;
+  const found = await page.evaluate(n => {
+    document.querySelectorAll('[data-sourcer-topcard]').forEach(x => x.removeAttribute('data-sourcer-topcard'));
+    const leaf = [...document.querySelectorAll('main *, body *')].find(e => e.children.length === 0 && e.textContent.trim() === n && e.offsetParent !== null);
+    if (!leaf) return false;
+    for (let a = leaf.parentElement, i = 0; a && a !== document.body && i < 12; a = a.parentElement, i++) {
+      if (a.querySelectorAll('button').length >= 2) { a.setAttribute('data-sourcer-topcard', '1'); return true; }
+    }
+    return false;
+  }, name).catch(() => false);
+  return found ? page.locator('[data-sourcer-topcard="1"]').first() : null;
+}
+
+// "(7) John Lawniczak | LinkedIn" -> "John Lawniczak"
+async function nameFromTitle(page) {
+  const t = await page.title().catch(() => '');
+  const n = t.replace(/^\(\d+\+?\)\s*/, '').split('|')[0].split(' - ')[0].trim();
+  if (!n || /^linkedin$/i.test(n) || n.length > 80) return '';
+  const onPage = await page.evaluate(x => document.body.innerText.includes(x), n).catch(() => false);
+  return onPage ? n : '';
 }
 
 export async function readProfile(page) {
-  const name = await textOf(page, SEL.profileName);
+  const name = (await textOf(page, SEL.profileName)).split('\n')[0].trim() || await nameFromTitle(page);
   const headline = await textOf(page, SEL.profileHeadline);
   const degreeRaw = await textOf(page, SEL.profileDegree);
-  const degree = (degreeRaw.match(/\b(1st|2nd|3rd)\b/) || [''])[0];
+  let degree = (degreeRaw.match(/\b(1st|2nd|3rd)\b/) || [''])[0];
+  if (!degree && name) {
+    // "John Lawniczak · 2nd": the degree printed right after the name
+    degree = await page.evaluate(n => { const t = document.body.innerText; const i = t.indexOf(n); const m = i >= 0 && t.slice(i + n.length, i + n.length + 40).match(/\b(1st|2nd|3rd)\b/); return m ? m[1] : ''; }, name).catch(() => '');
+  }
   const cur = await firstVisible(page, SEL.profileCurrentCompany, 800);
   const companyText = cur ? String(await cur.getAttribute('aria-label').catch(() => '') || '').replace(/^Current company:\s*/i, '').replace(/\.\s*Click.*$/i, '').trim() : '';
   let companyUrls = [];
@@ -49,6 +77,7 @@ export async function openProfile(page, url) {
   const info = await readProfile(page);
   if (!info.name) {
     await snap(page, 'no-profile-name');
+    await saveDom(page, 'no-profile-name');
     warn('could not read the profile name; buttons will only be matched inside the top card');
   }
   return info;
@@ -56,7 +85,8 @@ export async function openProfile(page, url) {
 
 // What the top card offers for this person.
 async function topCardButtons(page, name) {
-  const card = await topCard(page);
+  const card = await topCard(page, name);
+  if (!card) return { card: null };
   const connect = await firstVisible(card, withName(SEL.connectButton, name), 1200);
   const pending = await firstVisible(card, SEL.pendingButton, 600);
   const message = await firstVisible(card, withName(SEL.messageButton, name), 800);
@@ -69,6 +99,7 @@ export async function sendConnectionRequest(page, url, note, { clients } = {}) {
   const info = await openProfile(page, url);
   const client = clientOnProfile(info, clients);
   if (client) return { result: 'off-limits', info, client };
+  if (!(await topCard(page, info.name))) { await snap(page, 'no-top-card'); await saveDom(page, 'no-top-card'); return { result: 'failed', info }; }
   if (!info.name) return { result: 'failed', info };   // without the name, a suggested-person card could be clicked
   const b = await topCardButtons(page, info.name);
   if (info.degree === '1st') return { result: 'already-connected', info };
@@ -159,6 +190,7 @@ export async function openThread(page, url, ownName, { clients } = {}) {
   const info = await openProfile(page, url);
   const client = clientOnProfile(info, clients);
   if (client) return { opened: false, info, reason: 'off-limits', client };
+  if (!(await topCard(page, info.name))) { await snap(page, 'no-top-card'); await saveDom(page, 'no-top-card'); return { opened: false, info, reason: 'no-top-card' }; }
   if (!info.name) return { opened: false, info, reason: 'no-name' };   // cannot check whose thread opens
   const b = await topCardButtons(page, info.name);
   if (b.connect || b.pending || ['2nd', '3rd'].includes(info.degree)) return { opened: false, info, reason: 'not-connected' };
@@ -290,7 +322,9 @@ export async function closeThread(page) {
 // Own display name, read once from /in/me/ and cached in the store's meta.
 export async function readOwnName(page) {
   await goto(page, 'https://www.linkedin.com/in/me/');
-  const name = await textOf(page, SEL.profileName);
+  await sleep(1500);
+  const name = (await textOf(page, SEL.profileName)).split('\n')[0].trim() || await nameFromTitle(page);
+  if (!name) await saveDom(page, 'own-name-missing');
   if (!name) await snap(page, 'own-name-missing');
   log('own name', name || '(not found)');
   return name;

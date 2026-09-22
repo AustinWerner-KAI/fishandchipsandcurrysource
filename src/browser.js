@@ -127,6 +127,19 @@ export async function isLoggedIn(page) {
   }
 }
 
+// Saves the page's HTML next to the screenshots (on this Mac only), so a LinkedIn layout change
+// can be read and fixed. Kept to the last 10.
+export async function saveDom(page, label) {
+  try {
+    ensureDirs();
+    const file = path.join(SCREENSHOT_DIR, `${new Date().toISOString().replace(/[:.]/g, '-')}-${label}.html`);
+    fs.writeFileSync(file, await page.content(), { mode: 0o600 });
+    const old = fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('.html')).sort().slice(0, -10);
+    for (const f of old) fs.rmSync(path.join(SCREENSHOT_DIR, f), { force: true });
+    return file;
+  } catch { return null; }
+}
+
 export async function snap(page, label) {
   try {
     ensureDirs();

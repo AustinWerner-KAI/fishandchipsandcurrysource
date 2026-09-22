@@ -54,36 +54,83 @@ export async function readRecruiterResults(page) {
   }, SEL.recruiterResultItem.join(', '));
 }
 
-// Opens a left-panel filter (Locations, Skills), types the value and picks the first suggestion.
-async function addFacet(page, buttonSel, value, what) {
+// Opens a left-panel filter (Locations, Skills), types the value and picks the matching suggestion.
+// The text box is the first one AFTER the filter's own + button, so a box left open by another
+// filter (Locations) is never typed into, and a suggestion must contain the value typed:
+// "Azure" never becomes "Vermont, United States".
+export async function addFacet(page, buttonSel, value, what) {
+  await closeFacets(page);
   const btn = await firstVisible(page, buttonSel, 5000);
   if (!btn) { await snap(page, `recruiter-no-${what}-button`); warn(`could not find the Recruiter ${what} filter`); return false; }
   await btn.click();
   await sleep(randomBetween(600, 1100));
-  const input = await firstVisible(page, SEL.recruiterFacetInput, 3000);
-  if (!input) { await snap(page, `recruiter-no-${what}-input`); warn(`Recruiter ${what} box did not open; searching without "${value}"`); return false; }
+  const handle = await btn.evaluateHandle(el => {
+    const ok = i => i.type !== 'hidden' && i.id !== 'system-search-typeahead' && !/^Search by job title/.test(i.getAttribute('aria-label') || '') && i.offsetParent !== null;
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      const after = [...a.querySelectorAll('input[type="text"], input:not([type]), input[role="combobox"]')]
+        .filter(i => ok(i) && (el.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING));
+      if (after.length) {
+        document.querySelectorAll('[data-sourcer-facet]').forEach(x => x.removeAttribute('data-sourcer-facet'));
+        after[0].setAttribute('data-sourcer-facet', '1');
+        return true;
+      }
+    }
+    return false;
+  });
+  const input = (await handle.jsonValue()) ? page.locator('[data-sourcer-facet="1"]') : null;
+  if (!input) { await closeFacets(page); await snap(page, `recruiter-no-${what}-input`); warn(`Recruiter ${what} box did not open; searching without "${value}"`); return false; }
   const before = await firstHref(page);
+  await input.click();
   await typeLikeHuman(input, value);
   await sleep(randomBetween(1200, 2000));
-  const opt = await firstVisible(page, SEL.recruiterFacetOption, 5000);
+  // the suggestion list that belongs to this box, when LinkedIn says which one it is
+  const listId = await input.getAttribute('aria-controls').catch(() => null) || await input.getAttribute('aria-owns').catch(() => null);
+  const scope = listId ? page.locator(`[id="${listId.replace(/"/g, '')}"]`) : page;
+  const want = value.toLowerCase().split(/[ ,]+/).filter(Boolean);
+  let opt = null, label = '';
+  // aria-controls points at the list itself, so inside it the options are plain [role=option]
+  for (const sel of listId ? ['[role="option"]', '.artdeco-typeahead__result', ...SEL.recruiterFacetOption] : SEL.recruiterFacetOption) {
+    const opts = scope.locator(sel).locator('visible=true');
+    const n = Math.min(await opts.count().catch(() => 0), 8);
+    for (let i = 0; i < n && !opt; i++) {
+      const text = ((await opts.nth(i).innerText().catch(() => '')).split('\n')[0] || '').trim();
+      if (want.every(w => text.toLowerCase().includes(w))) { opt = opts.nth(i); label = text; }
+    }
+    if (opt) break;
+  }
   if (!opt) {
-    await page.keyboard.press('Escape');
+    await closeFacets(page);
     await snap(page, `recruiter-no-${what}-match`);
     warn(`Recruiter had no ${what} matching "${value}"; searching without it`);
     return false;
   }
-  const label = (await opt.innerText().catch(() => '')).split('\n')[0].trim();
   await opt.click();
-  log(`recruiter ${what}: ${value} -> ${label || '(first match)'}`);
+  log(`recruiter ${what}: ${value} -> ${label}`);
   const changed = await waitForResults(page, 12000, before);
   // the same person can still be first after a filter, so an unchanged list is fine when the chip shows
-  const chip = label ? await page.getByText(label, { exact: false }).locator('visible=true').count().catch(() => 0) : 0;
+  const chip = await page.getByText(label, { exact: false }).locator('visible=true').count().catch(() => 0);
+  await closeFacets(page);
   if (!changed && !chip) { await snap(page, `recruiter-${what}-not-applied`); warn(`Recruiter ${what} "${value}" did not apply`); return false; }
   await sleep(randomBetween(800, 1600));
   return true;
 }
 
+// Closes any open filter box so the next one starts clean.
+async function closeFacets(page) {
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.evaluate(() => { const a = document.activeElement; if (a && a !== document.body && a.blur) a.blur(); }).catch(() => {});
+  await sleep(300);
+}
+
 // At most two skills: more than that narrows Recruiter too far.
+// "Burlington, Vermont, United States" is outside a New York search. A bare area with no commas
+// ("Buffalo-Niagara Falls Area", "United States") is kept for Kai to judge.
+export function outsideArea(location, locs) {
+  const l = String(location || '').toLowerCase();
+  if (!locs?.length || !l || !l.includes(',')) return false;
+  return !locs.some(x => l.includes(String(x).toLowerCase().split(',')[0].trim()));
+}
+
 export function recruiterSkills(role) {
   return [...new Set((role?.recruiterSkills || []).map(s => String(s).trim()).filter(Boolean))].slice(0, 2);
 }
@@ -139,7 +186,8 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
     let fresh = 0;
     for (const r of rows) {
       if (!r.recruiterUrl || store.findByRecruiterUrl(r.recruiterUrl)) continue;
-      store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
+      const lead = store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
+      if (outsideArea(r.location, locs)) store.setStatus(lead.url, 'skipped', { error: `outside ${locs.join(' / ')} (${r.location})` });
       fresh++;
     }
     added += fresh;

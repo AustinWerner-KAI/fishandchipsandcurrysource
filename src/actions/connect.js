@@ -16,12 +16,20 @@ export function weeklyLimitActive(store, now = Date.now()) {
 // when it could not be found or the person is already on file (never contacted twice).
 export async function resolveRecruiterLead(page, store, lead, ops = linkedin, pause = true) {
   if (!ops.publicUrlFor) ops = { ...ops, publicUrlFor: (await import('./recruiter.js')).publicUrlFor };
-  let pub = null;
+  let pub = null, netErr = null;
   try { pub = await ops.publicUrlFor(page, lead.url); }
-  catch (e) { if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e; warn('recruiter lookup failed', lead.url, e.message); }
+  catch (e) { if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e; netErr = e; warn('recruiter lookup failed', lead.url, e.message); }
   store.refresh();
   store.recordAction('profileViews', lead.url);
-  if (!pub) { store.setStatus(lead.url, 'error', { error: 'could not find their normal LinkedIn profile from Recruiter' }); store.save(); return null; }
+  if (!pub) {
+    const cur = store.get(lead.url) || lead;
+    cur.lookupFails = (cur.lookupFails || 0) + 1;
+    // a slow or dropped page is tried again next pass; three misses in a row and Kai is told
+    if (cur.lookupFails >= 3 || !netErr) store.setStatus(lead.url, 'error', { error: 'could not find their normal LinkedIn profile from Recruiter' });
+    store.save();
+    if (pause) await sleep(humanPauseMs([20, 60]));
+    return null;
+  }
   const r = store.rekey(lead.url, pub);
   if (r.conflict) {
     store.setStatus(lead.url, 'skipped', { error: `already on file (${r.conflict.campaign}, ${r.conflict.status})` });

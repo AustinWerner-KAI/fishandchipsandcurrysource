@@ -53,6 +53,29 @@ $('.msg-form__send-button').onclick=()=>{const ed=$('.msg-form__contenteditable'
 $('button[data-control-name="overlay.close_conversation_window"]').onclick=()=>{$('#overlay').style.display='none'};
 </script></body></html>`;
 
+// LinkedIn's newer layout: no h1, no top-card classes, a plain "Connect" button, and a
+// "More profiles for you" column with Connect buttons of its own.
+const modern = () => `<!doctype html><html><head><title>(7) Eve Modern | LinkedIn</title></head><body>
+<nav id="global-nav">nav</nav>
+<main><div class="cols">
+  <div class="left"><div class="card">
+    <div><p><span>Eve Modern</span> <span>· 2nd</span></p><p>Sr. Security Engineer</p></div>
+    <div><button id="c1"><span>Connect</span></button><button><span>View in Recruiter</span></button><button aria-label="More actions"><span>…</span></button></div>
+  </div></div>
+  <aside class="right"><h2>More profiles for you</h2>
+    <div><span>Stranger Three</span><button id="s1" aria-label="Invite Stranger Three to connect"><span>Connect</span></button></div>
+    <div><span>Stranger Four</span><button id="s2"><span>Connect</span></button></div>
+  </aside></div></main>
+<div id="modal" style="display:none" class="artdeco-modal">
+  <button aria-label="Add a note">Add a note</button><textarea id="custom-message" name="message" style="display:none"></textarea>
+  <button aria-label="Send invitation" style="display:none">Send</button><button aria-label="Dismiss">x</button></div>
+<script>
+const $=s=>document.querySelector(s);
+document.querySelectorAll('button[id]').forEach(b=>b.onclick=()=>{window.__clicked=b.id;$('#modal').style.display='block'});
+$('button[aria-label="Add a note"]').onclick=()=>{$('#custom-message').style.display='block';$('button[aria-label="Send invitation"]').style.display='inline'};
+$('button[aria-label="Send invitation"]').onclick=()=>{$('#modal').style.display='none';window.__invited=(window.__invited||[]).concat(window.__clicked);window.__note=$('#custom-message').value;$('#c1').outerHTML='<button><span>Pending</span></button>'};
+</script></body></html>`;
+
 export function startFake(port = 4790) {
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
@@ -60,6 +83,7 @@ export function startFake(port = 4790) {
     if (u.pathname.startsWith('/in/connected')) return res.end(profile('connected', { degree: '1st', name: 'Bob Connected' }));
     if (u.pathname.startsWith('/in/pending')) return res.end(profile('pending', { pending: true }));
     if (u.pathname.startsWith('/in/follow-first')) return res.end(profile('follow-first', { connectUnderMore: true, name: 'Cara Follow' }));
+    if (u.pathname.startsWith('/in/modern')) return res.end(modern());
     if (u.pathname.startsWith('/in/at-client')) return res.end(profile('at-client', { name: 'Dee Client', company: 'Kraken' }));
     if (u.pathname.startsWith('/in/')) return res.end(profile('ann'));
     res.end('<main>nothing</main>');

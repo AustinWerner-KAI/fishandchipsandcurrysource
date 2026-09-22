@@ -34,8 +34,9 @@ export const SEL = {
 
   // Profile page. Action buttons are looked up inside the top card (the section holding the h1)
   // and by the person's name, so a "People you may know" card further down can never be clicked.
-  topCard: ['main section:has(h1)', 'main .pv-top-card', 'main'],
-  profileName: ['main h1', 'h1.text-heading-xlarge'],
+  // never the whole page: "More profiles for you" further down has Connect buttons of its own
+  topCard: ['main section:has(h1)', 'main .pv-top-card', '[data-sourcer-topcard]'],
+  profileName: ['main h1', 'h1.text-heading-xlarge', 'h1'],
   profileHeadline: ['main .text-body-medium.break-words', 'main div.text-body-medium'],
   // current company: the top card's "Current company" button, then company links in the page
   profileCurrentCompany: ['main button[aria-label^="Current company"]', 'main [aria-label^="Current company"]'],
