@@ -142,6 +142,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (b.action === 'stop') return json(200, jobs.stop());
         const args = [];
         if (b.action === 'search' && b.url) args.push(b.url);
+        if (b.action === 'record') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'record needs a linkedin.com URL' }); args.push(String(b.name || 'route').slice(0, 40), b.url); }
         if (b.action === 'probe') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'probe needs a linkedin.com URL' }); args.push(b.url); }
         return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
       }
@@ -255,7 +256,11 @@ export function createApp({ jobs = new Jobs() } = {}) {
 }
 
 export function startApp({ port = 4747 } = {}) {
-  const server = createApp();
+  const jobs = new Jobs();
+  const server = createApp({ jobs });
+  // Closing the Terminal window (or Ctrl+C) stops the running job and its Chrome too.
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { jobs.killAll(); process.exit(0); });
+  process.on('exit', () => jobs.killAll());
   server.listen(port, '127.0.0.1', () => log(`Sourcer is open at http://localhost:${port}`));
   return server;
 }

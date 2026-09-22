@@ -145,7 +145,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
   <div class="stats" id="stats"></div>
 
   <div class="card">
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Activity</h2><span class="sub" id="jobSub"></span></div>
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Activity</h2><div class="row"><span class="sub" id="jobSub"></span><button class="small" id="btnRecord" onclick="recordRoute()" title="Opens the browser and writes down each page and click while you do something once">Show me once (record)</button></div></div>
     <div class="log" id="log">Nothing running. Press a button above.</div>
     <div class="shots" id="shots"></div>
   </div>
@@ -242,6 +242,8 @@ function applyJob(j){
   $('#jobSub').textContent = j.running ? `started ${when(j.startedAt)}` : (j.history.length ? `last: ${j.history[j.history.length-1].name} ${when(j.history[j.history.length-1].endedAt)}` : '');
   for (const id of ['btnLogin','btnLoginR','btnSearch','btnOnce','btnRun']) $('#'+id).disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign));
   $('#btnStop').disabled = !j.running;
+  $('#btnStop').textContent = j.stopping ? 'Stopping… press again to force' : 'Stop';
+  $('#btnRecord').disabled = j.running;
 }
 function render(){
   const draft = openComposer ? { t: $('#t-'+key(openComposer.url))?.value, n: $('#n-'+key(openComposer.url))?.value, d: $('#d-'+key(openComposer.url))?.value } : null;
@@ -312,6 +314,14 @@ async function job(action){
   await api('/api/job',{action, campaign:S.campaign, url: url||undefined});
   lastLog = 0; $('#log').textContent='';
   load(); pollLog();
+}
+async function recordRoute(){
+  const where = prompt('What do you want to show me?\n\n1 = Recruiter search and a profile\n2 = Sending an InMail in Recruiter\n3 = Something else (you type the start page)', '1'); if (where===null) return;
+  const routes = { '1': ['recruiter-search','https://www.linkedin.com/talent/home'], '2': ['recruiter-inmail','https://www.linkedin.com/talent/home'] };
+  let r = routes[where.trim()];
+  if (!r) { const url = prompt('Start page (a linkedin.com link)', 'https://www.linkedin.com/talent/home'); if (!url) return; r = ['route', url]; }
+  alert('A browser window opens. Do the steps once at a normal pace. Do not send anything you do not mean to. Close the window when you are done. Nothing you type is recorded, only which box you typed in.');
+  await api('/api/job',{action:'record', campaign:S.campaign, name:r[0], url:r[1]}); lastLog=0; $('#log').textContent=''; load(); pollLog();
 }
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
 async function approveVisible(on){ const urls = S.leads.filter(l=>(!filter||l.status===filter)&&l.status==='new').map(l=>l.url); if(!urls.length) return toast('No new people shown'); if(!confirm(`${on?'Approve':'Un-approve'} ${urls.length} people?`)) return; await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }

@@ -147,6 +147,10 @@ async function main() {
         log('probe saved', path.join(dir, stamp + '.{png,html,links.json}'), 'final url', page.url());
       });
     }
+    case 'record': {
+      const { recordRoute } = await import('./record.js');
+      return recordRoute(positional[0], positional[1] || 'https://www.linkedin.com/talent/home');
+    }
     case 'menu':
       return menu();
     default:

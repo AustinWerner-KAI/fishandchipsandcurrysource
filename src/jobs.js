@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'cli.js');
-const BROWSER_JOBS = new Set(['login', 'login-recruiter', 'search', 'run', 'once', 'followup', 'connect', 'probe']);
+const BROWSER_JOBS = new Set(['login', 'login-recruiter', 'search', 'run', 'once', 'followup', 'connect', 'probe', 'record']);
 
 export class Jobs {
   constructor({ maxLines = 400 } = {}) {
@@ -32,6 +32,7 @@ export class Jobs {
     const c = this.current;
     return {
       running: !!c,
+      stopping: !!c?.stopping,
       name: c?.name || null,
       campaign: c?.campaign || null,
       startedAt: c?.startedAt || null,
@@ -43,11 +44,12 @@ export class Jobs {
   start(name, { campaign, args = [], env = {} } = {}) {
     if (!BROWSER_JOBS.has(name)) throw new Error(`unknown job ${name}`);
     if (this.current) throw new Error(`${this.current.name} is already running. Stop it first.`);
-    const cliArgs = name === 'once' ? ['run', campaign, '--once'] : name === 'login' ? ['login'] : name === 'login-recruiter' ? ['login-recruiter'] : name === 'probe' ? ['probe', ...args] : [name, campaign, ...args];
+    const cliArgs = name === 'once' ? ['run', campaign, '--once'] : name === 'login' ? ['login'] : name === 'login-recruiter' ? ['login-recruiter'] : name === 'probe' ? ['probe', ...args] : name === 'record' ? ['record', ...args] : [name, campaign, ...args];
     const child = spawn(process.execPath, [CLI, ...cliArgs], {
       cwd: process.cwd(),
       env: { ...process.env, ...env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',   // own process group: Stop can end the job AND its Chrome
     });
     const job = { name, campaign: campaign || null, startedAt: new Date().toISOString(), child };
     this.current = job;
@@ -65,9 +67,19 @@ export class Jobs {
   stop() {
     const c = this.current;
     if (!c) return this.status();
+    if (c.stopping) { killGroup(c.child, 'SIGKILL'); return this.status(); }   // second press: no waiting
+    c.stopping = true;
     this.push(`>>> stopping ${c.name}`);
-    c.child.kill('SIGINT');
-    setTimeout(() => { if (this.current === c) c.child.kill('SIGTERM'); }, 5000).unref();
+    c.child.kill('SIGINT');                                   // polite: Playwright closes Chrome and exits
+    setTimeout(() => { if (this.current === c) { this.push('>>> forcing stop'); killGroup(c.child, 'SIGKILL'); } }, 4000).unref();
     return this.status();
   }
+
+  // The app is closing: take the running job and its browser with it.
+  killAll() { if (this.current) killGroup(this.current.child, 'SIGKILL'); }
+}
+
+function killGroup(child, sig) {
+  try { if (process.platform !== 'win32') process.kill(-child.pid, sig); else child.kill(sig); }
+  catch { try { child.kill(sig); } catch {} }
 }
