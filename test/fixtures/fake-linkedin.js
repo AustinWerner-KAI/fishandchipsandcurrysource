@@ -76,6 +76,31 @@ $('button[aria-label="Add a note"]').onclick=()=>{$('#custom-message').style.dis
 $('button[aria-label="Send invitation"]').onclick=()=>{$('#modal').style.display='none';window.__invited=(window.__invited||[]).concat(window.__clicked);window.__note=$('#custom-message').value;$('#c1').outerHTML='<button><span>Pending</span></button>'};
 </script></body></html>`;
 
+// Recruiter Lite profile + InMail composer, as Kai's recording shows it (22 Sep 2026)
+const recruiterProfile = () => `<!doctype html><html><head><title>Nathan Test | Recruiter</title></head><body>
+<nav id="global-nav">nav</nav>
+<main>
+  <h1>Nathan Test</h1>
+  <button data-test-component="message-icon-btn" aria-label="Message Nathan"><span>Message</span></button>
+  <div id="slot"></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+$('button[data-test-component="message-icon-btn"]').onclick=()=>{
+  $('#slot').innerHTML = \`<section class="multi-message-composer">
+    <div class="ts-common-typeahead"><input class="artdeco-typeahead__input ts-common-typeahead__input" type="text" aria-label="Search template"></div>
+    <input type="text" name="subject" placeholder="Subject">
+    <div class="rich-text-editor__editor-elem ql-container"><div class="ql-editor" contenteditable="true" role="textbox" style="min-height:120px;display:block"><p><br></p></div></div>
+    <div class="compose-actions"><span>Preview | 1/84 InMail Credits</span>
+      <button class="artdeco-button--primary" data-test-messaging-submit-btn><span>Send this message</span> Send</button>
+      <button aria-label="Dismiss">x</button></div></section>\`;
+  $('button[data-test-messaging-submit-btn]').onclick=()=>{
+    window.__inmail={subject:$('input[name=subject]').value, body:$('.ql-editor').innerText, template:$('.ts-common-typeahead__input').value};
+    $('#slot').innerHTML='<div>Message sent</div>';
+  };
+};
+</script></body></html>`;
+
 export function startFake(port = 4790) {
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
@@ -83,6 +108,7 @@ export function startFake(port = 4790) {
     if (u.pathname.startsWith('/in/connected')) return res.end(profile('connected', { degree: '1st', name: 'Bob Connected' }));
     if (u.pathname.startsWith('/in/pending')) return res.end(profile('pending', { pending: true }));
     if (u.pathname.startsWith('/in/follow-first')) return res.end(profile('follow-first', { connectUnderMore: true, name: 'Cara Follow' }));
+    if (u.pathname.startsWith('/talent/profile')) return res.end(recruiterProfile());
     if (u.pathname.startsWith('/in/modern')) return res.end(modern());
     if (u.pathname.startsWith('/in/at-client')) return res.end(profile('at-client', { name: 'Dee Client', company: 'Kraken' }));
     if (u.pathname.startsWith('/in/')) return res.end(profile('ann'));

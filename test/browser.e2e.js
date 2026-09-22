@@ -92,6 +92,21 @@ try {
     assert.equal(await addFacet(page, 'skill', 'Quantum Basketweaving'), false);
     assert.deepEqual(await page.evaluate(() => window.__picked), ['New York, United States', 'Microsoft Azure']);
   }
+  // Recruiter InMail: rehearsal fills it in and does not send; a real send fills, sends, and proves it
+  {
+    const { sendRecruiterInMail } = await import('../src/actions/inmail.js');
+    let r = await sendRecruiterInMail(page, 'http://127.0.0.1:4790/talent/profile/ABC', { subject: 'Cloud Engineer, New York', body: 'Hi Nathan,\n\nQuick one about a role.', rehearse: true });
+    assert.equal(r.rehearsed, true);
+    assert.equal(r.sent, false);
+    assert.deepEqual(r.credits, { cost: 1, left: 84 });
+    assert.equal(await page.evaluate(() => window.__inmail), undefined, 'a rehearsal never sends');
+    r = await sendRecruiterInMail(page, 'http://127.0.0.1:4790/talent/profile/ABC', { subject: 'Cloud Engineer, New York', body: 'Hi Nathan,\n\nQuick one about a role.', rehearse: false });
+    assert.equal(r.sent, true);
+    const got = await page.evaluate(() => window.__inmail);
+    assert.equal(got.subject, 'Cloud Engineer, New York');
+    assert.match(got.body, /^Hi Nathan,/);
+    assert.equal(got.template, '', 'the template box is never typed into');
+  }
   console.log('browser e2e: all good');
 } finally {
   await context.close();
