@@ -8,6 +8,7 @@ import { goto, guard, humanScroll, snap, typeLikeHuman } from './browser.js';
 import { sleep, randomBetween } from './limits.js';
 import { log, warn } from './log.js';
 import { normalizeUrl, firstNameOf } from './store.js';
+import { matchClient, companyFromHeadline } from './offlimits.js';
 
 async function textOf(scope, candidates) {
   const loc = await firstVisible(scope, candidates, 1500);
@@ -24,7 +25,22 @@ export async function readProfile(page) {
   const headline = await textOf(page, SEL.profileHeadline);
   const degreeRaw = await textOf(page, SEL.profileDegree);
   const degree = (degreeRaw.match(/\b(1st|2nd|3rd)\b/) || [''])[0];
-  return { name, firstName: firstNameOf(name), headline, degree };
+  const cur = await firstVisible(page, SEL.profileCurrentCompany, 800);
+  const companyText = cur ? String(await cur.getAttribute('aria-label').catch(() => '') || '').replace(/^Current company:\s*/i, '').replace(/\.\s*Click.*$/i, '').trim() : '';
+  let companyUrls = [];
+  for (const sel of SEL.profileCompanyLinks) {
+    companyUrls = await page.locator(sel).evaluateAll(as => as.slice(0, 2).map(a => a.href)).catch(() => []);
+    if (companyUrls.length) break;
+  }
+  return { name, firstName: firstNameOf(name), headline, degree, companyText, companyUrls };
+}
+
+// The client this open profile works at, if any (checked before any button is pressed).
+function clientOnProfile(info, clients) {
+  if (!clients?.length) return null;
+  return matchClient(clients, { company: info.companyText })
+    || info.companyUrls.map(u => matchClient(clients, { companyUrl: u })).find(Boolean)
+    || matchClient(clients, { company: companyFromHeadline(info.headline) });
 }
 
 export async function openProfile(page, url) {
@@ -49,8 +65,10 @@ async function topCardButtons(page, name) {
 }
 
 // Returns one of: 'sent' | 'already-connected' | 'pending' | 'no-button' | 'weekly-limit' | 'email-required' | 'failed'
-export async function sendConnectionRequest(page, url, note) {
+export async function sendConnectionRequest(page, url, note, { clients } = {}) {
   const info = await openProfile(page, url);
+  const client = clientOnProfile(info, clients);
+  if (client) return { result: 'off-limits', info, client };
   if (!info.name) return { result: 'failed', info };   // without the name, a suggested-person card could be clicked
   const b = await topCardButtons(page, info.name);
   if (info.degree === '1st') return { result: 'already-connected', info };
@@ -137,8 +155,10 @@ export async function dismissModal(page) {
 // Opens the message overlay from a profile and reads the thread.
 // Returns { opened, reason?, info, editor?, lastFrom: 'them'|'me'|null, lastText }
 // reason: 'not-connected' (Connect button shown) | 'no-message-button' | 'inmail' | 'no-editor'
-export async function openThread(page, url, ownName) {
+export async function openThread(page, url, ownName, { clients } = {}) {
   const info = await openProfile(page, url);
+  const client = clientOnProfile(info, clients);
+  if (client) return { opened: false, info, reason: 'off-limits', client };
   if (!info.name) return { opened: false, info, reason: 'no-name' };   // cannot check whose thread opens
   const b = await topCardButtons(page, info.name);
   if (b.connect || b.pending || ['2nd', '3rd'].includes(info.degree)) return { opened: false, info, reason: 'not-connected' };

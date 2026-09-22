@@ -16,6 +16,7 @@ import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCo
 import { scoreLead } from './rank.js';
 import { render, renderChecked, nameFor } from './template.js';
 import { rankLeads, cleanLead } from './rank.js';
+import { allClients, offLimits } from './offlimits.js';
 import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
@@ -33,11 +34,12 @@ export const DEFAULT_INMAIL = {
 };
 
 // People due an InMail: invited, not accepted after `afterDays`, plus those whose one follow-up is due.
-export function inmailList(store, cfg, now = new Date()) {
+export function inmailList(store, cfg, now = new Date(), clients = allClients()) {
   const im = cfg?.inmail; if (!im) return [];
   const out = [], firsts = [];
   for (const l of store.leads({ campaign: cfg.name })) {
     if (l.status !== 'invited' || !l.invitedAt || l.preexisting) continue;
+    if (offLimits(l, clients)) continue;                                   // works at a client
     const sent = l.inmail || {};
     if (sent.followUpAt || sent.replied) continue;                          // lane over
     const subj = renderChecked(im.subject, l, cfg.role);
@@ -57,7 +59,8 @@ export function inmailList(store, cfg, now = new Date()) {
 // The 1st connections message as the best-matched person on that list would get it.
 function firstPreview(store, cfg) {
   if (!cfg?.firstDegree?.message) return null;
-  const top = rankLeads(store.leads({ campaign: cfg.name, status: 'new' }), cfg.role).filter(l => l.degree === '1st')
+  const clients = allClients();
+  const top = rankLeads(store.leads({ campaign: cfg.name, status: 'new' }), cfg.role).filter(l => l.degree === '1st' && !offLimits(l, clients))
     .sort((a, b) => (b.rank.score ?? 0) - (a.rank.score ?? 0))[0];
   return top ? { name: top.name, ...renderChecked(cfg.firstDegree.message, top, cfg.role) } : null;
 }
@@ -100,6 +103,7 @@ export function state(jobs, campaignName) {
   const c = campaignName && campaigns.includes(campaignName) ? campaignName : campaigns[0] || null;
   let cfg = null, cfgError = null;
   if (c) { try { cfg = loadCampaign(c); } catch (e) { cfgError = e.message; cfg = { name: c, ...(readCampaignRaw(c) || {}) }; } }
+  const clients = allClients();
   const s = c ? summarise(store, c) : { leads: [], counts: {}, caps: null, today: {}, lastStop: null, weekly: null };
   const shots = fs.existsSync(SCREENSHOT_DIR) ? fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('.png')).sort().slice(-5).reverse() : [];
   const roles = campaigns.map(name => {
@@ -114,7 +118,8 @@ export function state(jobs, campaignName) {
     inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), ACCOUNT_TZ) : null,
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
-    leads: rankLeads(s.leads, cfg?.role).map(l => ({ ...l, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
+    client: cfg?.role?.client || null,
+    leads: rankLeads(s.leads, cfg?.role).map(l => ({ ...l, offLimits: l.offLimits || offLimits(l, clients)?.name || null, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
     weeklyLimit: weeklyLimitActive(store),
     ownName: store.data.meta.ownName || null,
@@ -194,9 +199,11 @@ export function createApp({ jobs = new Jobs() } = {}) {
       }
       if (u.pathname === '/api/approve') {
         const store = new Store();
+        const clients = allClients();
         let n = 0;
         for (const url of [].concat(b.urls || b.url || [])) {
           const l = store.get(url);
+          if (l && b.approved && offLimits(l, clients)) continue;          // never approve someone at a client
           if (l) { l.approved = !!b.approved; n++; }
         }
         store.save();
@@ -315,11 +322,12 @@ export function createApp({ jobs = new Jobs() } = {}) {
         // { campaign, urls } message these 1st connections: free, sent by the runner as LinkedIn messages
         if (!readCampaignRaw(b.campaign)) return json(400, { error: 'Pick a role first' });
         const store = new Store();
+        const clients = allClients();
         const at = new Date().toISOString();
         let n = 0;
         for (const url of [].concat(b.urls || [])) {
           const l = store.get(url);
-          if (!l || l.campaign !== b.campaign || l.status !== 'new' || cleanLead(l).degree !== '1st' || l.direct) continue;
+          if (!l || l.campaign !== b.campaign || l.status !== 'new' || cleanLead(l).degree !== '1st' || l.direct || offLimits(l, clients)) continue;
           store.setStatus(l.url, 'accepted', { degree: '1st', preexisting: true, acceptedAt: at, direct: { at }, approved: true });
           n++;
         }

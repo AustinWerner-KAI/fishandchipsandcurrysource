@@ -4,6 +4,7 @@ import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, pick, withinWorkingHours } 
 import { log, warn } from '../log.js';
 import { isRecruiterUrl } from '../store.js';
 import { cleanLead } from '../rank.js';
+import { allClients, offLimits } from '../offlimits.js';
 
 const WEEK = 7 * 86400000;
 
@@ -41,9 +42,11 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'connects', new Date(), tz), max ?? Infinity);
   if (budget <= 0) { log('connect: daily cap reached'); return { sent: 0 }; }
 
+  const clients = allClients();
   const candidates = store.leads({ campaign: cfg.name, status: 'new' })
     .filter(l => cfg.autoApprove || l.approved)
     .filter(l => cleanLead(l).degree !== '1st')          // already connected: they go in the 1st connections list
+    .filter(l => !offLimits(l, clients))                 // works at a client: never contacted
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.createdAt.localeCompare(b.createdAt));
   if (!candidates.length) { log('connect: nothing approved and waiting'); return { sent: 0 }; }
 
@@ -77,7 +80,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
 
     let r;
     try {
-      r = await ops.sendConnectionRequest(page, lead.url, note);
+      r = await ops.sendConnectionRequest(page, lead.url, note, { clients });
     } catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
       warn('connect failed', lead.url, e.message);
@@ -91,6 +94,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     store.recordAction('profileViews', cur.url);
     if (r.info?.name && !cur.name) { cur.name = r.info.name; cur.firstName = r.info.firstName; }
     if (r.info?.headline && !cur.headline) cur.headline = r.info.headline;
+    if (r.info?.companyText && !cur.company) cur.company = r.info.companyText;
 
     switch (r.result) {
       case 'sent':
@@ -98,6 +102,10 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
         store.recordAction('connects', cur.url, { note: r.noteSent ? note : '' });
         sent++; budget--;
         log(`invited ${cur.name || cur.url}`);
+        break;
+      case 'off-limits':
+        store.setStatus(cur.url, 'skipped', { error: `works at your client ${r.client.name}`, offLimits: r.client.name, approved: false });
+        log(`${cur.name || cur.url} works at your client ${r.client.name}: not invited`);
         break;
       case 'already-connected':
         // already connected: back to the 1st connections list, where a free message can go instead

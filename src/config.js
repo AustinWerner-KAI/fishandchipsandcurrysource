@@ -95,6 +95,9 @@ export function validate(cfg) {
     else if ((wh.start || '09:00') >= (wh.end || '18:00')) errs.push('working hours: start must be before end');
     if (wh.days !== undefined && (!Array.isArray(wh.days) || !wh.days.length || !wh.days.every(d => Number.isInteger(d) && d >= 0 && d <= 6))) errs.push('working hours: pick at least one day');
   }
+  const cl = cfg.role?.client;
+  if (cl?.url && !/^https?:\/\/([a-z]+\.)?linkedin\.com\/company\/[^/?#]+/i.test(cl.url)) errs.push('client: the link must be a LinkedIn company page, like linkedin.com/company/krakenfx');
+  if (cl && !cl.name && !cl.url) errs.push('client: give a name or a company page link');
   if (cfg.role) {
     if (!cfg.role.title) errs.push('role.title is empty');
     if ((cfg.role.recruiterSkills || []).length > 2) errs.push('role.recruiterSkills: two at most');

@@ -20,6 +20,12 @@ try {
   r = await sendConnectionRequest(page, 'http://127.0.0.1:4790/in/follow-first/', 'Hey Cara.');
   assert.equal(r.result, 'sent');
   assert.deepEqual(await page.evaluate(() => window.__invited), ['Invite Cara Follow to connect']);
+  // works at a client: the profile's current company stops the invite before any click
+  const clients = [{ name: 'Kraken', slug: 'krakenfx', names: ['kraken'] }];
+  r = await sendConnectionRequest(page, 'http://127.0.0.1:4790/in/at-client/', 'Hey Dee.', { clients });
+  assert.equal(r.result, 'off-limits');
+  assert.equal(r.info.companyText, 'Kraken');
+  assert.deepEqual(await page.evaluate(() => window.__invited || []), []);
   // already pending
   r = await sendConnectionRequest(page, 'http://127.0.0.1:4790/in/pending/', 'x');
   assert.equal(r.result, 'pending');

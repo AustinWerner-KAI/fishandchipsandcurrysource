@@ -45,6 +45,8 @@ export async function readRecruiterResults(page) {
         headline: t('[data-test-row-lockup-headline]'),
         location: t('[data-test-row-lockup-location]'),
         industry: t('[data-test-current-employer-industry]').replace(/^·\s*/, ''),
+        // first experience line is the current job: "Senior Security Engineer at Kraken · 2 yrs"
+        company: ((t('[data-test-description-description]').split('·')[0] || '').match(/\sat\s(.+)$/i)?.[1] || '').trim(),
         degree,
       });
     }
@@ -137,7 +139,7 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
     let fresh = 0;
     for (const r of rows) {
       if (!r.recruiterUrl || store.findByRecruiterUrl(r.recruiterUrl)) continue;
-      store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: '', campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
+      store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
       fresh++;
     }
     added += fresh;

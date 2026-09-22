@@ -6,6 +6,13 @@ import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, withinWorkingHours } from '
 import { log, warn } from '../log.js';
 import { isRecruiterUrl } from '../store.js';
 import { resolveRecruiterLead } from './connect.js';
+import { allClients, offLimits } from '../offlimits.js';
+
+// Someone found to work at a client: nothing more goes to them.
+function markOffLimits(store, lead, client) {
+  store.setStatus(lead.url, 'skipped', { error: `works at your client ${client.name}`, offLimits: client.name });
+  log(`${lead.name || lead.url} works at your client ${client.name}: nothing sent`);
+}
 
 const DAY = 86400000;
 const checked = (t, lead, role) => { const r = renderChecked(t, lead, role); return r.problem ? r : { text: r.text }; };
@@ -110,6 +117,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     .filter(x => x.msg);
   if (!due.length) { log('messages: nothing due'); return { sent: 0 }; }
 
+  const clients = allClients();
   let sent = 0;
   for (const { lead: picked } of due) {
     if (budget <= 0) break;
@@ -120,6 +128,10 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     let lead = store.refresh(picked.url);
     const msg = lead && dueMessage(lead, cfg, new Date());
     if (!msg) continue;
+    // Kai's own replies still go; nothing automatic goes to someone at a client
+    const own = msg.source === 'queue' && msg.resume;
+    const listed = !own && offLimits(lead, clients);
+    if (listed) { markOffLimits(store, lead, listed); store.save(); continue; }
     if (msg.problem) {
       // no message goes out with a gap where the name should be
       if (lead.error !== msg.problem) { lead.error = msg.problem; store.save(); warn(`${lead.name || lead.url}: ${msg.problem}, not sent`); }
@@ -135,7 +147,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
 
     let t;
     try {
-      t = await ops.openThread(page, lead.url, ownName);
+      t = await ops.openThread(page, lead.url, ownName, { clients: own ? [] : clients });
     } catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
       warn('open thread failed', lead.url, e.message);
@@ -148,7 +160,8 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     store.recordAction('profileViews', lead.url);
     lead.lastCheckedAt = new Date().toISOString();
     if (!t.opened) {
-      if (t.reason === 'not-connected') {
+      if (t.reason === 'off-limits') markOffLimits(store, lead, t.client);
+      else if (t.reason === 'not-connected') {
         store.setStatus(lead.url, 'skipped', { error: 'no longer a 1st degree connection' });
       } else {
         warn(`could not open thread for ${lead.url}: ${t.reason} (screenshot saved, nothing sent)`);

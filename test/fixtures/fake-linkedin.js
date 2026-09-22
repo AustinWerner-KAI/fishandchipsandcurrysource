@@ -1,13 +1,14 @@
 // A tiny fake of the LinkedIn pages Sourcer touches, using the same markup shapes as selectors.js.
 import http from 'node:http';
 
-const profile = (slug, { degree = '2nd', pending = false, name = 'Ann Example', connectUnderMore = false } = {}) => `<!doctype html><html><body>
+const profile = (slug, { degree = '2nd', pending = false, name = 'Ann Example', connectUnderMore = false, company = '' } = {}) => `<!doctype html><html><body>
 <nav id="global-nav">nav</nav>
 <main>
 <section class="pv-top-card">
 <h1 class="text-heading-xlarge">${name}</h1>
 <span class="dist-value">${degree}</span>
 <div class="text-body-medium break-words">Head of Talent at Example Labs</div>
+${company ? `<button aria-label="Current company: ${company}. Click to skip to experience card"><span>${company}</span></button><a href="https://www.linkedin.com/company/krakenfx/">${company}</a>` : ''}
 <div class="pvs-profile-actions">
 ${degree === '1st' ? `<button aria-label="Message ${name}"><span>Message</span></button>` :
   pending ? `<button aria-label="Pending, click to withdraw invitation sent to ${name}"><span>Pending</span></button>` :
@@ -59,6 +60,7 @@ export function startFake(port = 4790) {
     if (u.pathname.startsWith('/in/connected')) return res.end(profile('connected', { degree: '1st', name: 'Bob Connected' }));
     if (u.pathname.startsWith('/in/pending')) return res.end(profile('pending', { pending: true }));
     if (u.pathname.startsWith('/in/follow-first')) return res.end(profile('follow-first', { connectUnderMore: true, name: 'Cara Follow' }));
+    if (u.pathname.startsWith('/in/at-client')) return res.end(profile('at-client', { name: 'Dee Client', company: 'Kraken' }));
     if (u.pathname.startsWith('/in/')) return res.end(profile('ann'));
     res.end('<main>nothing</main>');
   });

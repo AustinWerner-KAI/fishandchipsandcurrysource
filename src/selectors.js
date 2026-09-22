@@ -37,6 +37,9 @@ export const SEL = {
   topCard: ['main section:has(h1)', 'main .pv-top-card', 'main'],
   profileName: ['main h1', 'h1.text-heading-xlarge'],
   profileHeadline: ['main .text-body-medium.break-words', 'main div.text-body-medium'],
+  // current company: the top card's "Current company" button, then company links in the page
+  profileCurrentCompany: ['main button[aria-label^="Current company"]', 'main [aria-label^="Current company"]'],
+  profileCompanyLinks: ['main section:has(#experience) a[href*="/company/"]', 'main a[href*="/company/"]'],
   profileDegree: ['main span.dist-value', 'main .distance-badge span.dist-value', 'main span:has-text("1st")'],
   // relative to the top card; {name} is replaced with the profile's name
   connectButton: ['button[aria-label="Invite {name} to connect"]', 'button[aria-label$="to connect"]', 'button:has(span:text-is("Connect"))'],
