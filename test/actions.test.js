@@ -395,5 +395,39 @@ test('invites record which note went, for the learning loop', async () => {
   await runConnect(null, s, { ...cfg, connectionNotes: ['Hi {firstName} one', 'Hi {firstName} two'] }, { ops: { sendConnectionRequest: async () => ({ result: 'sent', noteSent: true, info: {} }) }, pause: false });
   const a = s.data.actions.find(x => x.type === 'connects');
   assert.equal(a.campaign, 'c1');
-  assert.ok([0, 1].includes(a.noteIndex));
+  assert.ok(['Hi {firstName} one', 'Hi {firstName} two'].includes(a.noteTemplate));
+});
+
+test('audit 2: no template after a reply; failed tries still count as views; the right queued message is removed', async () => {
+  const fcfg = { ...cfg, firstDegree: { message: 'Hi {firstName}', followUpAfterDays: 4, followUp: 'Bump {firstName}' } };
+  const lead = { status: 'messaged', queue: [], firstName: 'Ann', direct: { at: '2026-09-20T00:00:00Z' }, repliedAt: '2026-09-21T00:00:00Z',
+    messages: [{ lane: 'direct', at: '2026-09-20T01:00:00Z', text: 'Hi Ann' }, { at: '2026-09-21T02:00:00Z', text: 'Great, sending the brief' }] };
+  assert.equal(dueMessage(lead, fcfg, new Date('2026-09-30T00:00:00Z')), null);
+
+  const s = fresh();
+  s.upsertLead({ url: 'linkedin.com/in/v1', name: 'Vee One', campaign: 'c1', approved: true });
+  s.save();
+  await runConnect(null, s, cfg, { ops: { sendConnectionRequest: async () => ({ result: 'failed', info: {} }) }, pause: false });
+  assert.equal(s.actionsSince('2000-01-01', 'profileViews').length, 1);
+  assert.equal(new Store(s.file).actionsSince('2000-01-01', 'profileViews').length, 1);
+
+  const q = s.upsertLead({ url: 'linkedin.com/in/q2', name: 'Quinn Two', campaign: 'c1' });
+  s.setStatus(q.url, 'accepted', { acceptedAt: '2026-09-20T00:00:00Z' });
+  q.queue.push({ text: 'A' }, { text: 'B' });
+  s.save();
+  const ops = { readOwnName: async () => 'Kai Crayford', closeThread: async () => {},
+    openThread: async () => ({ opened: true, lastFrom: 'me', theySpoke: false, editor: {} }),
+    // while A is being typed, Kai removes A in the app
+    sendMessageInOpenThread: async () => { const o = new Store(s.file); o.get('linkedin.com/in/q2').queue.shift(); o.save(); return true; } };
+  await runMessages(null, s, cfg, { ops, pause: false, max: 1 });
+  assert.deepEqual(new Store(s.file).get('linkedin.com/in/q2').queue.map(x => x.text), ['B']);
+});
+
+test('a stop request cuts a wait short', async () => {
+  const { pauseFor } = await import('../src/limits.js');
+  const { stopFlag } = await import('../src/stop.js');
+  stopFlag.on = true;
+  const t = Date.now(); await pauseFor(5000);
+  assert.ok(Date.now() - t < 1500);
+  stopFlag.on = false;
 });
