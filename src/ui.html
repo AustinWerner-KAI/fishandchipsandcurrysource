@@ -139,10 +139,10 @@ details.card[open]>summary{margin-bottom:10px}
         <div class="row" style="margin-top:6px"><button class="small primary" onclick="saveBool(true)">Save and search</button><button class="small" onclick="saveBool(false)">Save</button><button class="small" onclick="closeBool()">Cancel</button><span class="sub" id="boolCheck"></span></div>
       </div>
       <div class="row" style="margin-top:4px">
-        <button class="small" id="btnEditBool" onclick="openBool()">Edit search</button>
+        <span id="rsControls" class="row"><button class="small" id="btnEditBool" onclick="openBool()">Edit search</button>
         <label class="sub" for="rsSource">Search in</label>
         <select id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite</option><option value="linkedin">LinkedIn</option></select>
-        <span id="rsSkillsWrap" class="row"><label class="sub" for="rsSkills">Skills (1 or 2)</label><input type="text" id="rsSkills" style="width:200px;padding:3px 8px" placeholder="AWS, Cloud Security"><button class="small" onclick="saveSkills()">Save</button></span>
+        <span id="rsSkillsWrap" class="row"><label class="sub" for="rsSkills">Skills (1 or 2)</label><input type="text" id="rsSkills" style="width:200px;padding:3px 8px" placeholder="AWS, Cloud Security"><button class="small" onclick="saveSkills()">Save</button></span></span>
         <button class="link" onclick="editRole()">Edit role</button>
       </div>
       <div class="sub" id="rsSkillHint" style="margin-top:4px"></div>
@@ -224,7 +224,7 @@ details.card[open]>summary{margin-bottom:10px}
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const key = u => String(u).replace(/[^a-z0-9]/gi,'');
+const key = u => { let h=5381; for (const c of String(u)) h=((h*33)^c.codePointAt(0))>>>0; return 'k'+h.toString(36); };   // unique per URL, safe as an id
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const GROUPS = { todo: ['new'], contacted: ['invited','accepted','messaged'], replied: ['replied'], closed: ['done','skipped','error'] };
 const GROUP_LABEL = { todo: 'To approve', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
@@ -238,13 +238,18 @@ function when(iso){ return iso ? new Date(iso).toLocaleString('en-GB',{timeZone:
 function whenIn(iso, tz){ const d=new Date(iso); return `${d.toLocaleString('en-GB',{timeZone:tz,weekday:'short',hour:'2-digit',minute:'2-digit'})} ${tz.split('/').pop().replace('_',' ')} (${d.toLocaleString('en-GB',{hour:'2-digit',minute:'2-digit'})} here)`; }
 function remember(c){ try { localStorage.setItem('campaign', c); } catch {} }
 
+let loadSeq = 0;
 async function load(){
-  S = await api('/api/state?c=' + encodeURIComponent(campaign));
+  const my = ++loadSeq, want = campaign;
+  const s = await api('/api/state?c=' + encodeURIComponent(want));
+  if (my !== loadSeq || want !== campaign) return;   // a newer load (another tab click) wins
+  S = s;
   if (S.campaign !== campaign) { campaign = S.campaign || ''; remember(campaign); }
   if (!S.campaigns.length && mode !== 'wizard') { mode = 'wizard'; showStep(1); }
   render();
 }
-function setCampaign(c){ campaign=c; remember(c); mode='role'; closeBool(); settingsDirty=false; openComposer=null; load(); }
+function leaveOk(){ return !(settingsDirty || (mode==='wizard' && R)) || confirm('You have changes that are not saved. Leave them?'); }
+function setCampaign(c){ if (c!==campaign && !leaveOk()) return; campaign=c; remember(c); mode='role'; closeBool(); settingsDirty=false; openComposer=null; load(); }
 
 function renderTabs(){
   const tabs = (S.roles||[]).map(r => `<button class="tab ${mode==='role'&&r.name===S.campaign?'on':''}" data-act="tab" data-name="${esc(r.name)}">${esc(r.title)}${r.location?`<span class="sub">${esc(r.location)}</span>`:''}</button>`).join('');
@@ -252,8 +257,10 @@ function renderTabs(){
 }
 function applyJob(j){
   $('#jobPill').classList.toggle('on', j.running);
-  const h=S&&S.hours, waiting = j.running && j.name==='run' && h && !h.open && h.nextStart;
-  $('#jobText').textContent = j.running ? (j.stopping ? 'stopping' : waiting ? `waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}`) : 'idle';
+  const mine = S && j.campaign === S.campaign;
+  const h=S&&S.hours, waiting = j.running && mine && j.name==='run' && h && !h.open && h.nextStart;
+  const other = j.running && j.campaign && !mine ? ` (${((S&&S.roles)||[]).find(r=>r.name===j.campaign)?.title || j.campaign})` : '';
+  $('#jobText').textContent = j.running ? (j.stopping ? 'stopping' : waiting ? `waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}${other}`) : 'idle';
   for (const id of ['btnLogin','btnLoginR','btnSearch','btnRun','btnOnce','btnRecord']) { const b=$('#'+id); if(b) b.disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign)); }
   $('#btnStop').disabled = !j.running;
   $('#btnStop').textContent = j.stopping ? 'Force stop' : 'Stop';
@@ -284,7 +291,8 @@ function render(){
 
 function renderRole(){
   const role = S.cfg && S.cfg.role;
-  if (!role) { $('#rsTitle').textContent = S.campaign; $('#rsWhere').textContent = 'No role set up. Use + New role.'; $('#rsBoolean').textContent = S.cfg.searchUrl||''; return; }
+  $('#rsControls').classList.toggle('hide', !role);
+  if (!role) { $('#rsTitle').textContent = S.campaign; $('#rsWhere').textContent = 'No role set up. Press Edit role.'; $('#rsBoolean').textContent = (S.cfg&&S.cfg.searchUrl)||''; $('#rsSkillHint').textContent=''; $('#rsHours').textContent=''; return; }
   $('#rsTitle').textContent = role.title;
   $('#rsWhere').textContent = role.workType==='remote' ? `Remote · candidates in ${(role.candidateLocations||[]).join(', ')||'anywhere'}` : `${({onsite:'On site',hybrid:'Hybrid'})[role.workType]||'On site'} · ${role.location||''}`;
   if (!boolOpen) $('#rsBoolean').textContent = role.boolean||'';
@@ -314,11 +322,11 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => { const c = e.target.closest('input[data-act="approve"]'); if (c) approve(c.dataset.url, c.checked); });
 
 function boolProblems(b){ const p=[]; let d=0; for(const ch of b){ if(ch==='(') d++; if(ch===')') d--; if(d<0) break; } if(d!==0) p.push('brackets do not match'); if(((b.match(/"/g)||[]).length)%2) p.push('a quote is not closed'); if(/\b(and|or|not)\b/.test(b)) p.push('write AND, OR, NOT in capitals'); return p; }
-function openBool(){ boolOpen=true; $('#boolText').value=S.cfg.role.boolean||''; $('#boolEdit').classList.remove('hide'); $('#rsBoolean').classList.add('hide'); $('#btnEditBool').classList.add('hide'); const t=$('#boolText'); t.oninput=()=>{ const p=boolProblems(t.value); $('#boolCheck').textContent = p.join(' · '); $('#boolCheck').style.color = p.length ? 'var(--bad)' : ''; }; t.oninput(); t.focus(); }
+function openBool(){ if (!S.cfg||!S.cfg.role) return; boolOpen=true; $('#boolText').value=S.cfg.role.boolean||''; $('#boolEdit').classList.remove('hide'); $('#rsBoolean').classList.add('hide'); $('#btnEditBool').classList.add('hide'); const t=$('#boolText'); t.oninput=()=>{ const p=boolProblems(t.value); $('#boolCheck').textContent = p.join(' · '); $('#boolCheck').style.color = p.length ? 'var(--bad)' : ''; }; t.oninput(); t.focus(); }
 function closeBool(){ boolOpen=false; $('#boolEdit').classList.add('hide'); $('#rsBoolean').classList.remove('hide'); $('#btnEditBool').classList.remove('hide'); }
 async function saveBool(andSearch){ const b=$('#boolText').value.trim().replace(/\s+/g,' '); if(!b) return toast('The search is empty', true); const p=boolProblems(b); if(p.length) return toast(p[0], true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, boolean:b, booleanEdited:true}}); closeBool(); await load(); toast(andSearch?'Saved. Searching.':'Search saved'); if(andSearch) job('search'); }
-async function setSource(v){ await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, source:v}}); toast(v==='recruiter'?'Searches run in Recruiter Lite':'Searches run in LinkedIn'); load(); }
-async function saveSkills(){ const list=$('#rsSkills').value.split(',').map(x=>x.trim()).filter(Boolean); if(list.length>2) return toast('Two skills at most', true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, recruiterSkills:list}}); toast(list.length?`Skills saved: ${list.join(', ')}`:'Skills cleared'); load(); }
+async function setSource(v){ if (!S.cfg||!S.cfg.role) return; await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, source:v}}); toast(v==='recruiter'?'Searches run in Recruiter Lite':'Searches run in LinkedIn'); load(); }
+async function saveSkills(){ if (!S.cfg||!S.cfg.role) return; const list=$('#rsSkills').value.split(',').map(x=>x.trim()).filter(Boolean); if(list.length>2) return toast('Two skills at most', true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, recruiterSkills:list}}); toast(list.length?`Skills saved: ${list.join(', ')}`:'Skills cleared'); load(); }
 
 function renderReplies(){
   const rep = S.leads.filter(l=>l.status==='replied').sort((a,b)=>(b.repliedAt||'').localeCompare(a.repliedAt||''));
@@ -329,8 +337,11 @@ function renderInmail(){
   const im = S.inmail||[];
   const cr = S.inmailCredits;
   const credits = cr ? `${cr.left} of ${cr.total} InMails left this month` : '';
-  $('#inmail').innerHTML = im.length ? `<div class="card"><div class="row between"><h2 style="margin:0">Ready for InMail · ${im.length}</h2><span class="sub">${credits}</span></div><div class="sub" style="margin:4px 0 6px">Did not accept the connection. Copy, send in Recruiter Lite, press Sent. Only as many as you have credits for, best matches first. Mark replies so the credit comes back.</div>${im.map((p,i)=>`<div class="person"><a href="${esc(p.url)}" target="_blank"><b>${esc(p.name)}</b></a> <span class="sub">${p.kind==='followUp'?'follow-up due, no credit needed':'InMail due, uses 1 credit'}</span><div class="sub"><b>Subject:</b> ${esc(p.subject)}</div><q>${esc(p.text)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="copyText(${i})">Copy</button><button class="small primary" data-act="inmailSent" data-url="${esc(p.url)}" data-kind="${p.kind==='followUp'?'followUp':'inmail'}">Sent</button>${p.kind==='followUp'?`<button class="small" data-act="inmailReplied" data-url="${esc(p.url)}">They replied</button>`:''}</div></div>`).join('')}</div>`
-    : (cr && cr.left===0 ? `<div class="alert">No InMail credits left this month (${cr.total} used). Mark replies with They replied to get credits back.</div>` : '');
+  const waiting = S.leads.filter(l => l.inmail && l.inmail.sentAt && !l.inmail.replied && l.status!=='replied');
+  const ready = im.map((p,i)=>`<div class="person"><a href="${esc(p.url)}" target="_blank"><b>${esc(p.name)}</b></a> <span class="sub">${p.kind==='followUp'?'follow-up due, no credit needed':'InMail due, uses 1 credit'}</span><div class="sub"><b>Subject:</b> ${esc(p.subject)}</div><q>${esc(p.text)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="copyText(${i})">Copy</button><button class="small primary" data-act="inmailSent" data-url="${esc(p.url)}" data-kind="${p.kind==='followUp'?'followUp':'inmail'}">Sent</button></div></div>`).join('');
+  const wait = waiting.length ? `<div class="sub" style="margin-top:8px"><b>Waiting on a reply · ${waiting.length}</b></div>${waiting.map(l=>`<div class="row between person"><span><a href="${esc(l.url)}" target="_blank">${esc(l.name)}</a> <span class="sub">InMail ${when(l.inmail.sentAt)}</span></span><button class="small" data-act="inmailReplied" data-url="${esc(l.url)}">They replied</button></div>`).join('')}` : '';
+  const none = cr && cr.left===0 ? `<div class="alert">No InMail credits left this month (${cr.used} used). Press They replied when someone answers to get the credit back.</div>` : '';
+  $('#inmail').innerHTML = (im.length || waiting.length) ? `<div class="card"><div class="row between"><h2 style="margin:0">InMail${im.length?` · ${im.length} ready`:''}</h2><span class="sub">${credits}</span></div>${im.length?`<div class="sub" style="margin:4px 0 6px">Did not accept the connection. Copy, send in Recruiter Lite, press Sent. Best matches first, only as many as you have credits for.</div>`:''}${none}${ready}${wait}</div>` : none;
 }
 function compose(url, reply, keep){
   const l=S.leads.find(x=>x.url===url); if(!l) return;
@@ -346,7 +357,7 @@ async function queueOne(url, resume){ const text=$('#t-'+key(url)).value.trim();
 function copyThread(url){ const l=S.leads.find(x=>x.url===url); navigator.clipboard.writeText(`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message. Keep it short.`); toast('Copied. Paste it to Claude.'); }
 function copyText(i){ const p=S.inmail[i]; navigator.clipboard.writeText(`${p.subject}\n\n${p.text}`); toast('Copied. Paste it into Recruiter Lite.'); }
 async function inmailReplied(url){ const text = prompt('Paste their reply (optional). It moves them to Replies and gives the InMail credit back.', ''); if (text===null) return; await api('/api/inmail-replied',{url, text}); toast('Moved to Replies. Credit back.'); load(); }
-async function inmailSent(url, kind){ await api('/api/inmail-sent',{url, kind}); toast(kind==='followUp'?'Recorded. Nothing more goes to them.':'Recorded. The follow-up shows here when due.'); load(); }
+async function inmailSent(url, kind){ if (kind!=='followUp' && !confirm('Sent it in Recruiter Lite? This counts one InMail credit.')) return; await api('/api/inmail-sent',{url, kind}); toast(kind==='followUp'?'Recorded. Nothing more goes to them.':'Recorded. The follow-up shows here when due.'); load(); }
 
 const sc = l => l.rank && l.rank.score != null ? l.rank.score : -1;
 function nextStep(l){
@@ -381,7 +392,7 @@ function renderPeople(){
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
 async function approveVisible(on){ const urls = S.leads.filter(l=>(filter==='all'||GROUPS[filter].includes(l.status))&&l.status==='new'&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
 async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
-async function clearList(){ const n=S.leads.filter(l=>['new','skipped'].includes(l.status)).length; if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted? Anyone already contacted stays.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
+async function clearList(){ const {n}=await api('/api/clear',{campaign:S.campaign, dryRun:true}); if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted? Anyone already contacted stays.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
 async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 
 async function job(action){
@@ -425,7 +436,7 @@ async function saveSettings(){
   await api('/api/campaign',{name:S.campaign, config}); settingsDirty=false; toast('Saved'); load();
 }
 
-function openWizard(){ mode='wizard'; R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); if (S) render(); }
+function openWizard(){ if (!leaveOk()) return; settingsDirty=false; mode='wizard'; R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); if (S) render(); }
 function closeWizard(){ if (!S.campaigns.length) return toast('Set up a role first'); mode='role'; R=null; render(); }
 function showStep(n){ for(const i of [1,2,3]) $('#w'+i).classList.toggle('hide', i!==n); $('#roleStep').textContent=`step ${n} of 3`; }
 function editRole(){ const role=S.cfg.role; if(!role) return openWizard(); R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[], editing:S.campaign}; mode='wizard'; fillStep2(); showStep(2); render(); }
@@ -461,7 +472,7 @@ async function rebuildBoolean(){ const r=await api('/api/role/boolean',{ title:R
 async function saveRole(andSearch){
   const prev = R.editing ? S.cfg.role : {};
   const boolean=$('#rBoolean').value.trim();
-  const edited = R.built ? boolean !== R.built : !!prev.booleanEdited && boolean === (prev.boolean||'');
+  const edited = R.built ? boolean !== R.built : (boolean !== (prev.boolean||'') || !!prev.booleanEdited);
   const role={ ...prev, title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, suggestedSkills:R.suggested||[] };
   if(!role.boolean) return toast('The boolean search is empty', true);
   const r=await api('/api/role/save',{ campaign:R.editing||undefined, role });
