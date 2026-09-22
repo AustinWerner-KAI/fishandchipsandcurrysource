@@ -126,6 +126,7 @@ details.card[open]>summary{margin-bottom:10px}
   </section>
 
   <main id="rolePane" class="hide">
+    <div id="startBar"></div>
     <section class="card">
       <div class="row between" style="align-items:flex-start">
         <div>
@@ -146,8 +147,8 @@ details.card[open]>summary{margin-bottom:10px}
       </div>
       <div class="row" style="margin-top:4px">
         <span id="rsControls" class="row"><button class="small" id="btnEditBool" onclick="openBool()">Edit search</button>
-        <label class="sub" for="rsSource">Search in</label>
-        <select id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite</option><option value="linkedin">LinkedIn</option></select>
+        <label class="sub hide" for="rsSource">Search in</label>
+        <select class="hide" id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite</option><option value="linkedin">LinkedIn</option></select>
         <span id="rsSkillsWrap" class="row"><label class="sub" for="rsSkills">Skills (1 or 2)</label><input type="text" id="rsSkills" style="width:200px;padding:3px 8px" placeholder="AWS, Cloud Security"><button class="small" onclick="saveSkills()">Save</button></span></span>
         <button class="link" onclick="editRole()">Edit role</button>
       </div>
@@ -163,7 +164,7 @@ details.card[open]>summary{margin-bottom:10px}
       <div class="row between">
         <h2 style="margin:0">People <span id="leadCount"></span></h2>
         <div class="row">
-          <select id="sortBy" aria-label="Sort" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">Best match</option><option value="latest">Latest</option></select>
+          <select class="hide" id="sortBy" aria-label="Sort" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">Best match</option><option value="latest">Latest</option></select>
           <button class="small" id="btnApproveTop" onclick="approveTop()">Approve top <span id="topN">15</span></button>
           <button class="small" onclick="approveVisible(false)">Un-approve shown</button>
           <a class="sub" id="exportLink" href="#">Export CSV</a>
@@ -171,8 +172,8 @@ details.card[open]>summary{margin-bottom:10px}
         </div>
       </div>
       <div class="filters" id="filters"></div>
-      <div class="sub" id="today" style="margin-bottom:6px"></div>
-      <div id="startBar"></div>
+      <div class="sub" id="today" style="margin-bottom:2px"></div>
+      <div class="sub" id="learnLine" style="margin-bottom:8px"></div>
       <div class="scroll"><table><thead><tr><th>Match</th><th>Person</th><th>Status</th><th>OK</th><th>Next</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
     </section>
 
@@ -188,7 +189,7 @@ details.card[open]>summary{margin-bottom:10px}
         <div id="pvOut" style="margin-top:8px"></div></div>
       <div class="grid2">
         <div>
-          <div class="field"><label for="cfgNotes">Connection note. One per line, picked at random. Max 300 characters.</label><textarea id="cfgNotes"></textarea></div>
+          <div class="field"><label for="cfgNotes">Connection note. One per line. With more than one, Sourcer tries each, then sends the one that gets accepted most. Max 300 characters.</label><textarea id="cfgNotes"></textarea><div class="sub" id="noteStats" style="margin-top:4px"></div></div>
           <div class="field"><label for="cfgFollowUps">After they accept. One per line: <code>days | message</code>, add hours with <code>0 +3h |</code></label><textarea id="cfgFollowUps" style="min-height:100px"></textarea></div>
           <div class="field"><label for="imBody">Recruiter InMail, for people not accepted after <input type="number" id="imAfter" aria-label="Days before InMail" min="1" max="30" style="width:56px"> days</label>
             <input type="text" id="imSubject" aria-label="InMail subject" placeholder="subject" style="margin-bottom:6px"><textarea id="imBody" style="min-height:110px"></textarea></div>
@@ -213,7 +214,7 @@ details.card[open]>summary{margin-bottom:10px}
       </div>
     </details>
 
-    <details class="card"><summary>More tools</summary>
+    <details class="card hide" id="moreTools"><summary>More tools</summary>
       <div class="grid2">
         <div>
           <div class="field"><label for="importText">Add people by profile link, one per line</label><textarea id="importText"></textarea></div>
@@ -260,11 +261,13 @@ function whenIn(iso, tz){ const d=new Date(iso); return `${d.toLocaleString('en-
 function remember(c){ try { localStorage.setItem('campaign', c); } catch {} }
 
 let loadSeq = 0;
+const typing = () => { const a=document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type!=='checkbox') || settingsDirty || (mode==='wizard' && !!R); };
 async function load(){
   const my = ++loadSeq, want = campaign;
   const s = await api('/api/state?c=' + encodeURIComponent(want));
   if (my !== loadSeq || want !== campaign) return;   // a newer load (another tab click) wins
   const firstLoad = !S;
+  if (S && s.uiVersion && S.uiVersion && s.uiVersion !== S.uiVersion && !typing()) { location.reload(); return; }
   S = s;
   if (S.campaign !== campaign) { campaign = S.campaign || ''; remember(campaign); }
   if (firstLoad && S.leads.some(isApproved)) filter = 'approved';   // open on who gets invited
@@ -450,20 +453,42 @@ async function setName(url){ const l=S.leads.find(x=>x.url===url); const fn=prom
 async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 
 // The one button that starts outreach for the people Kai approved (and 1st connections he lined up).
+// One line at the top that says what is happening, what happens next, and the one button needed.
+function ago(iso){ const m=Math.round((Date.now()-new Date(iso))/60000); return m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} d ago`; }
 function renderStart(){
-  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
+  const approved = S.leads.filter(isApproved).length;
   const lined = S.leads.filter(l=>l.direct && l.status==='accepted').length;
   const j = S.job, mine = j.running && j.campaign===S.campaign && j.name==='run';
   $('#btnApproveTop').classList.toggle('primary', !approved);
-  if (!approved && !lined && !mine) { $('#startBar').innerHTML=''; return; }
   const cap=(S.caps&&S.caps.connects)||15, h=S.hours, wh=S.cfg.workingHours;
-  const names = S.leads.filter(isApproved).sort((a,b)=>sc(b)-sc(a)).map(l=>l.name||l.url);
-  const who = approved ? ` <button class="link" onclick="filter='approved';render()">${names.slice(0,4).map(esc).join(', ')}${names.length>4?` and ${names.length-4} more`:''}</button>` : '';
-  const what = [approved?`invite ${approved} ${approved===1?'person':'people'}${who}`:'', lined?`message ${lined} 1st ${lined===1?'connection':'connections'}`:''].filter(Boolean).join(' and ');
-  const when = !wh || h.open ? 'Starts now.' : `Outside working hours, so it starts ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'on the next working day'}.`;
-  $('#startBar').innerHTML = mine
-    ? `<div class="alert" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span><b>Outreach is running.</b> ${h.open?'Working through approved people now.':`Waiting for ${h.nextStart?whenIn(h.nextStart, wh.timezone):'working hours'}.`} Keep this page open and the Mac awake.</span><button class="small" onclick="job('stop')">Stop</button></div>`
-    : `<div class="alert" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span><b>Ready:</b> ${what}. Up to ${cap} invites a day${wh?`, ${wh.start} to ${wh.end} ${wh.timezone.split('/').pop().replace('_',' ')} time`:''}. ${when}</span><button class="primary" onclick="startOutreach()" ${j.running?'disabled title="Another job is running. Stop it first."':''}>Start outreach</button></div>`;
+  const today = S.today||{}, invited = today.connects||0;
+  const last = S.lastInvite ? ` Last invite: ${esc(S.lastInvite.name||'someone')}, ${ago(S.lastInvite.at)}.` : '';
+  const bar = (tone, text, btn) => `<div class="alert ${tone}" style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px"><span>${text}</span>${btn||''}</div>`;
+  let html = '';
+  if (S.health && Date.now()-new Date(S.health.at) < 12*3600e3) html += bar('bad', `<b>Paused:</b> ${esc(S.health.problem)}`);
+  if (mine) {
+    const waiting = wh && !h.open;
+    html += bar('', waiting
+      ? `<b>Outreach on.</b> Waiting for ${h.nextStart?whenIn(h.nextStart, wh.timezone):'working hours'}. ${approved} to invite.`
+      : `<b>Outreach running.</b> Invited ${invited} of ${cap} today. ${approved} still to invite.${last}`,
+      `<button class="small" onclick="job('stop')">Stop</button>`);
+  } else if (j.running) {
+    html += bar('', `<b>Busy:</b> ${esc(j.name)}${j.campaign&&j.campaign!==S.campaign?` for ${esc(((S.roles||[]).find(r=>r.name===j.campaign)||{}).title||j.campaign)}`:''}. Outreach can start when it finishes.`);
+  } else if (approved || lined) {
+    const names = S.leads.filter(isApproved).sort((a,b)=>sc(b)-sc(a)).map(l=>l.name||l.url);
+    const who = approved ? ` <button class="link" onclick="filter='approved';render()">${names.slice(0,4).map(esc).join(', ')}${names.length>4?` and ${names.length-4} more`:''}</button>` : '';
+    const what = [approved?`invite ${approved} ${approved===1?'person':'people'}${who}`:'', lined?`message ${lined} 1st ${lined===1?'connection':'connections'}`:''].filter(Boolean).join(' and ');
+    const when = !wh || h.open ? 'Starts now.' : `Starts ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'on the next working day'}.`;
+    html += bar('', `<b>Ready:</b> ${what}. Up to ${cap} invites a day. ${when}`, `<button class="primary" onclick="startOutreach()">Start outreach</button>`);
+  } else if (S.leads.length) {
+    html += bar('', invited ? `<b>Done for now.</b> Invited ${invited} today.${last} Tick more people in To approve to keep going.` : `<b>Nothing to send yet.</b> Tick the people you want in To approve, then Start outreach.`);
+  }
+  $('#startBar').innerHTML = html;
+  // what the learning loop knows so far
+  const L = S.learning;
+  $('#learnLine').innerHTML = !L ? '' : L.active
+    ? `Learning from ${L.picks} of your picks, ${L.accepted} accepted, ${L.replied} replies.${L.favours.length?` Ranks up: ${L.favours.map(esc).join(', ')}.`:''}${L.marksDown.length?` Ranks down: ${L.marksDown.map(esc).join(', ')}.`:''}`
+    : `Learning: press Exclude on 2 people you would never contact. Sourcer then ranks the list the way you pick.`;
 }
 async function startOutreach(){
   const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
@@ -491,6 +516,7 @@ $('#settings').addEventListener('toggle',()=>{ if($('#settings').open) preview()
 function fillSettings(){
   const c=S.cfg; if(!c) return;
   $('#cfgNotes').value=(c.connectionNotes||[]).join('\n');
+  const ns=S.noteStats||[]; $('#noteStats').textContent = ns.length>1 ? ns.map((n,i)=>`Note ${i+1}: ${n.sent} sent${n.sent?`, ${Math.round((n.rate||0)*100)}% accepted`:''}`).join(' · ') : '';
   $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays}${f.afterHours?` +${f.afterHours}h`:''} | ${f.text}`).join('\n');
   const im=c.inmail||{}; $('#imAfter').value=im.afterDays??7; $('#imSubject').value=im.subject||''; $('#imBody').value=im.body||''; $('#imFollowAfter').value=im.followUpAfterDays??4; $('#imFollow').value=im.followUp||'';
   const fd=c.firstDegree||{}; $('#fdMessage').value=fd.message||''; $('#fdFollowAfter').value=fd.followUpAfterDays??4; $('#fdFollow').value=fd.followUp||'';
