@@ -93,6 +93,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
       </div>
       <div class="row"><button class="small" id="btnEditBool" onclick="openBool()">Edit search</button><button class="small" onclick="editRole()">Edit role</button><a class="sub" id="rsLink" href="#" target="_blank">Open this search on LinkedIn</a><span class="sub" id="rsGeo"></span></div>
       <div class="sub" id="rsHours" style="margin-top:4px"></div>
+      <div class="row" style="margin-top:6px" id="rsSkillsRow"><label class="sub" for="rsSkills">Recruiter skills (1 or 2)</label><input type="text" id="rsSkills" placeholder="e.g. AWS, Cloud Security" style="width:260px;padding:3px 8px"><button class="small" onclick="saveSkills()">Save</button><span class="sub" id="rsSkillHint"></span></div>
       <div class="row" style="margin-top:6px"><label class="sub" for="rsSource">Search in</label><select id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite (full boolean, location filter)</option><option value="linkedin">Normal LinkedIn search</option></select></div>
     </div>
 
@@ -394,12 +395,17 @@ function renderRole(){
   $('#rsWhere').textContent=where;
   $('#rsBoolean').textContent=role.boolean||'';
   $('#rsSource').value = role.source || 'recruiter';
+  $('#rsSkillsRow').style.display = (role.source || 'recruiter') === 'recruiter' ? '' : 'none';
+  if (document.activeElement !== $('#rsSkills')) $('#rsSkills').value = (role.recruiterSkills || []).join(', ');
+  const sug = (role.suggestedSkills || []).filter(x => !(role.recruiterSkills || []).includes(x)).slice(0, 4);
+  $('#rsSkillHint').textContent = sug.length ? `from the spec: ${sug.join(', ')}` : '';
   const p=S.rolePreview; $('#rsLink').href=p?p.url:'#';
   const unknown=p?p.locations.filter(l=>!l.known).map(l=>l.name):[];
   $('#rsGeo').textContent = unknown.length ? `Location id for ${unknown.join(', ')} is looked up on LinkedIn when you press Search.` : '';
   const h=S.hours, wh=S.cfg.workingHours;
   $('#rsHours').textContent = wh ? (h.open ? `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Open now.` : `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Nothing sends until ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'the next working day'}.`) : '';
 }
+async function saveSkills(){ const list=$('#rsSkills').value.split(',').map(x=>x.trim()).filter(Boolean); if(list.length>2) return toast('Two skills at most. More than that narrows Recruiter too far.', true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, recruiterSkills:list}}); toast(list.length?`Skills saved: ${list.join(', ')}. Used on the next Search.`:'Skills cleared'); load(); }
 async function setSource(v){ await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, source:v}}); toast(v==='recruiter'?'Searches now run in Recruiter Lite':'Searches now run in normal LinkedIn'); load(); }
 // ---- quick boolean edit ----
 let boolOpen=false;

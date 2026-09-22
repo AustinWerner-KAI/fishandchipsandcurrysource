@@ -19,6 +19,7 @@ export const SEL = {
   // Recruiter search results and profile (seen 22 Sep 2026)
   recruiterResultItem: ['li[data-test-paginated-profile-list-item-container]', '[data-test-paginated-list-item]'],
   recruiterAddLocation: ['button[aria-label="Add a Candidate geographic location"]', 'button:has(span:text-is("Candidate geographic locations"))'],
+  recruiterAddSkill: ['button[aria-label*="Skill keywords" i]', 'button:has(span:text-is("Skill keywords anywhere on profile"))', '.facet-skills button[data-test-facet-edit]'],
   recruiterFacetInput: ['input[aria-label*="location" i]:focus', '.search-facet input[type="text"]:focus', 'input:focus'],
   recruiterFacetOption: ['[role="listbox"] [role="option"]', '.typeahead-facet [role="option"]', '.artdeco-typeahead__result'],
   recruiterNextPage: ['a[data-test-pagination-next]', 'button[data-test-pagination-next]', 'a[aria-label="Next"]', 'button[aria-label="Next"]', '[data-test-pagination-next-btn]'],

@@ -63,6 +63,7 @@ export function validate(cfg) {
   }
   if (cfg.role) {
     if (!cfg.role.title) errs.push('role.title is empty');
+    if ((cfg.role.recruiterSkills || []).length > 2) errs.push('role.recruiterSkills: two at most');
     if (cfg.role.workType && !WORK_TYPES.includes(cfg.role.workType)) errs.push(`role.workType must be one of ${WORK_TYPES.join(', ')}`);
   }
   if (cfg.mode === 'candidates') {

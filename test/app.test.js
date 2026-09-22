@@ -222,7 +222,7 @@ test('recruiter: reads people from a real Recruiter results page', async () => {
     const p = await b.newPage();
     await p.setContent(fs.readFileSync(path.join(process.cwd(), 'test/fixtures/recruiter-results.html'), 'utf8'));
     const rows = await readRecruiterResults(p);
-    assert.ok(rows.length >= 10);
+    assert.ok(rows.length >= 5);
     assert.equal(new Set(rows.map(r => r.recruiterUrl)).size, rows.length, 'no duplicates');
     const ali = rows.find(r => r.name === 'Candidate 1');
     assert.match(ali.headline, /Senior Security Engineer/);

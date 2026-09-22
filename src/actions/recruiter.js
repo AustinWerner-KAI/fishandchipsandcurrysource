@@ -44,26 +44,32 @@ export async function readRecruiterResults(page) {
   }, SEL.recruiterResultItem.join(', '));
 }
 
-async function addLocation(page, name) {
-  const btn = await firstVisible(page, SEL.recruiterAddLocation, 5000);
-  if (!btn) { await snap(page, 'recruiter-no-location-button'); return false; }
+// Opens a left-panel filter (Locations, Skills), types the value and picks the first suggestion.
+async function addFacet(page, buttonSel, value, what) {
+  const btn = await firstVisible(page, buttonSel, 5000);
+  if (!btn) { await snap(page, `recruiter-no-${what}-button`); warn(`could not find the Recruiter ${what} filter`); return false; }
   await btn.click();
   await sleep(randomBetween(600, 1100));
   const input = await firstVisible(page, SEL.recruiterFacetInput, 3000);
-  if (!input) { await snap(page, 'recruiter-no-location-input'); return false; }
-  await typeLikeHuman(input, name);
+  if (!input) { await snap(page, `recruiter-no-${what}-input`); return false; }
+  await typeLikeHuman(input, value);
   await sleep(randomBetween(1200, 2000));
   const opt = await firstVisible(page, SEL.recruiterFacetOption, 5000);
   if (opt) {
     const label = (await opt.innerText().catch(() => '')).split('\n')[0].trim();
     await opt.click();
-    log(`recruiter location: ${name} -> ${label || '(first match)'}`);
+    log(`recruiter ${what}: ${value} -> ${label || '(first match)'}`);
   } else {
     await page.keyboard.press('ArrowDown'); await sleep(300); await page.keyboard.press('Enter');
-    log(`recruiter location: ${name} (picked with the keyboard)`);
+    log(`recruiter ${what}: ${value} (picked with the keyboard)`);
   }
   await sleep(randomBetween(2000, 3500));
   return true;
+}
+
+// At most two skills: more than that narrows Recruiter too far.
+export function recruiterSkills(role) {
+  return [...new Set((role?.recruiterSkills || []).map(s => String(s).trim()).filter(Boolean))].slice(0, 2);
 }
 
 async function nextPage(page, pageNo) {
@@ -96,7 +102,8 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
   log('recruiter search:', role.boolean);
   await waitForResults(page);
 
-  for (const loc of searchLocations(role)) await addLocation(page, loc);
+  for (const loc of searchLocations(role)) await addFacet(page, SEL.recruiterAddLocation, loc, 'location');
+  for (const skill of recruiterSkills(role)) await addFacet(page, SEL.recruiterAddSkill, skill, 'skill');
 
   const pages = maxPages || cfg.maxSearchPages || 5;
   let added = 0, seen = 0;

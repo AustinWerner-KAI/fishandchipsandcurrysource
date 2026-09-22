@@ -90,3 +90,9 @@ test('ranking: main title beats a keyword list, recruiters score 0, degree comes
   assert.deepEqual(cleanLead({ name: 'Derek Zellefrow', headline: '• 3rd+' }), { name: 'Derek Zellefrow', degree: '3rd+', headline: '' });
   assert.equal(scoreLead({ name: 'D', headline: '• 3rd+' }, role).score, 15);
 });
+
+test('recruiter skills: two at most', async () => {
+  const { recruiterSkills } = await import('../src/actions/recruiter.js');
+  assert.deepEqual(recruiterSkills({ recruiterSkills: ['AWS', ' Cloud Security ', 'AWS', 'Kubernetes'] }), ['AWS', 'Cloud Security']);
+  assert.deepEqual(recruiterSkills({}), []);
+});
