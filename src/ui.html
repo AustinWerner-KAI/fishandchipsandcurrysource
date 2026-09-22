@@ -65,7 +65,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
     <div class="row">
       <h1>Sourcer</h1>
       <select id="campaign" style="width:auto" onchange="setCampaign(this.value)"></select>
-      <button class="small" onclick="toggle('newCamp')">+ new campaign</button>
+      <button class="small" onclick="newRole()">+ new role</button>
     </div>
     <div class="row">
       <span id="jobPill" class="pill"><span class="dot"></span><span id="jobText">idle</span></span>
@@ -76,11 +76,57 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
       <button id="btnStop" class="danger" onclick="job('stop')" disabled>Stop</button>
     </div>
   </div>
-  <div id="newCamp" class="card" style="display:none">
-    <div class="row"><input type="text" id="newCampName" placeholder="campaign name, e.g. l2-founders-sep" style="max-width:320px"><button class="primary" onclick="createCampaign()">Create</button><span class="sub">Copies the default new-business setup. Edit it below.</span></div>
-  </div>
-
   <div id="alerts"></div>
+
+  <div class="card" id="roleCard">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Role</h2><span class="sub" id="roleStep"></span></div>
+    <div id="roleSummary" style="display:none">
+      <div><b id="rsTitle"></b> <span class="sub" id="rsWhere"></span></div>
+      <div class="sub" style="margin:6px 0;word-break:break-word"><code id="rsBoolean"></code></div>
+      <div class="row"><button class="small" onclick="editRole()">Edit role</button><a class="sub" id="rsLink" href="#" target="_blank">Open this search on LinkedIn</a><span class="sub" id="rsGeo"></span></div>
+    </div>
+
+    <div id="w1">
+      <div class="field"><label>Paste the job spec, or drop in the file (.txt, .pdf, .docx)</label>
+        <textarea id="specText" style="min-height:140px" placeholder="Head of Compliance&#10;Location: Dubai (hybrid)&#10;&#10;We are a licensed digital asset exchange looking for..."></textarea></div>
+      <div class="row"><input type="file" id="specFile" accept=".txt,.pdf,.docx,text/plain,application/pdf" style="width:auto"><button class="primary" onclick="readSpec()">Read spec</button></div>
+    </div>
+
+    <div id="w2" style="display:none">
+      <div class="sub" style="margin-bottom:8px">Check what I read from the spec. Fix anything wrong.</div>
+      <div class="grid2">
+        <div>
+          <div class="field"><label>Role title</label><input type="text" id="rTitle"></div>
+          <div class="field"><label>Office location (city, country)</label><input type="text" id="rLocation" placeholder="Dubai, UAE"></div>
+        </div>
+        <div>
+          <div class="field"><label>Work type</label>
+            <div class="row" id="rWork">
+              <label class="sub"><input type="radio" name="wt" value="onsite"> On site</label>
+              <label class="sub"><input type="radio" name="wt" value="hybrid"> Hybrid</label>
+              <label class="sub"><input type="radio" name="wt" value="remote"> Remote</label>
+            </div></div>
+          <div class="field" id="rCandField"><label>Where can candidates be based? Comma separated. Countries work best.</label><input type="text" id="rCand" placeholder="UAE, United Kingdom, Singapore"></div>
+        </div>
+      </div>
+      <div class="row"><button onclick="showStep(1)">Back</button><button class="primary" onclick="toStep3()">Next: build the search</button></div>
+    </div>
+
+    <div id="w3" style="display:none">
+      <div class="grid2">
+        <div>
+          <div class="field"><label>Job titles to look for, one per line</label><textarea id="rTitles" style="min-height:110px"></textarea></div>
+          <div class="field"><label>Industry words (any of these), comma separated</label><input type="text" id="rDomain"></div>
+        </div>
+        <div>
+          <div class="field"><label>Must-have skills (all of these), comma separated. Leave empty for a wider search.</label><input type="text" id="rSkills"><div class="sub" id="rSkillHints" style="margin-top:4px"></div></div>
+          <div class="field"><label>Leave out anyone with these words</label><input type="text" id="rExclude"></div>
+        </div>
+      </div>
+      <div class="field"><label>Boolean search. Built from the fields above. You can edit it by hand.</label><textarea id="rBoolean" style="min-height:70px;font-family:ui-monospace,Menlo,monospace;font-size:12px"></textarea></div>
+      <div class="row"><button onclick="keepStep3();showStep(2)">Back</button><button onclick="rebuildBoolean()">Rebuild from fields</button><button class="primary" onclick="saveRole()">Save role</button><button class="primary" id="btnSaveSearch" onclick="saveRole(true)">Save and search LinkedIn</button></div>
+    </div>
+  </div>
 
   <div id="setup" class="card">
     <h2>Getting started</h2>
@@ -118,8 +164,8 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
       <div class="row"><label class="sub"><input type="checkbox" id="importApprove"> approve them straight away</label><button class="primary" onclick="doImport()">Add</button></div>
     </div>
     <div class="card">
-      <h2>Messages from Claude</h2>
-      <div class="sub" style="margin-bottom:6px">Paste the JSON Claude gives you. Each item is a person and the message to send.</div>
+      <h2>Hand-written messages</h2>
+      <div class="sub" style="margin-bottom:6px">Optional. Paste JSON from Claude to send a specific message to specific people. These go before the template follow-ups.</div>
       <textarea id="queueJson" placeholder='[{"url":"https://www.linkedin.com/in/someone/","text":"Thanks for connecting Sara. How are you finding the market at the moment?","note":"route: pulse"}]'></textarea>
       <div class="row" style="margin-top:6px"><button class="primary" onclick="queueJson()">Queue these</button></div>
     </div>
@@ -130,17 +176,17 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
     <div id="cfgError"></div>
     <div class="grid2">
       <div>
-        <div class="field"><label>Type</label>
+        <div class="field" style="display:none"><label>Type</label>
           <select id="cfgMode"><option value="newbusiness">New business (handshake note, then messages you or Claude write per person)</option><option value="candidates">Candidates (timed template follow-ups)</option></select></div>
-        <div class="field"><label>LinkedIn people search URL (used by the Search button)</label><input type="text" id="cfgSearchUrl" placeholder="https://www.linkedin.com/search/results/people/?keywords=..."></div>
+        <div class="field"><label>LinkedIn search URL. Normally empty: the role above builds it. Paste one here only to override it.</label><input type="text" id="cfgSearchUrl" placeholder="https://www.linkedin.com/search/results/people/?keywords=..."></div>
         <div class="field"><label>Connection request notes, one per line. Picked at random. {firstName} is filled in. Max 300 characters.</label><textarea id="cfgNotes"></textarea></div>
-        <div class="field" id="followUpsField"><label>Follow-ups (candidates only). One per line: <code>days | message</code>, days counted from the previous message.</label><textarea id="cfgFollowUps" placeholder="0 | Thanks for connecting {firstName}. Open to a quick chat this week?&#10;4 | Hey {firstName}, just checking this didn't get buried."></textarea></div>
+        <div class="field" id="followUpsField"><label>Follow-ups after they accept. One per line: <code>days | message</code>, days counted from the previous message.</label><textarea id="cfgFollowUps" placeholder="0 | Thanks for connecting {firstName}. Open to a quick chat this week?&#10;4 | Hey {firstName}, just checking this didn't get buried."></textarea></div>
       </div>
       <div>
         <div class="field"><label>Daily caps</label>
           <div class="row"><span class="sub">connects</span><input type="number" id="capConnects" min="0" max="25"><span class="sub">messages</span><input type="number" id="capMessages" min="0" max="40"><span class="sub">profile views</span><input type="number" id="capViews" min="0" max="150"></div>
           <div class="sub" style="margin-top:4px">Keep connects at 15 or under. Above 25 is refused.</div></div>
-        <div class="field"><label>Working hours (Dubai time)</label>
+        <div class="field"><label>Working hours (<span id="tzLabel">Dubai</span> time)</label>
           <div class="row"><input type="time" id="hStart"><span class="sub">to</span><input type="time" id="hEnd"></div>
           <div class="row" style="margin-top:6px" id="days"></div></div>
         <div class="field"><label>Pause between actions (seconds, min to max)</label><div class="row"><input type="number" id="pauseMin" min="20"><span class="sub">to</span><input type="number" id="pauseMax" min="30"></div></div>
@@ -164,7 +210,7 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function toast(m, bad){ const t=$('#toast'); t.textContent=m; t.style.background=bad?'var(--bad)':'var(--ink)'; t.style.color='#fff'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
 function toggle(id){ const e=document.getElementById(id); e.style.display = e.style.display==='none' ? '' : 'none'; }
 async function api(path, body){ const r = await fetch(path, body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {}); const j = await r.json().catch(()=>({})); if(!r.ok){ toast(j.error||'failed', true); throw new Error(j.error||'failed'); } return j; }
-function when(iso){ return iso ? new Date(iso).toLocaleString('en-GB',{timeZone:'Asia/Dubai',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
+function when(iso){ const tz=(S&&S.cfg&&S.cfg.workingHours&&S.cfg.workingHours.timezone)||'Asia/Dubai'; return iso ? new Date(iso).toLocaleString('en-GB',{timeZone:tz,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
 
 async function load(){
   S = await api('/api/state?c=' + encodeURIComponent(campaign));
@@ -194,7 +240,8 @@ function render(){
   const c=S.counts||{}, approved = S.leads.filter(l=>l.approved && l.status==='new').length;
   const steps=[
     [!!S.loggedInAt, 'Log in to LinkedIn', S.loggedInAt ? `done ${when(S.loggedInAt)}` : 'Press the button top right. Log in by hand in the window that opens.'],
-    [S.leads.length>0, 'Find people', S.leads.length ? `${S.leads.length} people in this campaign` : 'Paste a search URL in settings and press Search, or paste profile links under Add people.'],
+    [!!(S.cfg&&S.cfg.role), 'Set up the role', S.cfg&&S.cfg.role ? S.cfg.role.title : 'Paste the job spec in the Role box and follow the three steps.'],
+    [S.leads.length>0, 'Find people', S.leads.length ? `${S.leads.length} people for this role` : 'Press Search. LinkedIn is searched with the boolean from the role.'],
     [approved>0 || (c.invited+c.accepted+c.messaged+c.replied)>0, 'Approve who to contact', approved ? `${approved} approved and waiting` : 'Tick the approved box next to each person, or send the CSV to Claude to shortlist.'],
     [(c.invited+c.accepted+c.messaged+c.replied)>0, 'Run', 'Run one pass to watch it work, then Run all day. Keep this window and your Mac awake.'],
   ];
@@ -209,7 +256,7 @@ function render(){
   const replied = S.leads.filter(l=>l.status==='replied').sort((a,b)=>(b.repliedAt||'').localeCompare(a.repliedAt||''));
   $('#replies').innerHTML = replied.length ? `<div class="card"><h2>Replies</h2>${replied.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)} · ${when(l.repliedAt)}</span><q>${esc(l.lastReply)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}', true)">Queue a reply</button><button class="small" onclick="copyThread('${esc(l.url)}')">Copy for Claude</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
 
-  const waiting = S.leads.filter(l=>l.status==='accepted' && !l.queued);
+  const waiting = (S.cfg&&S.cfg.mode==='candidates') ? [] : S.leads.filter(l=>l.status==='accepted' && !l.queued);
   $('#waiting').innerHTML = waiting.length ? `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Accepted, waiting for a first message (${waiting.length})</h2><button class="small" onclick="copyWaiting()">Copy list for Claude</button></div><div class="sub" style="margin:4px 0 8px">Research each one, pick the route, write the message. Or copy the list, give it to Claude, paste the JSON back below.</div>${waiting.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)}${l.preexisting?' · already a contact':''}</span><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}')">Write message</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
 
   const counts=S.counts||{};
@@ -226,6 +273,7 @@ function render(){
   </tr>`).join('') || '<tr><td colspan="6" class="sub">Nobody here yet.</td></tr>';
 
   if (!settingsDirty) fillSettings();
+  renderRole();
   $('#home').textContent = S.home;
   if (openComposer) { compose(openComposer.url, openComposer.reply, true); const k=key(openComposer.url); if (draft && $('#t-'+k)) { $('#t-'+k).value=draft.t||''; $('#n-'+k).value=draft.n||''; $('#d-'+k).value=draft.d||''; } }
 }
@@ -236,7 +284,7 @@ async function job(action){
   if (action==='stop') { await api('/api/job',{action:'stop'}); return load(); }
   if (action==='run' && !confirm('Run all day inside working hours? Chrome will open and work through approved people. Keep this window open.')) return;
   const url = action==='search' ? (settingsDirty ? $('#cfgSearchUrl').value.trim() : '') : undefined;
-  if (action==='search' && !(url || (S.cfg && S.cfg.searchUrl))) return toast('Put a LinkedIn search URL in the settings first', true);
+  if (action==='search' && !(url || (S.cfg && (S.cfg.searchUrl || (S.cfg.role&&S.cfg.role.boolean))))) return toast('Set up the role first, or paste a LinkedIn search URL in the settings', true);
   await api('/api/job',{action, campaign:S.campaign, url: url||undefined});
   lastLog = 0; $('#log').textContent='';
   load(); pollLog();
@@ -265,7 +313,7 @@ function copyWaiting(){ const w=S.leads.filter(l=>l.status==='accepted'&&!l.queu
 function copyThread(url){ const l=S.leads.find(x=>x.url===url); const txt=`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message per the playbook. Keep it short.`; navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); }
 
 // ---- settings ----
-let settingsDirty=false;
+let settingsDirty=false, currentTz='Asia/Dubai';
 document.querySelectorAll('#settings input, #settings select, #settings textarea').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
 $('#cfgMode').addEventListener('change', ()=>{ $('#followUpsField').style.display = $('#cfgMode').value==='candidates' ? '' : 'none'; });
 function fillSettings(){
@@ -275,6 +323,7 @@ function fillSettings(){
   $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays} | ${f.text}`).join('\n');
   const caps=c.dailyCaps||{}; $('#capConnects').value=caps.connects??12; $('#capMessages').value=caps.messages??20; $('#capViews').value=caps.profileViews??50;
   const h=c.workingHours||{}; $('#hStart').value=h.start||'09:30'; $('#hEnd').value=h.end||'18:00';
+  currentTz=h.timezone||'Asia/Dubai'; $('#tzLabel').textContent=currentTz;
   const days=h.days||[1,2,3,4,5]; $('#days').innerHTML=DAYS.map((d,i)=>`<label class="sub"><input type="checkbox" class="day" value="${i}" ${days.includes(i)?'checked':''}> ${d}</label>`).join('');
   document.querySelectorAll('.day').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
   const p=c.pauseBetweenActionsSec||[60,240]; $('#pauseMin').value=p[0]; $('#pauseMax').value=p[1];
@@ -282,14 +331,84 @@ function fillSettings(){
 }
 async function saveSettings(){
   const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+)\s*\|\s*(.+)$/); return m?{afterDays:+m[1],text:m[2].trim()}:{afterDays:0,text:line}; });
-  const config={ mode:$('#cfgMode').value, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, autoApprove:$('#cfgAuto').checked,
+  const config={ mode:'candidates', searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, autoApprove:$('#cfgAuto').checked,
     connectionNotes:$('#cfgNotes').value.split('\n').map(s=>s.trim()).filter(Boolean), followUps,
     dailyCaps:{connects:+$('#capConnects').value, messages:+$('#capMessages').value, profileViews:+$('#capViews').value},
-    workingHours:{start:$('#hStart').value, end:$('#hEnd').value, days:[...document.querySelectorAll('.day:checked')].map(e=>+e.value), timezone:'Asia/Dubai'},
+    workingHours:{start:$('#hStart').value, end:$('#hEnd').value, days:[...document.querySelectorAll('.day:checked')].map(e=>+e.value), timezone:currentTz},
     pauseBetweenActionsSec:[+$('#pauseMin').value, +$('#pauseMax').value] };
   await api('/api/campaign',{name:S.campaign, config}); settingsDirty=false; toast('Saved'); load();
 }
-async function createCampaign(){ const name=$('#newCampName').value.trim(); if(!name) return; const base = S.cfg && S.cfg.mode ? { connectionNotes:S.cfg.connectionNotes, dailyCaps:S.cfg.dailyCaps, workingHours:S.cfg.workingHours, mode:'newbusiness' } : { mode:'newbusiness', connectionNotes:['Hey {firstName}, would be great to connect, I work in the digital asset recruitment space too.','Hi {firstName}, came across your profile, would be good to connect given we\'re both in the crypto/Web3 world.','Hey {firstName}, noticed we\'re both plugged into the digital asset space, would love to connect.'], dailyCaps:{connects:12,messages:20,profileViews:50}, workingHours:{start:'09:30',end:'18:00',days:[1,2,3,4,5],timezone:'Asia/Dubai'} }; await api('/api/campaign',{name, config:base}); $('#newCamp').style.display='none'; $('#newCampName').value=''; setCampaign(name); }
+// ---- role wizard ----
+let R=null, wizardOpen=false;
+function showStep(n){ for(const i of [1,2,3]) $('#w'+i).style.display = i===n?'':'none'; $('#roleSummary').style.display='none'; $('#roleStep').textContent=`step ${n} of 3`; wizardOpen=true; }
+function renderRole(){
+  const role=S.cfg&&S.cfg.role;
+  if (wizardOpen) return;
+  if (!role){ showStep(1); wizardOpen=false; return; }
+  for(const i of [1,2,3]) $('#w'+i).style.display='none';
+  $('#roleSummary').style.display=''; $('#roleStep').textContent='';
+  $('#rsTitle').textContent=role.title;
+  const where = role.workType==='remote' ? `remote · candidates in ${(role.candidateLocations||[]).join(', ')||'anywhere'}` : `${role.workType||'onsite'} · ${role.location||''}`;
+  $('#rsWhere').textContent=where;
+  $('#rsBoolean').textContent=role.boolean||'';
+  const p=S.rolePreview; $('#rsLink').href=p?p.url:'#';
+  const unknown=p?p.locations.filter(l=>!l.known).map(l=>l.name):[];
+  $('#rsGeo').textContent = unknown.length ? `Location id for ${unknown.join(', ')} is looked up on LinkedIn when you press Search.` : '';
+}
+function newRole(){ R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); window.scrollTo({top:0,behavior:'smooth'}); }
+function editRole(){ const role=S.cfg.role; R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[]}; R.editing=S.campaign; fillStep2(); showStep(2); }
+async function readSpec(){
+  const f=$('#specFile').files[0]; const text=$('#specText').value.trim();
+  if(!f && !text) return toast('Paste the spec or pick a file', true);
+  let body={text};
+  if(f){ const b64=await new Promise((res,rej)=>{const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f);}); body={file:{name:f.name, base64:b64}}; }
+  const r=await api('/api/role/draft', body);
+  if (f) { $('#specText').value=r.text; $('#specFile').value=''; }
+  R=r.draft; R.editing=null; R.suggested=R.skills||[]; R.skillsChosen=[]; fillStep2(); showStep(2);
+}
+function fillStep2(){
+  $('#rTitle').value=R.title||''; $('#rLocation').value=R.location||'';
+  document.querySelectorAll('input[name=wt]').forEach(e=>{ e.checked = e.value===(R.workType||'onsite'); e.onchange=syncCand; });
+  $('#rCand').value=(R.candidateLocations||[]).join(', ');
+  syncCand();
+}
+function syncCand(){ const wt=document.querySelector('input[name=wt]:checked').value; $('#rCandField').style.display = wt==='remote' ? '' : 'none'; }
+const splitList = v => v.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
+function keepStep3(){ R.titles=splitList($('#rTitles').value); R.domain=splitList($('#rDomain').value); R.skillsChosen=splitList($('#rSkills').value); R.exclude=splitList($('#rExclude').value); R.boolean=$('#rBoolean').value.trim(); }
+function toStep3(){
+  const title=$('#rTitle').value.trim(); if(!title) return toast('Give the role a title', true);
+  const wt=document.querySelector('input[name=wt]:checked').value;
+  const loc=$('#rLocation').value.trim();
+  if (wt!=='remote' && !loc) return toast('Where is the office?', true);
+  if (title!==R.title) { R.titles=[]; R.boolean=''; }
+  R.title=title; R.location=loc; R.workType=wt;
+  R.candidateLocations = wt==='remote' ? splitList($('#rCand').value) : (loc?[loc]:[]);
+  if (wt==='remote' && !R.candidateLocations.length) return toast('Say where candidates can be based, or the search covers the whole world', true);
+  $('#rTitles').value=(R.titles||[]).join('\n'); $('#rDomain').value=(R.domain||[]).join(', ').replace(/"/g,'');
+  $('#rSkills').value=(R.skillsChosen||[]).join(', ');
+  $('#rSkillHints').innerHTML = (R.suggested||[]).length ? 'From the spec: '+R.suggested.map(w=>`<button class="small" onclick="addSkill('${esc(w)}')">${esc(w)}</button>`).join(' ') : '';
+  $('#rExclude').value=(R.exclude||[]).join(', ');
+  showStep(3);
+  if (!(R.titles||[]).length || !R.boolean) rebuildBoolean(); else $('#rBoolean').value=R.boolean;
+}
+function addSkill(w){ const cur=splitList($('#rSkills').value); if(!cur.includes(w)) cur.push(w); $('#rSkills').value=cur.join(', '); rebuildBoolean(); }
+async function rebuildBoolean(){
+  const r=await api('/api/role/boolean',{ title:R.title, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value) });
+  if (!splitList($('#rTitles').value).length) $('#rTitles').value=r.titles.join('\n');
+  $('#rBoolean').value=r.boolean;
+}
+async function saveRole(andSearch){
+  const role={ title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations,
+    titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value),
+    boolean:$('#rBoolean').value.trim(), suggestedSkills:R.suggested||[] };
+  if(!role.boolean) return toast('The boolean search is empty', true);
+  const r=await api('/api/role/save',{ campaign:R.editing||undefined, role });
+  wizardOpen=false; R=null;
+  campaign=r.campaign; localStorage.setItem('campaign', campaign);
+  await load();
+  toast(andSearch ? 'Saved. Searching LinkedIn.' : 'Role saved');
+  if (andSearch) job('search');
+}
 
 // ---- log ----
 async function pollLog(){

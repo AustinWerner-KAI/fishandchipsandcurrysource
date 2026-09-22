@@ -10,14 +10,13 @@ process.env.SOURCER_CAMPAIGNS = dir;
 const { loadCampaign, listCampaigns } = await import('../src/config.js');
 
 test('example campaigns validate', () => {
-  for (const f of ['example.json', 'candidates-example.json']) {
-    fs.copyFileSync(path.join(process.cwd(), 'campaigns', f), path.join(dir, f));
-  }
+  fs.copyFileSync(path.join(process.cwd(), 'campaigns', 'examples', 'newbusiness.json'), path.join(dir, 'example.json'));
+  fs.copyFileSync(path.join(process.cwd(), 'campaigns', 'examples', 'candidates.json'), path.join(dir, 'candidates-example.json'));
   assert.deepEqual(listCampaigns().sort(), ['candidates-example', 'example']);
   const c = loadCampaign('example');
   assert.equal(c.mode, 'newbusiness');
   assert.equal(c.dailyCaps.connects, 12);
-  assert.equal(c.workingHours.timezone, 'Asia/Dubai');
+  assert.equal(c.workingHours.timezone, 'America/New_York');
   const k = loadCampaign('candidates-example');
   assert.equal(k.followUps.length, 2);
 });
