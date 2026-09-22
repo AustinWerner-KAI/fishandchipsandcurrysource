@@ -159,7 +159,7 @@ details.card[open]>summary{margin-bottom:10px}
         <h2 style="margin:0">People <span id="leadCount"></span></h2>
         <div class="row">
           <select id="sortBy" aria-label="Sort" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">Best match</option><option value="latest">Latest</option></select>
-          <button class="small primary" onclick="approveTop()">Approve top <span id="topN">15</span></button>
+          <button class="small" id="btnApproveTop" onclick="approveTop()">Approve top <span id="topN">15</span></button>
           <button class="small" onclick="approveVisible(false)">Un-approve shown</button>
           <a class="sub" id="exportLink" href="#">Export CSV</a>
           <button class="small danger" onclick="clearList()">Clear list</button>
@@ -167,6 +167,7 @@ details.card[open]>summary{margin-bottom:10px}
       </div>
       <div class="filters" id="filters"></div>
       <div class="sub" id="today" style="margin-bottom:6px"></div>
+      <div id="startBar"></div>
       <div class="scroll"><table><thead><tr><th>Match</th><th>Person</th><th>Status</th><th>OK</th><th>Next</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
     </section>
 
@@ -276,6 +277,7 @@ function applyJob(j){
   $('#btnStop').disabled = !j.running;
   $('#btnStop').textContent = j.stopping ? 'Force stop' : 'Stop';
   if (j.running) $('#activity').open = true;
+  if (S && S.leads && S.cfg && mode==='role') { S.job=j; renderStart(); }
 }
 
 function render(){
@@ -296,6 +298,7 @@ function render(){
   renderInmail();
   renderFirst();
   renderPeople();
+  renderStart();
   if (!settingsDirty) fillSettings();
   $('#home').textContent = S.home;
   $('#shots').innerHTML = (S.screenshots||[]).map(f=>`<a href="/screenshots/${encodeURIComponent(f)}" target="_blank" title="${esc(f)}"><img src="/screenshots/${encodeURIComponent(f)}" alt="screenshot ${esc(f)}"></a>`).join('');
@@ -430,9 +433,28 @@ async function clearList(){ const {n}=await api('/api/clear',{campaign:S.campaig
 async function setName(url){ const l=S.leads.find(x=>x.url===url); const fn=prompt(`First name for ${l?l.name||l.url:'this person'}? It goes into every message to them.`, (l&&l.firstName)||''); if(fn===null||!fn.trim()) return; await api('/api/firstname',{url, firstName:fn.trim()}); toast('Name saved'); load(); }
 async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 
-async function job(action){
+// The one button that starts outreach for the people Kai approved (and 1st connections he lined up).
+function renderStart(){
+  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l)).length;
+  const lined = S.leads.filter(l=>l.direct && l.status==='accepted').length;
+  const j = S.job, mine = j.running && j.campaign===S.campaign && j.name==='run';
+  $('#btnApproveTop').classList.toggle('primary', !approved);
+  if (!approved && !lined && !mine) { $('#startBar').innerHTML=''; return; }
+  const cap=(S.caps&&S.caps.connects)||15, h=S.hours, wh=S.cfg.workingHours;
+  const what = [approved?`invite ${approved} ${approved===1?'person':'people'}`:'', lined?`message ${lined} 1st ${lined===1?'connection':'connections'}`:''].filter(Boolean).join(' and ');
+  const when = !wh || h.open ? 'Starts now.' : `Outside working hours, so it starts ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'on the next working day'}.`;
+  $('#startBar').innerHTML = mine
+    ? `<div class="alert" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span><b>Outreach is running.</b> ${h.open?'Working through approved people now.':`Waiting for ${h.nextStart?whenIn(h.nextStart, wh.timezone):'working hours'}.`} Keep this page open and the Mac awake.</span><button class="small" onclick="job('stop')">Stop</button></div>`
+    : `<div class="alert" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span><b>Ready:</b> ${what}. Up to ${cap} invites a day${wh?`, ${wh.start} to ${wh.end} ${wh.timezone.split('/').pop().replace('_',' ')} time`:''}. ${when}</span><button class="primary" onclick="startOutreach()" ${j.running?'disabled title="Another job is running. Stop it first."':''}>Start outreach</button></div>`;
+}
+async function startOutreach(){
+  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l)).length;
+  if (!confirm(`Start outreach?\n\nSourcer opens Chrome and sends the connection notes to your ${approved} approved people, a few minutes apart, inside working hours. Follow-ups go automatically after they accept.\n\nKeep this page open and the Mac awake.`)) return;
+  await job('run', true);
+}
+async function job(action, confirmed){
   if (action==='stop') { await api('/api/job',{action:'stop'}); return load(); }
-  if (action==='run' && !confirm('Run all day inside working hours? A Chrome window opens and works through approved people. Keep this window open and the Mac awake.')) return;
+  if (action==='run' && !confirmed && !confirm('Run all day inside working hours? A Chrome window opens and works through approved people. Keep this window open and the Mac awake.')) return;
   await api('/api/job',{action, campaign:S.campaign});
   lastLog = 0; $('#log').textContent=''; $('#activity').open = true;
   load(); pollLog();
