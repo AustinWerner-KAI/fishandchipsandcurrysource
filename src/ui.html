@@ -100,6 +100,10 @@ details.card[open]>summary{margin-bottom:10px}
           <div class="field"><label>Work type</label>
             <div class="row"><label class="sub"><input type="radio" name="wt" value="onsite"> On site</label><label class="sub"><input type="radio" name="wt" value="hybrid"> Hybrid</label><label class="sub"><input type="radio" name="wt" value="remote"> Remote</label></div></div>
           <div class="field" id="rCandField"><label for="rCand">Where can candidates be based? Countries, comma separated</label><input type="text" id="rCand"></div>
+          <div class="field"><label for="rClient">Client. Nobody who works there is ever contacted.</label>
+            <input type="text" id="rClient" placeholder="Client name, e.g. Kraken" style="margin-bottom:6px">
+            <input type="text" id="rClientUrl" placeholder="LinkedIn company page, e.g. linkedin.com/company/krakenfx" style="margin-bottom:6px">
+            <input type="text" id="rClientOther" placeholder="Other names they go by (optional), comma separated"></div>
         </div>
       </div>
       <div class="row"><button onclick="showStep(1)">Back</button><button class="primary" onclick="toStep3()">Next: the search</button><button class="link" onclick="closeWizard()">Cancel</button></div>
@@ -127,6 +131,7 @@ details.card[open]>summary{margin-bottom:10px}
         <div>
           <div class="role-title" id="rsTitle"></div>
           <div class="sub" id="rsWhere"></div>
+          <div class="sub" id="rsClient"></div>
         </div>
         <div class="row">
           <button class="primary" id="btnSearch" onclick="job('search')">Search</button>
@@ -238,7 +243,8 @@ const GROUPS = { todo: ['new'], first: ['new'], contacted: ['invited','accepted'
 const GROUP_LABEL = { todo: 'To approve', first: '1st connections', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
 const isFirst = l => l.degree === '1st';
 // "To approve" is people to invite; 1st connections are already connected and get a free message instead
-const inGroup = (l, g) => g === 'all' || (GROUPS[g].includes(l.status) && (g === 'todo' ? !isFirst(l) : g === 'first' ? isFirst(l) : true));
+// anyone at a client sits in Closed, whatever their status
+const inGroup = (l, g) => g === 'all' || (l.offLimits ? g === 'closed' : GROUPS[g].includes(l.status) && (g === 'todo' ? !isFirst(l) : g === 'first' ? isFirst(l) : true));
 let firstOff = new Set();
 let S = null, campaign = '', filter = 'todo', sortBy = 'match', lastLog = 0, openComposer = null, settingsDirty = false, currentTz = 'Asia/Dubai', mode = 'role', boolOpen = false, R = null;
 try { campaign = localStorage.getItem('campaign') || ''; } catch {}
@@ -309,6 +315,8 @@ function renderRole(){
   $('#rsControls').classList.toggle('hide', !role);
   if (!role) { $('#rsTitle').textContent = S.campaign; $('#rsWhere').textContent = 'No role set up. Press Edit role.'; $('#rsBoolean').textContent = (S.cfg&&S.cfg.searchUrl)||''; $('#rsSkillHint').textContent=''; $('#rsHours').textContent=''; return; }
   $('#rsTitle').textContent = role.title;
+  const cl = role.client, hidden = S.leads.filter(l=>l.offLimits).length;
+  $('#rsClient').innerHTML = cl ? `Client: <b>${esc(cl.name||cl.url)}</b>. Nobody there is contacted${hidden?` (${hidden} in the list, moved to Closed)`:''}.` : `<span style="color:var(--warn)">No client set.</span> <button class="link" onclick="editRole()">Add the client</button> so nobody who works there is contacted.`;
   $('#rsWhere').textContent = role.workType==='remote' ? `Remote · candidates in ${(role.candidateLocations||[]).join(', ')||'anywhere'}` : `${({onsite:'On site',hybrid:'Hybrid'})[role.workType]||'On site'} · ${role.location||''}`;
   if (!boolOpen) $('#rsBoolean').textContent = role.boolean||'';
   const src = role.source || 'recruiter';
@@ -363,7 +371,7 @@ function renderInmail(){
   $('#inmail').innerHTML = (im.length || waiting.length) ? `<div class="card"><div class="row between"><h2 style="margin:0">InMail${im.length?` · ${im.length} ready`:''}</h2><span class="sub">${credits}</span></div>${im.length?`<div class="sub" style="margin:4px 0 6px">Did not accept the connection. Copy, send in Recruiter Lite, press Sent. Best matches first, only as many as you have credits for.</div>`:''}${none}${ready}${wait}</div>` : none;
 }
 function renderFirst(){
-  const list = S.leads.filter(l=>l.status==='new' && isFirst(l)).sort((a,b)=>sc(b)-sc(a));
+  const list = S.leads.filter(l=>l.status==='new' && isFirst(l) && !l.offLimits).sort((a,b)=>sc(b)-sc(a));
   if (!list.length) { $('#first').innerHTML=''; return; }
   const on = list.filter(l=>!firstOff.has(l.url));
   $('#first').innerHTML = `<div class="card"><div class="row between"><h2 style="margin:0">1st connections · ${list.length}</h2><span class="sub">free, no InMail credit</span></div>
@@ -373,7 +381,7 @@ function renderFirst(){
   <div class="row" style="margin-top:8px"><button class="primary" onclick="messageFirst()" ${on.length?'':'disabled'}>Message ${on.length} ${on.length===1?'person':'people'}</button><span class="sub">Edit the wording in Outreach and settings.</span></div></div>`;
 }
 async function messageFirst(){
-  const urls = S.leads.filter(l=>l.status==='new' && isFirst(l) && !firstOff.has(l.url)).map(l=>l.url);
+  const urls = S.leads.filter(l=>l.status==='new' && isFirst(l) && !l.offLimits && !firstOff.has(l.url)).map(l=>l.url);
   if (!urls.length) return;
   if (!confirm(`Message ${urls.length} 1st connections? They go as LinkedIn messages on the next run, up to ${(S.caps&&S.caps.messages)||25} a day. No InMail credits used.`)) return;
   const r = await api('/api/direct',{campaign:S.campaign, urls});
@@ -397,6 +405,7 @@ async function inmailSent(url, kind){ if (kind!=='followUp' && !confirm('Sent it
 
 const sc = l => l.rank && l.rank.score != null ? l.rank.score : -1;
 function nextStep(l){
+  if (l.offLimits) return `Works at your client ${esc(l.offLimits)}. Never contacted.`;
   if (l.status==='new') return isFirst(l) ? 'Connected: message from the 1st connections card' : l.approved ? 'Invite on the next run' : 'Tick to approve';
   if (l.direct && l.status==='accepted') return 'Message goes on the next run';
   if (l.status==='invited') return `Invited ${when(l.invitedAt)}`;
@@ -413,29 +422,29 @@ function renderPeople(){
   $('#topN').textContent = (S.caps && S.caps.connects) || 15;
   $('#exportLink').href = '/export.csv?c=' + encodeURIComponent(S.campaign||'');
   const cap = k => S.caps ? `${S.today[k]||0}/${S.caps[k]}` : String(S.today[k]||0);
-  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l)).length;
+  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
   const wk = S.week ? ` · this week ${S.week.connects}/${S.week.cap} invites` : '';
   const crd = S.inmailCredits ? ` · ${S.inmailCredits.left}/${S.inmailCredits.total} InMails left` : '';
   $('#today').textContent = `${approved} approved and waiting · today ${cap('connects')} invites, ${cap('messages')} messages, ${cap('profileViews')} profile views${wk}${crd}`;
   $('#rows').innerHTML = rows.map(l=>`<tr>
     <td><span class="match ${sc(l)>=70?'hi':sc(l)>=45?'mid':'lo'}">${sc(l)<0?'':sc(l)}</span></td>
     <td><a href="${esc(l.recruiterUrl||l.url)}" target="_blank">${esc(l.name||'(no name)')}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''}<div class="sub">${esc(l.headline)}${l.location?` · ${esc(l.location)}`:''}</div>${l.rank&&l.rank.reasons.length?`<div class="sub">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
-    <td><span class="chip chip-${l.status}">${l.status==='skipped'?'excluded':l.status}</span></td>
-    <td><input type="checkbox" aria-label="Approve ${esc(l.name)}" ${l.approved?'checked':''} ${l.status!=='new'||isFirst(l)?'disabled':''} data-act="approve" data-url="${esc(l.url)}"></td>
+    <td>${l.offLimits?`<span class="chip chip-error">client</span>`:`<span class="chip chip-${l.status}">${l.status==='skipped'?'excluded':l.status}</span>`}</td>
+    <td><input type="checkbox" aria-label="Approve ${esc(l.name)}" ${l.approved?'checked':''} ${l.status!=='new'||isFirst(l)||l.offLimits?'disabled':''} data-act="approve" data-url="${esc(l.url)}"></td>
     <td class="sub">${nextStep(l)}</td>
-    <td>${l.status==='new'?`<button class="small" data-act="exclude" data-url="${esc(l.url)}">Exclude</button>`:''}${/first name/.test(l.error||'')?`<button class="small primary" data-act="setName" data-url="${esc(l.url)}">Set first name</button>`:(l.status==='skipped'&&l.skippedByHand)||(l.status==='error'&&!l.invitedAt)?`<button class="small" data-act="putBack" data-url="${esc(l.url)}">Put back</button>`:''}</td>
+    <td>${l.offLimits?'':l.status==='new'?`<button class="small" data-act="exclude" data-url="${esc(l.url)}">Exclude</button>`:''}${/first name/.test(l.error||'')?`<button class="small primary" data-act="setName" data-url="${esc(l.url)}">Set first name</button>`:(l.status==='skipped'&&l.skippedByHand)||(l.status==='error'&&!l.invitedAt)?`<button class="small" data-act="putBack" data-url="${esc(l.url)}">Put back</button>`:''}</td>
   </tr>`).join('') || `<tr><td colspan="6" class="sub">${S.leads.length ? 'Nobody in this group.' : 'Nobody yet. Press Search.'}</td></tr>`;
 }
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
-async function approveVisible(on){ const urls = S.leads.filter(l=>inGroup(l,filter)&&l.status==='new'&&!isFirst(l)&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
-async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!isFirst(l)&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
+async function approveVisible(on){ const urls = S.leads.filter(l=>inGroup(l,filter)&&l.status==='new'&&!isFirst(l)&&!l.offLimits&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
+async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!isFirst(l)&&!l.offLimits&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
 async function clearList(){ const {n}=await api('/api/clear',{campaign:S.campaign, dryRun:true}); if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted? Anyone already contacted stays.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
 async function setName(url){ const l=S.leads.find(x=>x.url===url); const fn=prompt(`First name for ${l?l.name||l.url:'this person'}? It goes into every message to them.`, (l&&l.firstName)||''); if(fn===null||!fn.trim()) return; await api('/api/firstname',{url, firstName:fn.trim()}); toast('Name saved'); load(); }
 async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 
 // The one button that starts outreach for the people Kai approved (and 1st connections he lined up).
 function renderStart(){
-  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l)).length;
+  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
   const lined = S.leads.filter(l=>l.direct && l.status==='accepted').length;
   const j = S.job, mine = j.running && j.campaign===S.campaign && j.name==='run';
   $('#btnApproveTop').classList.toggle('primary', !approved);
@@ -448,7 +457,7 @@ function renderStart(){
     : `<div class="alert" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span><b>Ready:</b> ${what}. Up to ${cap} invites a day${wh?`, ${wh.start} to ${wh.end} ${wh.timezone.split('/').pop().replace('_',' ')} time`:''}. ${when}</span><button class="primary" onclick="startOutreach()" ${j.running?'disabled title="Another job is running. Stop it first."':''}>Start outreach</button></div>`;
 }
 async function startOutreach(){
-  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l)).length;
+  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
   if (!confirm(`Start outreach?\n\nSourcer opens Chrome and sends the connection notes to your ${approved} approved people, a few minutes apart, inside working hours. Follow-ups go automatically after they accept.\n\nKeep this page open and the Mac awake.`)) return;
   await job('run', true);
 }
@@ -522,7 +531,8 @@ async function readSpec(){
   if (f) { $('#specText').value=r.text; $('#specFile').value=''; }
   R={...r.draft, editing:null, suggested:r.draft.skills||[], skillsChosen:r.draft.required||[]}; fillStep2(); showStep(2);
 }
-function fillStep2(){ $('#rTitle').value=R.title||''; $('#rLocation').value=R.location||''; document.querySelectorAll('input[name=wt]').forEach(e=>{ e.checked = e.value===(R.workType||'onsite'); e.onchange=syncCand; }); $('#rCand').value=(R.candidateLocations||[]).join(', '); syncCand(); }
+function fillStep2(){ $('#rTitle').value=R.title||''; $('#rLocation').value=R.location||''; document.querySelectorAll('input[name=wt]').forEach(e=>{ e.checked = e.value===(R.workType||'onsite'); e.onchange=syncCand; }); $('#rCand').value=(R.candidateLocations||[]).join(', '); syncCand();
+  const cl=R.client||{}; $('#rClient').value=cl.name||''; $('#rClientUrl').value=cl.url||''; $('#rClientOther').value=(cl.otherNames||[]).join(', '); }
 function syncCand(){ const wt=document.querySelector('input[name=wt]:checked').value; $('#rCandField').classList.toggle('hide', wt!=='remote'); }
 const splitList = v => v.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
 function keepStep3(){ R.titles=splitList($('#rTitles').value); R.domain=splitList($('#rDomain').value); R.skillsChosen=splitList($('#rSkills').value); R.exclude=splitList($('#rExclude').value); R.recruiterSkills=splitList($('#rKey').value); R.boolean=$('#rBoolean').value.trim(); }
@@ -533,6 +543,11 @@ function toStep3(){
   if (title!==R.title) { R.titles=[]; R.boolean=''; }
   R.title=title; R.location=loc; R.workType=wt;
   R.candidateLocations = wt==='remote' ? splitList($('#rCand').value) : (loc?[loc]:[]);
+  let curl=$('#rClientUrl').value.trim();
+  if (curl && !/^https?:\/\//i.test(curl)) curl='https://www.'+curl.replace(/^www\./i,'');
+  if (curl && !/linkedin\.com\/company\/[^/?#]+/i.test(curl)) return toast('The client link must be a LinkedIn company page, like linkedin.com/company/krakenfx', true);
+  const cname=$('#rClient').value.trim();
+  R.client = (cname||curl) ? { name:cname, url:curl, otherNames:splitList($('#rClientOther').value) } : null;
   if (wt==='remote' && !R.candidateLocations.length) return toast('Say where candidates can be based', true);
   $('#rTitles').value=(R.titles||[]).join('\n'); $('#rDomain').value=(R.domain||[]).join(', ').replace(/"/g,'');
   $('#rSkills').value=(R.skillsChosen||[]).join(', '); $('#rExclude').value=(R.exclude||[]).join(', ');
@@ -547,7 +562,7 @@ async function saveRole(andSearch){
   const prev = R.editing ? S.cfg.role : {};
   const boolean=$('#rBoolean').value.trim();
   const edited = R.built ? boolean !== R.built : (boolean !== (prev.boolean||'') || !!prev.booleanEdited);
-  const role={ ...prev, title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, suggestedSkills:R.suggested||[], recruiterSkills:splitList($('#rKey').value) };
+  const role={ ...prev, title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, suggestedSkills:R.suggested||[], recruiterSkills:splitList($('#rKey').value), client:R.client||null };
   if (role.recruiterSkills.length>2) return toast('Two key skills at most', true);
   if(!role.boolean) return toast('The boolean search is empty', true);
   const r=await api('/api/role/save',{ campaign:R.editing||undefined, role });
