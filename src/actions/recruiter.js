@@ -10,14 +10,22 @@ import { normalizeUrl } from '../store.js';
 
 const SEARCH_URL = 'https://www.linkedin.com/talent/search';
 
-async function waitForResults(page, ms = 15000) {
+const firstHref = page => page.locator('[data-test-row-lockup-full-name] a').first().getAttribute('href', { timeout: 1000 }).catch(() => null);
+
+// Waits for result rows. With `changedFrom`, waits until the first row is a different person,
+// so rows from before a filter or page change are never read.
+async function waitForResults(page, ms = 15000, changedFrom) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    if (await page.locator(SEL.recruiterResultItem.join(', ')).count()) return true;
-    if (await page.locator('text=/No results|didn.t find any|Try removing/i').count()) return false;
+    if (await page.locator(SEL.recruiterResultItem.join(', ')).count()) {
+      if (changedFrom === undefined) return true;
+      const now = await firstHref(page);
+      if (now && now !== changedFrom) return true;
+    }
+    if (await page.locator('text=/No results|didn.t find any|Try removing/i').locator('visible=true').count()) return false;
     await sleep(700);
   }
-  return false;
+  return false;   // nothing new showed up in time
 }
 
 export async function readRecruiterResults(page) {
@@ -51,19 +59,22 @@ async function addFacet(page, buttonSel, value, what) {
   await btn.click();
   await sleep(randomBetween(600, 1100));
   const input = await firstVisible(page, SEL.recruiterFacetInput, 3000);
-  if (!input) { await snap(page, `recruiter-no-${what}-input`); return false; }
+  if (!input) { await snap(page, `recruiter-no-${what}-input`); warn(`Recruiter ${what} box did not open; searching without "${value}"`); return false; }
+  const before = await firstHref(page);
   await typeLikeHuman(input, value);
   await sleep(randomBetween(1200, 2000));
   const opt = await firstVisible(page, SEL.recruiterFacetOption, 5000);
-  if (opt) {
-    const label = (await opt.innerText().catch(() => '')).split('\n')[0].trim();
-    await opt.click();
-    log(`recruiter ${what}: ${value} -> ${label || '(first match)'}`);
-  } else {
-    await page.keyboard.press('ArrowDown'); await sleep(300); await page.keyboard.press('Enter');
-    log(`recruiter ${what}: ${value} (picked with the keyboard)`);
+  if (!opt) {
+    await page.keyboard.press('Escape');
+    await snap(page, `recruiter-no-${what}-match`);
+    warn(`Recruiter had no ${what} matching "${value}"; searching without it`);
+    return false;
   }
-  await sleep(randomBetween(2000, 3500));
+  const label = (await opt.innerText().catch(() => '')).split('\n')[0].trim();
+  await opt.click();
+  log(`recruiter ${what}: ${value} -> ${label || '(first match)'}`);
+  await waitForResults(page, 12000, before);
+  await sleep(randomBetween(800, 1600));
   return true;
 }
 
@@ -73,17 +84,17 @@ export function recruiterSkills(role) {
 }
 
 async function nextPage(page, pageNo) {
-  const before = page.url();
+  const before = await firstHref(page);
   const next = await firstVisible(page, SEL.recruiterNextPage, 1500);
-  if (next) { await next.click(); }
+  if (next && await next.isEnabled().catch(() => false)) { await next.click(); }
   else {
     const link = page.locator('li[data-test-pagination-link]', { hasText: new RegExp(`^\\s*${pageNo}\\b`) }).first();
-    if (!(await link.count())) return false;
+    if (!(await link.count())) return false;                  // last page
     await link.click();
   }
-  await sleep(randomBetween(2500, 4000));
+  await sleep(randomBetween(2000, 3500));
   await guard(page);
-  return page.url() !== before || await waitForResults(page, 8000);
+  return waitForResults(page, 12000, before);                  // false if the same people are still showing
 }
 
 export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
@@ -100,7 +111,8 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
   await sleep(randomBetween(800, 1400));
   await page.keyboard.press('Enter');
   log('recruiter search:', role.boolean);
-  await waitForResults(page);
+  await waitForResults(page, 20000);
+  if (!searchLocations(role).length) warn('this role has no location, so Recruiter searches everywhere');
 
   for (const loc of searchLocations(role)) await addFacet(page, SEL.recruiterAddLocation, loc, 'location');
   for (const skill of recruiterSkills(role)) await addFacet(page, SEL.recruiterAddSkill, skill, 'skill');
@@ -113,6 +125,7 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
     for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, randomBetween(600, 1100)); await sleep(randomBetween(350, 800)); }
     const rows = await readRecruiterResults(page);
     seen += rows.length;
+    store.refresh();          // pick up approvals and exclusions made in the app while this search ran
     let fresh = 0;
     for (const r of rows) {
       if (!r.recruiterUrl || store.findByRecruiterUrl(r.recruiterUrl)) continue;

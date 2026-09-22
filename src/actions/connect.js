@@ -41,10 +41,16 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
       store.refresh();
       store.recordAction('profileViews', lead.url);
       if (!pub) { store.setStatus(lead.url, 'error', { error: 'could not find their normal LinkedIn profile from Recruiter' }); store.save(); continue; }
-      const moved = store.rekey(lead.url, pub);
+      const r = store.rekey(lead.url, pub);
+      if (r.conflict) {
+        // Same person already on file (another role, an import, or already contacted): never invite twice.
+        store.setStatus(lead.url, 'skipped', { error: `already on file (${r.conflict.campaign}, ${r.conflict.status})` });
+        store.save();
+        log(`${lead.name}: already on file as ${pub}, not invited again`);
+        continue;
+      }
       store.save();
-      if (moved.url !== pub || moved.status !== 'new') { log(`already on file under ${pub}, skipped`); continue; }
-      lead = moved;
+      lead = r.lead;
       log(`found ${lead.name}: ${pub}`);
       if (pause) await sleep(humanPauseMs([8, 20]));
     }

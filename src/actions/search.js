@@ -62,6 +62,7 @@ export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
     log(`search page ${p}: ${rows.length} results`);
     if (!rows.length && p === 1 && cfg.role?.booleanEdited) warn('your search found nobody on LinkedIn. Loosen it with Edit search (drop a NOT or an AND group) and search again.');
     if (!rows.length) break;
+    store.refresh();          // pick up approvals and exclusions made in the app while this search ran
     let fresh = 0;
     for (const r of rows) {
       const url = `https://www.linkedin.com/in/${r.slug}/`;

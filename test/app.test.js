@@ -168,11 +168,13 @@ test('role save: timezone follows the office, message 1 waits 3 hours, InMail la
 });
 
 test('clear list removes only people never contacted', async () => {
-  await post('/api/import', { campaign: 'example', text: 'https://www.linkedin.com/in/clear-a/\nhttps://www.linkedin.com/in/clear-b/\nhttps://www.linkedin.com/in/clear-c/' });
+  await post('/api/import', { campaign: 'example', text: 'https://www.linkedin.com/in/clear-a/\nhttps://www.linkedin.com/in/clear-b/\nhttps://www.linkedin.com/in/clear-c/\nhttps://www.linkedin.com/in/clear-d/' });
   const st = new Store();
   st.setStatus('https://www.linkedin.com/in/clear-b/', 'invited', { invitedAt: new Date().toISOString() });
-  st.setStatus('https://www.linkedin.com/in/clear-c/', 'skipped');
+  st.setStatus('https://www.linkedin.com/in/clear-d/', 'skipped', { error: 'no longer a 1st degree connection' });   // set by the runner
+  st.get('https://www.linkedin.com/in/clear-d/').messages.push({ text: 'hi', at: new Date().toISOString() });
   st.save();
+  await post('/api/status', { url: 'https://www.linkedin.com/in/clear-c/', status: 'skipped' });           // excluded by hand
   const before = new Store().leads({ campaign: 'example' }).length;
   const r = await post('/api/clear', { campaign: 'example' });
   assert.equal(r.status, 200);
@@ -180,7 +182,7 @@ test('clear list removes only people never contacted', async () => {
   assert.equal(after.length, before - r.body.n);
   assert.ok(after.some(l => l.url.includes('/clear-b/')), 'invited person kept');
   assert.ok(!after.some(l => l.url.includes('/clear-a/') || l.url.includes('/clear-c/')));
-  assert.ok(after.every(l => !['new', 'skipped'].includes(l.status)));
+  assert.ok(after.some(l => l.url.includes('/clear-d/')), 'someone already messaged stays even though skipped');
 });
 
 test('recruiter: store keys, rekey to /in/, connect looks up the normal profile first', async () => {
@@ -230,4 +232,32 @@ test('recruiter: reads people from a real Recruiter results page', async () => {
     assert.equal(ali.degree, '1st');
     assert.match(ali.recruiterUrl, /^https:\/\/www\.linkedin\.com\/talent\/profile\/AEMAA/);
   } finally { await b.close(); }
+});
+
+test('server refuses requests from other websites', async () => {
+  const { allowedRequest } = await import('../src/app.js');
+  const req = (h, method = 'POST') => ({ method, headers: { host: '127.0.0.1:4747', 'content-type': 'application/json', ...h } });
+  assert.equal(allowedRequest(req({})), null);
+  assert.equal(allowedRequest(req({ origin: 'http://127.0.0.1:4747', 'sec-fetch-site': 'same-origin' })), null);
+  assert.equal(allowedRequest(req({ origin: 'https://evil.example' })), 'bad origin');
+  assert.equal(allowedRequest(req({ 'content-type': 'text/plain' })), 'JSON only');
+  assert.equal(allowedRequest(req({ host: 'evil.example:4747' })), 'bad host');
+  assert.equal(allowedRequest(req({ 'sec-fetch-site': 'cross-site' })), 'cross-site');
+  assert.equal(allowedRequest(req({ host: 'rebind.evil:4747' }, 'GET')), 'bad host');
+  const r = await fetch(base + '/api/clear', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: '{"campaign":"example"}' });
+  assert.equal(r.status, 403);
+});
+
+test('InMail list never offers more new InMails than credits left, best match first', async () => {
+  const { inmailList } = await import('../src/app.js');
+  const st = new Store();
+  const role = { title: 'Senior Cloud Security Engineer', titles: ['Security Engineer'], skills: ['Cloud'], domain: ['crypto'] };
+  const { inmailCredits } = await import('../src/limits.js');
+  const usedAlready = inmailCredits(st, 100, new Date(), 'Asia/Dubai').used;     // earlier tests in this file sent one
+  const cfg = { name: 'credits-test', role, workingHours: { timezone: 'Asia/Dubai' }, inmail: { afterDays: 7, monthlyCredits: usedAlready + 2, subject: '{role}', body: 'Hi {firstName}', followUpAfterDays: 4, followUp: 'Again {firstName}' } };
+  const heads = ['Lead Cloud Security Engineer at a crypto firm', 'Office Manager', 'Cloud Security Engineer'];
+  heads.forEach((h, i) => { const u = `https://www.linkedin.com/in/cr-${i}/`; st.upsertLead({ url: u, name: `Cr ${i}`, headline: h, campaign: 'credits-test' }); st.setStatus(u, 'invited', { invitedAt: new Date(Date.now() - 10 * 86400e3).toISOString() }); });
+  const list = inmailList(st, cfg);
+  assert.equal(list.length, 2);
+  assert.deepEqual(list.map(x => x.url), ['https://www.linkedin.com/in/cr-0/', 'https://www.linkedin.com/in/cr-2/']);
 });

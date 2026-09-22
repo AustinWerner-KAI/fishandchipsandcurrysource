@@ -161,6 +161,8 @@ export async function openThread(page, url, ownName) {
   return { opened: true, info, editor, ...thread };
 }
 
+export const sameText = (a, b) => String(a || '').replace(/\s+/g, ' ').trim() === String(b || '').replace(/\s+/g, ' ').trim();
+
 function sameName(a, b) {
   const n = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
   return n(a) && n(a) === n(b);
@@ -171,10 +173,12 @@ export async function readThread(page, ownName) {
   if (!ownName) throw new Error('own name unknown; cannot tell who spoke last');
   const names = await page.locator(SEL.msgGroupName.join(', ')).allInnerTexts().catch(() => []);
   const bodies = await page.locator(SEL.msgBody.join(', ')).allInnerTexts().catch(() => []);
-  if (!names.length) return { lastFrom: null, lastText: '', count: 0 };
+  if (!names.length) return { lastFrom: null, lastText: '', count: 0, theySpoke: false };
   const lastName = names[names.length - 1].trim();
   const lastText = (bodies[bodies.length - 1] || '').trim();
-  return { lastFrom: sameName(lastName, ownName) ? 'me' : 'them', lastText, count: names.length, lastName };
+  // Did they ever write in this thread? A reply that Kai has since answered by hand still counts.
+  const theySpoke = names.some(n => !sameName(n, ownName));
+  return { lastFrom: sameName(lastName, ownName) ? 'me' : 'them', lastText, count: names.length, lastName, theySpoke };
 }
 
 async function clearEditor(page, editor) {
@@ -204,7 +208,7 @@ export async function sendMessageInOpenThread(page, editor, text, ownName) {
   if (left.length === 0) return true;
   await sleep(3000);
   const t = await readThread(page, ownName).catch(() => null);
-  if (t && t.lastFrom === 'me' && t.lastText === text.trim()) return true;
+  if (t && t.lastFrom === 'me' && sameText(t.lastText, text)) return true;
   await snap(page, 'send-unconfirmed');
   await clearEditor(page, editor).catch(() => {});   // leave no draft behind that a later pass could double-send
   return false;

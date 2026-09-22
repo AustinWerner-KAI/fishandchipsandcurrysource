@@ -1,4 +1,5 @@
 import * as linkedin from '../linkedin.js';
+import { sameText } from '../linkedin.js';
 import { goto, humanScroll, snap } from '../browser.js';
 import { render } from '../template.js';
 import { remaining, humanPauseMs, sleep, withinWorkingHours } from '../limits.js';
@@ -54,7 +55,7 @@ export function dueMessage(lead, cfg, now = new Date()) {
   const q = lead.queue?.[0];
   if (q) {
     if (q.notBefore && new Date(q.notBefore) > now) return null;
-    return { text: q.text, source: 'queue', note: q.note };
+    return { text: q.text, source: 'queue', note: q.note, resume: !!q.resume };
   }
   if (cfg.mode !== 'candidates') return null;
   if (lead.preexisting) return null;   // they were already a contact; templates would read wrong
@@ -124,14 +125,17 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       if (pause) await sleep(humanPauseMs([10, 30]));
       continue;
     }
-    if (t.lastFrom === 'them') {
+    // They wrote last: only Kai's own reply (a queued message marked resume) may go.
+    // They ever wrote: no template ever goes again, even after Kai answered by hand.
+    const kaiReply = msg.source === 'queue' && msg.resume;
+    if ((t.lastFrom === 'them' && !kaiReply) || (t.theySpoke && msg.source === 'step')) {
       markReplied(store, lead, t);
       await ops.closeThread(page);
       store.save();
       if (pause) await sleep(humanPauseMs([10, 30]));
       continue;
     }
-    if (t.lastFrom === 'me' && t.lastText === msg.text.trim()) {
+    if (t.lastFrom === 'me' && sameText(t.lastText, msg.text)) {
       // an earlier pass sent this but could not confirm it; do not send twice
       log(`already sent to ${lead.name || lead.url}, recording it`);
       recordSent(store, lead, msg);
@@ -152,6 +156,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       store.save();
       continue;
     }
+    lead = store.refresh(lead.url) || lead;
     recordSent(store, lead, msg);
     sent++; budget--;
     log(`messaged ${lead.name || lead.url} (${msg.source})`);
@@ -190,7 +195,7 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
     store.recordAction('profileViews', lead.url);
     lead.lastCheckedAt = new Date().toISOString();
     if (t.opened) {
-      if (t.lastFrom === 'them') { markReplied(store, lead, t); replies++; }
+      if (t.lastFrom === 'them' || (t.theySpoke && !lead.queue.length)) { markReplied(store, lead, t); replies++; }
       else if (cfg.mode === 'candidates' && !lead.queue.length && lead.messages.length >= cfg.followUps.length && lead.messages.length
         && now - new Date(lead.messages[lead.messages.length - 1].at).getTime() > 14 * DAY) {
         store.setStatus(lead.url, 'done');

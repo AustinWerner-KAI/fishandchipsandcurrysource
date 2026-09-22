@@ -216,3 +216,62 @@ test('import, approve, queue, export', () => {
   assert.match(out, /"Three, T"/);
   assert.deepEqual(parseCsv(['a,b', '1,"x,y"']), [{ a: '1', b: 'x,y' }]);
 });
+
+test('messages: no template ever goes to someone who has written, even after Kai answered by hand', async () => {
+  const s = fresh();
+  const ccfg = { ...cfg, mode: 'candidates', followUps: [{ afterDays: 0, text: 'Thanks for connecting {firstName}.' }, { afterDays: 0, text: 'Just checking {firstName}.' }] };
+  s.upsertLead({ url: 'linkedin.com/in/e', name: 'Eve E', campaign: 'c1' });
+  s.setStatus('linkedin.com/in/e', 'messaged', { acceptedAt: new Date(Date.now() - 86400e3).toISOString() });
+  s.get('linkedin.com/in/e').messages.push({ step: 0, text: 'Thanks for connecting Eve.', at: new Date(Date.now() - 86400e3).toISOString() });
+  s.save();
+  const sent = [];
+  const ops = {
+    readOwnName: async () => 'Kai Crayford',
+    openThread: async () => ({ opened: true, lastFrom: 'me', lastText: 'Sure, sending it now', theySpoke: true, editor: {} }),
+    sendMessageInOpenThread: async (p, e, text) => { sent.push(text); return true; },
+    closeThread: async () => {},
+  };
+  await runMessages(null, s, ccfg, { ops, pause: false });
+  assert.deepEqual(sent, []);
+  assert.equal(s.get('linkedin.com/in/e').status, 'replied');
+});
+
+test('messages: Reply (a queued message with resume) sends even though they wrote last', async () => {
+  const s = fresh();
+  s.upsertLead({ url: 'linkedin.com/in/f', name: 'Fay F', campaign: 'c1' });
+  s.setStatus('linkedin.com/in/f', 'replied', { acceptedAt: new Date().toISOString(), lastReply: 'What is the range?' });
+  s.save();
+  const qf = path.join(home, `q-${Math.random()}.json`);
+  fs.writeFileSync(qf, JSON.stringify([{ url: 'linkedin.com/in/f', text: 'Hi Fay, the range is on the brief.\nSending now.', resume: true }]));
+  queueMessages(s, cfg, qf);
+  assert.equal(s.get('linkedin.com/in/f').status, 'messaged');
+  const sent = [];
+  const ops = {
+    readOwnName: async () => 'Kai Crayford',
+    openThread: async () => ({ opened: true, lastFrom: 'them', lastText: 'What is the range?', theySpoke: true, editor: {} }),
+    sendMessageInOpenThread: async (p, e, text) => { sent.push(text); return true; },
+    closeThread: async () => {},
+  };
+  await runMessages(null, s, cfg, { ops, pause: false });
+  assert.deepEqual(sent, ['Hi Fay, the range is on the brief.\nSending now.']);
+  assert.equal(s.get('linkedin.com/in/f').queue.length, 0);
+  // a queued message without resume still waits
+  s.get('linkedin.com/in/f').queue.push({ text: 'Another one', resume: false }); s.save();
+  sent.length = 0;
+  await runMessages(null, s, cfg, { ops, pause: false });
+  assert.deepEqual(sent, []);
+});
+
+test('invites: weekly ceiling across all roles; InMail credits: 30 a month, replies give them back', async () => {
+  const { remaining, inmailCredits } = await import('../src/limits.js');
+  const s = fresh();
+  const past = d => new Date(Date.now() - d * 86400e3).toISOString();
+  for (let i = 0; i < 78; i++) s.data.actions.push({ type: 'connects', url: `x${i}`, at: past(2) });
+  assert.equal(remaining(s, { connects: 15, weeklyConnects: 80 }, 'connects'), 2, 'weekly ceiling wins over the daily cap');
+  for (let i = 0; i < 5; i++) s.data.actions.push({ type: 'connects', url: `y${i}`, at: past(9) });
+  assert.equal(remaining(s, { connects: 15, weeklyConnects: 80 }, 'connects'), 2, 'older than 7 days does not count');
+  const now = new Date();
+  for (let i = 0; i < 29; i++) s.data.actions.push({ type: 'inmail', url: `z${i}`, at: now.toISOString() });
+  s.data.actions.push({ type: 'inmailRefund', url: 'z1', at: now.toISOString() });
+  assert.deepEqual(inmailCredits(s, 30, now, 'Asia/Dubai'), { total: 30, used: 28, left: 2 });
+});

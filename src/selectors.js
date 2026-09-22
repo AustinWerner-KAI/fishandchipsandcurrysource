@@ -20,7 +20,8 @@ export const SEL = {
   recruiterResultItem: ['li[data-test-paginated-profile-list-item-container]', '[data-test-paginated-list-item]'],
   recruiterAddLocation: ['button[aria-label="Add a Candidate geographic location"]', 'button:has(span:text-is("Candidate geographic locations"))'],
   recruiterAddSkill: ['button[aria-label*="Skill keywords" i]', 'button:has(span:text-is("Skill keywords anywhere on profile"))', '.facet-skills button[data-test-facet-edit]'],
-  recruiterFacetInput: ['input[aria-label*="location" i]:focus', '.search-facet input[type="text"]:focus', 'input:focus'],
+  // only ever a filter's own box, never the main search box
+  recruiterFacetInput: ['.search-facet input[type="text"]:focus', '.typeahead-facet input:focus', 'input[role="combobox"]:focus:not(#system-search-typeahead):not([aria-label^="Search by job title"])'],
   recruiterFacetOption: ['[role="listbox"] [role="option"]', '.typeahead-facet [role="option"]', '.artdeco-typeahead__result'],
   recruiterNextPage: ['a[data-test-pagination-next]', 'button[data-test-pagination-next]', 'a[aria-label="Next"]', 'button[aria-label="Next"]', '[data-test-pagination-next-btn]'],
   recruiterPublicProfile: ['a[data-test-personal-info-profile-link]'],

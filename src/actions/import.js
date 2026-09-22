@@ -92,7 +92,7 @@ export function queueMessages(store, cfg, file) {
     } else if (!['accepted', 'messaged'].includes(lead.status)) {
       warn(`${lead.name || lead.url} is "${lead.status}"; queued text only sends once they are connected`);
     }
-    lead.queue.push({ text: it.text, notBefore: it.notBefore || null, note: it.note || '' });
+    lead.queue.push({ text: it.text, notBefore: it.notBefore || null, note: it.note || '', resume: !!it.resume });
     if (it.note) lead.notes = [lead.notes, it.note].filter(Boolean).join(' | ');
     n++;
   }

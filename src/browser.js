@@ -42,6 +42,7 @@ export async function saveSession(context) {
     const li = cookies.filter(c => /linkedin\.com$/.test(c.domain));
     if (!li.some(c => c.name === 'li_at')) return false;
     fs.writeFileSync(SESSION_FILE, JSON.stringify({ savedAt: new Date().toISOString(), cookies: li }), { mode: 0o600 });
+    fs.chmodSync(SESSION_FILE, 0o600);
     return true;
   } catch (e) {
     warn('could not save the LinkedIn session', e.message);
@@ -155,10 +156,14 @@ export async function typeLikeHuman(locator, text) {
   await locator.click();
   await sleep(randomBetween(200, 500));
   // type in short bursts; chunking keeps it quick but not instantaneous
-  const chunks = text.match(/.{1,12}/gs) || [];
-  for (const c of chunks) {
-    await locator.pressSequentially(c, { delay: randomBetween(25, 80) });
-    if (Math.random() < 0.15) await sleep(randomBetween(200, 600));
+  // A plain Enter sends a LinkedIn message, so line breaks are typed as Shift+Enter.
+  const lines = String(text).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    for (const c of lines[i].match(/.{1,12}/gs) || []) {
+      await locator.pressSequentially(c, { delay: randomBetween(25, 80) });
+      if (Math.random() < 0.15) await sleep(randomBetween(200, 600));
+    }
+    if (i < lines.length - 1) await locator.page().keyboard.press('Shift+Enter');
   }
 }
 

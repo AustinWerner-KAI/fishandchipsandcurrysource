@@ -14,7 +14,7 @@ const WATCH = () => {
   if (window.__srcRecOn) return;
   window.__srcRecOn = true;
   // Visible label text only. Never .value: that is what the person typed (passwords included).
-  const txt = el => /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) ? '' : (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  const txt = el => (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable || el.closest('[contenteditable=""], [contenteditable="true"], [role="textbox"]')) ? '' : (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 80);
   const cssPath = el => {
     const out = [];
     for (let e = el; e && e.nodeType === 1 && out.length < 5; e = e.parentElement) {
