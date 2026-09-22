@@ -1,7 +1,7 @@
 // Search in Recruiter Lite with the role's boolean and locations, and collect the people.
 // Recruiter results link only to Recruiter profiles (/talent/profile/<id>); the person's normal
 // /in/ address is looked up later, only for people Kai approves (see publicUrlFor).
-import { goto, snap, guard, typeLikeHuman } from '../browser.js';
+import { goto, snap, saveDom, guard, typeLikeHuman } from '../browser.js';
 import { SEL, firstVisible } from '../selectors.js';
 import { log, warn } from '../log.js';
 import { sleep, randomBetween, humanPauseMs } from '../limits.js';
@@ -55,52 +55,42 @@ export async function readRecruiterResults(page) {
 }
 
 // Opens a left-panel filter (Locations, Skills), types the value and picks the matching suggestion.
-// The text box is the first one AFTER the filter's own + button, so a box left open by another
-// filter (Locations) is never typed into, and a suggestion must contain the value typed:
-// "Azure" never becomes "Vermont, United States".
-export async function addFacet(page, buttonSel, value, what) {
+// Everything is looked up inside that filter's own wrapper, so the skill can never go into the
+// location box, and a suggestion must contain the words typed: "Azure" never becomes "Vermont".
+export async function addFacet(page, what, value) {
   await closeFacets(page);
-  const btn = await firstVisible(page, buttonSel, 5000);
-  if (!btn) { await snap(page, `recruiter-no-${what}-button`); warn(`could not find the Recruiter ${what} filter`); return false; }
-  await btn.click();
-  await sleep(randomBetween(600, 1100));
-  const handle = await btn.evaluateHandle(el => {
-    const ok = i => i.type !== 'hidden' && i.id !== 'system-search-typeahead' && !/^Search by job title/.test(i.getAttribute('aria-label') || '') && i.offsetParent !== null;
-    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
-      const after = [...a.querySelectorAll('input[type="text"], input:not([type]), input[role="combobox"]')]
-        .filter(i => ok(i) && (el.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_FOLLOWING));
-      if (after.length) {
-        document.querySelectorAll('[data-sourcer-facet]').forEach(x => x.removeAttribute('data-sourcer-facet'));
-        after[0].setAttribute('data-sourcer-facet', '1');
-        return true;
-      }
-    }
-    return false;
-  });
-  const input = (await handle.jsonValue()) ? page.locator('[data-sourcer-facet="1"]') : null;
-  if (!input) { await closeFacets(page); await snap(page, `recruiter-no-${what}-input`); warn(`Recruiter ${what} box did not open; searching without "${value}"`); return false; }
+  const wrapper = await firstVisible(page, what === 'location' ? SEL.recruiterLocationFacet : SEL.recruiterSkillFacet, 5000);
+  if (!wrapper) { await snap(page, `recruiter-no-${what}-filter`); await saveDom(page, `recruiter-no-${what}-filter`); warn(`could not find the Recruiter ${what} filter`); return false; }
+  const btn = await firstVisible(wrapper, [...SEL.recruiterFacetEdit, ...(what === 'location' ? SEL.recruiterAddLocation : SEL.recruiterAddSkill)], 3000);
+  if (btn) { await btn.click(); await sleep(randomBetween(600, 1100)); }
+  const input = await firstVisible(wrapper, SEL.recruiterFacetBox, 4000);
+  if (!input) { await closeFacets(page); await snap(page, `recruiter-no-${what}-input`); await saveDom(page, `recruiter-no-${what}-input`); warn(`Recruiter ${what} box did not open; searching without "${value}"`); return false; }
   const before = await firstHref(page);
   await input.click();
+  await input.fill('').catch(() => {});
   await typeLikeHuman(input, value);
   await sleep(randomBetween(1200, 2000));
-  // the suggestion list that belongs to this box, when LinkedIn says which one it is
+  // suggestions: inside the filter first, then the list this box points at, then any open list
   const listId = await input.getAttribute('aria-controls').catch(() => null) || await input.getAttribute('aria-owns').catch(() => null);
-  const scope = listId ? page.locator(`[id="${listId.replace(/"/g, '')}"]`) : page;
+  const scopes = [wrapper, ...(listId ? [page.locator(`[id="${listId.replace(/"/g, '')}"]`)] : []), page];
   const want = value.toLowerCase().split(/[ ,]+/).filter(Boolean);
   let opt = null, label = '';
-  // aria-controls points at the list itself, so inside it the options are plain [role=option]
-  for (const sel of listId ? ['[role="option"]', '.artdeco-typeahead__result', ...SEL.recruiterFacetOption] : SEL.recruiterFacetOption) {
-    const opts = scope.locator(sel).locator('visible=true');
-    const n = Math.min(await opts.count().catch(() => 0), 8);
-    for (let i = 0; i < n && !opt; i++) {
-      const text = ((await opts.nth(i).innerText().catch(() => '')).split('\n')[0] || '').trim();
-      if (want.every(w => text.toLowerCase().includes(w))) { opt = opts.nth(i); label = text; }
+  for (const scope of scopes) {
+    for (const sel of ['[role="option"]', '.artdeco-typeahead__result', ...SEL.recruiterFacetOption]) {
+      const opts = scope.locator(sel).locator('visible=true');
+      const n = Math.min(await opts.count().catch(() => 0), 8);
+      for (let i = 0; i < n && !opt; i++) {
+        const text = ((await opts.nth(i).innerText().catch(() => '')).split('\n')[0] || '').trim();
+        if (text && want.every(w => text.toLowerCase().includes(w))) { opt = opts.nth(i); label = text; }
+      }
+      if (opt) break;
     }
     if (opt) break;
   }
   if (!opt) {
     await closeFacets(page);
     await snap(page, `recruiter-no-${what}-match`);
+    await saveDom(page, `recruiter-no-${what}-match`);
     warn(`Recruiter had no ${what} matching "${value}"; searching without it`);
     return false;
   }
@@ -108,7 +98,7 @@ export async function addFacet(page, buttonSel, value, what) {
   log(`recruiter ${what}: ${value} -> ${label}`);
   const changed = await waitForResults(page, 12000, before);
   // the same person can still be first after a filter, so an unchanged list is fine when the chip shows
-  const chip = await page.getByText(label, { exact: false }).locator('visible=true').count().catch(() => 0);
+  const chip = await wrapper.getByText(label.split(',')[0], { exact: false }).locator('visible=true').count().catch(() => 0);
   await closeFacets(page);
   if (!changed && !chip) { await snap(page, `recruiter-${what}-not-applied`); warn(`Recruiter ${what} "${value}" did not apply`); return false; }
   await sleep(randomBetween(800, 1600));
@@ -170,9 +160,9 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
   // Without the location the list would be people from anywhere, so a location that will not apply stops the search.
   const locs = searchLocations(role);
   let placed = 0;
-  for (const loc of locs) if (await addFacet(page, SEL.recruiterAddLocation, loc, 'location')) placed++;
+  for (const loc of locs) if (await addFacet(page, 'location', loc)) placed++;
   if (locs.length && !placed) throw new Error(`Recruiter would not take the location "${locs.join(', ')}". Nothing saved. Check the role's location with Edit role.`);
-  for (const skill of recruiterSkills(role)) await addFacet(page, SEL.recruiterAddSkill, skill, 'skill');
+  for (const skill of recruiterSkills(role)) await addFacet(page, 'skill', skill);
 
   const pages = maxPages || cfg.maxSearchPages || 5;
   let added = 0, seen = 0;

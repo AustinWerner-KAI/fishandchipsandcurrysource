@@ -11,10 +11,11 @@ export class NotLoggedInError extends Error { constructor(m) { super(m); this.na
 
 // Uses the Mac's own timezone, locale and window size so the browser looks like the same person
 // who logs in by hand. SOURCER_CHROME can point at an installed Chrome instead of Playwright's Chromium.
-export async function openBrowser({ headless = false } = {}) {
+export async function openBrowser({ headless = false, handleSIGINT = true } = {}) {
   ensureDirs();
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless,
+    handleSIGINT,
     ...(process.env.SOURCER_CHROME ? { executablePath: process.env.SOURCER_CHROME } : {}),
     viewport: headless ? { width: 1360, height: 860 } : null,
     args: ['--disable-blink-features=AutomationControlled', '--window-size=1360,900'],
