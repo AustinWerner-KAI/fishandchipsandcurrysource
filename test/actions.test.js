@@ -376,13 +376,16 @@ test('self-healing: a failed invite is tried again, 3 in a row pause invites and
   assert.match(s.data.meta.health.problem, /paused/);
   assert.equal(s.get('linkedin.com/in/fa').status, 'new');       // not an error yet: tried again next pass
   assert.equal(s.get('linkedin.com/in/fa').attempts, 1);
-  // two more passes: the third failure for the same person makes it a problem Kai sees
+  // two more passes: the third failure for the same person makes it a problem Kai sees.
+  // (the pause only holds for an hour, so the test clears it to stand in for time passing)
+  delete s.data.meta.health; s.save();
   await runConnect(null, s, { ...cfg, dailyCaps: { connects: 10, messages: 2, profileViews: 50 } }, { ops, pause: false });
+  delete s.data.meta.health; s.save();
   await runConnect(null, s, { ...cfg, dailyCaps: { connects: 10, messages: 2, profileViews: 50 } }, { ops, pause: false });
   assert.equal(s.get('linkedin.com/in/fa').status, 'error');
   // a success clears the pause
   const ok = { sendConnectionRequest: async () => ({ result: 'sent', info: {} }) };
-  s.setStatus('linkedin.com/in/fa', 'new'); s.save();
+  s.setStatus('linkedin.com/in/fa', 'new'); delete s.data.meta.health; s.save();
   await runConnect(null, s, { ...cfg, dailyCaps: { connects: 10, messages: 2, profileViews: 50 } }, { ops: ok, pause: false });
   assert.equal(s.data.meta.health, undefined);
   assert.equal(new Store(s.file).data.meta.health, undefined);   // and the removal reached the file
@@ -430,4 +433,35 @@ test('a stop request cuts a wait short', async () => {
   const t = Date.now(); await pauseFor(5000);
   assert.ok(Date.now() - t < 1500);
   stopFlag.on = false;
+});
+
+test('InMail lane: rehearses first, then sends, stays inside the credits and never touches a client', async () => {
+  const { runInMails, creditsFromText } = await import('../src/actions/inmail.js');
+  assert.deepEqual(creditsFromText('Preview | 1/84 InMail Credits'), { cost: 1, left: 84 });
+  const s = fresh();
+  const icfg = { ...cfg, inmail: { subject: '{role} in {location}', body: 'Hi {firstName}, about the {role} role.', monthlyCredits: 30, perDay: 2, viaRecruiter: true }, role: { title: 'Cloud Engineer', location: 'New York' } };
+  for (const n of ['Ana', 'Ben', 'Cara']) s.upsertLead({ url: `https://www.linkedin.com/talent/profile/AAA${n}`, name: `${n} Smith`, headline: 'Security Engineer', campaign: 'c1', approved: true, degree: '2nd' });
+  s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/FIRST', name: 'Al Ready', campaign: 'c1', approved: true, degree: '1st' });
+  s.save();
+  const calls = [];
+  const ops = { sendRecruiterInMail: async (p, url, o) => { calls.push({ url, ...o }); return o.rehearse ? { sent: false, rehearsed: true, credits: { cost: 1, left: 84 }, shot: '/x/shot.png' } : { sent: true, credits: { cost: 1, left: 83 } }; } };
+
+  let r = await runInMails(null, s, icfg, { ops, pause: false });
+  assert.equal(r.rehearsed, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].subject, 'Cloud Engineer in New York');
+  assert.equal(s.data.meta.inmailRehearsal.shot, 'shot.png');
+  assert.equal(s.data.meta.inmailBalance, 84);
+
+  s.data.meta.inmailApprovedAt = new Date().toISOString(); s.save();
+  r = await runInMails(null, s, icfg, { ops, pause: false });
+  assert.equal(r.sent, 2, 'the daily limit of 2 holds');
+  assert.equal(s.leads({ campaign: 'c1', status: 'messaged' }).length, 2);
+  const one = s.leads({ campaign: 'c1', status: 'messaged' })[0];
+  assert.equal(one.channel, 'inmail');
+  assert.ok(one.inmail.sentAt);
+  assert.equal(s.actionsSince('2000-01-01', 'inmail').length, 2);
+  assert.equal(s.get('https://www.linkedin.com/talent/profile/FIRST').status, 'new');   // 1st connections are free elsewhere
+  assert.ok(!calls.some(c => c.url.includes('FIRST')));
+  assert.match(calls[1].body, /^Hi (Ana|Ben|Cara), about the Cloud Engineer role\.$/);
 });
