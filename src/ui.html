@@ -202,7 +202,7 @@ details.card[open]>summary{margin-bottom:10px}
         <div>
           <div class="field"><label>Daily caps</label>
             <div class="row"><span class="sub">invites</span><input type="number" id="capConnects" aria-label="Invites a day" min="0" max="25"><span class="sub">messages</span><input type="number" id="capMessages" aria-label="Messages a day" min="0" max="40"><span class="sub">views</span><input type="number" id="capViews" aria-label="Profile views a day" min="0" max="150"></div>
-            <div class="row" style="margin-top:6px"><span class="sub">invites a week</span><input type="number" id="capWeek" aria-label="Invites a week" min="0" max="150"><span class="sub">InMails a month</span><input type="number" id="imCredits" aria-label="InMail credits a month" min="0" max="150"></div>
+            <div class="row" style="margin-top:6px"><span class="sub">invites a week</span><input type="number" id="capWeek" aria-label="Invites a week" min="0" max="150"><span class="sub">InMails a month</span><input type="number" id="imCredits" aria-label="InMail credits a month" min="0" max="150"><span class="sub">InMails a day</span><input type="number" id="imPerDay" aria-label="InMails a day" min="0" max="50"></div>
             <div class="sub" style="margin-top:4px">These count across all roles: it is one LinkedIn account.</div></div>
           <div class="field"><label>Working hours (<span id="tzLabel">Dubai</span>)</label>
             <div class="row"><input type="time" id="hStart" aria-label="Start"><span class="sub">to</span><input type="time" id="hEnd" aria-label="End"></div>
@@ -435,7 +435,7 @@ function renderPeople(){
   const cap = k => S.caps ? `${S.today[k]||0}/${S.caps[k]}` : String(S.today[k]||0);
   const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
   const wk = S.week ? ` · this week ${S.week.connects}/${S.week.cap} invites` : '';
-  const crd = S.inmailCredits ? ` · ${S.inmailCredits.left}/${S.inmailCredits.total} InMails left` : '';
+  const crd = S.inmailCredits ? ` · ${S.inmailCredits.left}/${S.inmailCredits.total} InMails this month${S.inmailBalance!=null?`, ${S.inmailBalance} in Recruiter`:''}` : '';
   $('#today').textContent = `${approved} approved and waiting · today ${cap('connects')} invites, ${cap('messages')} messages, ${cap('profileViews')} profile views${wk}${crd}`;
   $('#rows').innerHTML = rows.map(l=>`<tr>
     <td><span class="match ${sc(l)>=70?'hi':sc(l)>=45?'mid':'lo'}">${sc(l)<0?'':sc(l)}</span></td>
@@ -484,12 +484,21 @@ function renderStart(){
   } else if (S.leads.length) {
     html += bar('', invited ? `<b>Done for now.</b> Invited ${invited} today.${last} Tick more people in To approve to keep going.` : `<b>Nothing to send yet.</b> Tick the people you want in To approve, then Start outreach.`);
   }
+  // the first InMail is filled in but not sent, so Kai can check the wording
+  const rh = S.inmailRehearsal;
+  if (rh) html = bar('', `<b>Check this InMail before any go out.</b> To ${esc(rh.name||'someone')} · <b>${esc(rh.subject||'')}</b><q style="white-space:pre-wrap">${esc(rh.body||'')}</q>${rh.shot?`<div class="sub"><a href="/screenshots/${encodeURIComponent(rh.shot)}" target="_blank">See it in Recruiter</a></div>`:''}`,
+    `<span class="row"><button class="primary" onclick="inmailApprove(true)">Looks right, send</button><button class="small" onclick="inmailApprove(false)">No, stop</button></span>`) + html;
   $('#startBar').innerHTML = html;
   // what the learning loop knows so far
   const L = S.learning;
   $('#learnLine').innerHTML = !L ? '' : L.active
     ? `Learning from ${L.picks} of your picks, ${L.accepted} accepted, ${L.replied} replies.${L.favours.length?` Ranks up: ${L.favours.map(esc).join(', ')}.`:''}${L.marksDown.length?` Ranks down: ${L.marksDown.map(esc).join(', ')}.`:''}`
     : `Learning: press Exclude on 2 people you would never contact. Sourcer then ranks the list the way you pick.`;
+}
+async function inmailApprove(ok){
+  if (!ok) { await api('/api/inmail-approve',{ok:false}); toast('Stopped. Change the wording in Outreach and settings.'); return load(); }
+  if (!confirm('Send InMails from Recruiter Lite from now on? They go to the best matches, up to your daily limit, and each uses one credit.')) return;
+  await api('/api/inmail-approve',{ok:true}); toast('InMails will go on the next run.'); load();
 }
 async function startOutreach(){
   const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
@@ -523,7 +532,7 @@ function fillSettings(){
   $('#cfgNotes').value=(c.connectionNotes||[]).join('\n');
   const ns=S.noteStats||[]; $('#noteStats').textContent = ns.length>1 ? ns.map((n,i)=>`Note ${i+1}: ${n.sent} sent${n.sent?`, ${Math.round((n.rate||0)*100)}% accepted`:''}`).join(' · ') : '';
   $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays}${f.afterHours?` +${f.afterHours}h`:''} | ${f.text}`).join('\n');
-  const im=c.inmail||{}; $('#imAfter').value=im.afterDays??7; $('#imSubject').value=im.subject||''; $('#imBody').value=im.body||''; $('#imFollowAfter').value=im.followUpAfterDays??4; $('#imFollow').value=im.followUp||'';
+  const im=c.inmail||{}; $('#imAfter').value=im.afterDays??7; $('#imSubject').value=im.subject||''; $('#imBody').value=im.body||''; $('#imFollowAfter').value=im.followUpAfterDays??4; $('#imFollow').value=im.followUp||''; $('#imPerDay').value=im.perDay??10;
   const fd=c.firstDegree||{}; $('#fdMessage').value=fd.message||''; $('#fdFollowAfter').value=fd.followUpAfterDays??4; $('#fdFollow').value=fd.followUp||'';
   const caps=c.dailyCaps||{}; $('#capConnects').value=caps.connects??15; $('#capMessages').value=caps.messages??25; $('#capViews').value=caps.profileViews??60; $('#capWeek').value=caps.weeklyConnects??80; $('#imCredits').value=(c.inmail&&c.inmail.monthlyCredits)??30;
   const h=c.workingHours||{}; $('#hStart').value=h.start||'09:30'; $('#hEnd').value=h.end||'18:00';
@@ -548,7 +557,7 @@ async function preview(){
 }
 async function saveSettings(){
   const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+(?:\.\d+)?)\s*d?\s*(?:\+\s*(\d+)\s*h)?\s*\|\s*(.+)$/i); return m?{afterDays:+m[1],...(m[2]?{afterHours:+m[2]}:{}),text:m[3].trim()}:{afterDays:0,text:line}; });
-  const inmail = $('#imBody').value.trim() ? { afterDays:+$('#imAfter').value||7, monthlyCredits:+$('#imCredits').value||0, subject:$('#imSubject').value.trim(), body:$('#imBody').value.trim(), followUpAfterDays:+$('#imFollowAfter').value||4, followUp:$('#imFollow').value.trim() } : null;
+  const inmail = $('#imBody').value.trim() ? { afterDays:+$('#imAfter').value||7, monthlyCredits:+$('#imCredits').value||0, subject:$('#imSubject').value.trim(), body:$('#imBody').value.trim(), followUpAfterDays:+$('#imFollowAfter').value||4, followUp:$('#imFollow').value.trim(), perDay:+$('#imPerDay').value||10, viaRecruiter:true } : null;
   const firstDegree = { message:$('#fdMessage').value.trim(), followUpAfterDays:+$('#fdFollowAfter').value||4, followUp:$('#fdFollow').value.trim() };
   const config={ inmail, firstDegree, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5,
     connectionNotes:$('#cfgNotes').value.split('\n').map(s=>s.trim()).filter(Boolean), followUps,
