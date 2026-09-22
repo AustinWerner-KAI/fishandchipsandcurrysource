@@ -96,7 +96,15 @@ export class Store {
       out.leads[k] = theirs;
     }
     for (const k of Object.keys(this.base)) if (!this.data.leads[k]) delete out.leads[k];   // removed by us
-    if (JSON.stringify(this.data.meta || {}) !== this.baseMeta) out.meta = { ...disk.meta, ...this.data.meta };
+    if (JSON.stringify(this.data.meta || {}) !== this.baseMeta) {
+      // only the meta keys this process changed or removed
+      const was = JSON.parse(this.baseMeta), now = this.data.meta || {};
+      out.meta = { ...disk.meta };
+      for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) {
+        if (JSON.stringify(was[k]) === JSON.stringify(now[k])) continue;
+        if (now[k] === undefined) delete out.meta[k]; else out.meta[k] = now[k];
+      }
+    }
     const mine = this.newActions ? this.data.actions.slice(-this.newActions) : [];
     out.actions = [...(disk.actions || []), ...mine];
     if (out.actions.length > 20000) out.actions = out.actions.slice(-15000);

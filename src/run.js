@@ -4,6 +4,7 @@ import { withinWorkingHours, sleep, randomBetween } from './limits.js';
 import { runConnect } from './actions/connect.js';
 import { sweepAcceptances, runMessages, sweepReplies } from './actions/followup.js';
 import { log, warn } from './log.js';
+import { notify } from './notify.js';
 
 // One cycle: check acceptances, send due messages, look for replies, then send new connection requests.
 // A slow page or a busy file skips that step for this cycle; only a security check or being
@@ -41,6 +42,7 @@ export async function runCampaign(cfg, { once = false, headless = false } = {}) 
   } catch (e) {
     if (e instanceof CheckpointError || e instanceof NotLoggedInError) {
       warn(e.message);
+      notify('Sourcer stopped', e.message);
       store.recordAction('stopped', '-', { reason: e.message });
       store.save();
       if (e instanceof CheckpointError) {

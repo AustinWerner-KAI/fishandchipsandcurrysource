@@ -51,7 +51,11 @@ export class Jobs {
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: process.platform !== 'win32',   // own process group: Stop can end the job AND its Chrome
     });
-    const job = { name, campaign: campaign || null, startedAt: new Date().toISOString(), child };
+    const job = { name, campaign: campaign || null, args, startedAt: new Date().toISOString(), child };
+    // keep the Mac awake while a job runs (ends by itself when the job does)
+    if (process.platform === 'darwin' && !process.env.SOURCER_NO_CAFFEINATE) {
+      try { const k = spawn('caffeinate', ['-i', '-w', String(child.pid)], { stdio: 'ignore', detached: true }); k.on('error', () => {}); k.unref(); } catch {}
+    }
     this.current = job;
     this.push(`>>> ${name}${campaign ? ' ' + campaign : ''} started`);
     child.stdout.on('data', d => this.push(d));

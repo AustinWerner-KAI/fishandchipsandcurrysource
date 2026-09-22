@@ -2,8 +2,10 @@ import * as linkedin from '../linkedin.js';
 import { renderChecked, checkNote } from '../template.js';
 import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, pick, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
+import { notify } from '../notify.js';
 import { isRecruiterUrl } from '../store.js';
 import { cleanLead } from '../rank.js';
+import { learn, rankLearned, noteStats, chooseNote } from '../learn.js';
 import { allClients, offLimits } from '../offlimits.js';
 
 const WEEK = 7 * 86400000;
@@ -54,11 +56,32 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   const candidates = store.leads({ campaign: cfg.name, status: 'new' })
     .filter(l => cfg.autoApprove || l.approved)
     .filter(l => cleanLead(l).degree !== '1st')          // already connected: they go in the 1st connections list
-    .filter(l => !offLimits(l, clients))                 // works at a client: never contacted
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.createdAt.localeCompare(b.createdAt));
+    .filter(l => !offLimits(l, clients));                // works at a client: never contacted
+  // best match first, including what has been learned for this role
+  const model = learn(store.leads({ campaign: cfg.name }), cfg.role);
+  const order = new Map(rankLearned(candidates, cfg.role, model).map(l => [l.url, l.rank.score ?? 0]));
+  candidates.sort((a, b) => (order.get(b.url) ?? 0) - (order.get(a.url) ?? 0) || a.createdAt.localeCompare(b.createdAt));
   if (!candidates.length) { log('connect: nothing approved and waiting'); return { sent: 0 }; }
 
-  let sent = 0;
+  let sent = 0, failStreak = 0;
+  // A failure is tried again on a later pass; the person only shows as a problem after 3 tries.
+  // Three failures in a row mean LinkedIn itself changed: invites pause and Kai is told why.
+  const failed = (url, why) => {
+    const cur = store.refresh(url);
+    if (!cur) return;
+    cur.attempts = (cur.attempts || 0) + 1;
+    if (cur.attempts >= 3) store.setStatus(cur.url, 'error', { error: `could not send after 3 tries (${why})` });
+    else cur.lastTryError = why;
+    failStreak++;
+  };
+  const tooManyFails = () => {
+    if (failStreak < 3) return false;
+    store.data.meta.health = { problem: 'LinkedIn is not behaving as expected, so invites are paused until the next pass. The page was saved so Claude can fix it.', at: new Date().toISOString() };
+    store.save();
+    warn('connect: 3 failures in a row, pausing invites until the next pass');
+    notify('Sourcer paused invites', 'LinkedIn is not behaving as expected. It will try again on the next pass.');
+    return true;
+  };
   for (const picked of candidates) {
     if (budget <= 0) break;
     if (!withinWorkingHours(cfg.workingHours)) { log('connect: working hours over'); break; }
@@ -75,7 +98,9 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
       if (!lead) continue;
     }
 
-    const template = pick(cfg.connectionNotes);
+    // the note that gets accepted most is sent most (each note gets a fair trial first)
+    const noteIndex = chooseNote(cfg.connectionNotes, noteStats(cfg.connectionNotes, store, cfg.name));
+    const template = noteIndex >= 0 ? cfg.connectionNotes[noteIndex] : '';
     const { text: note, problem } = template ? renderChecked(template, lead, cfg.role) : { text: '' };
     if (problem) {
       // never an invite that says "Hey ," : wait until Kai adds the name
@@ -92,10 +117,11 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     } catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
       warn('connect failed', lead.url, e.message);
-      store.refresh();
-      store.setStatus(lead.url, 'error', { error: e.message });
+      failed(lead.url, e.message.slice(0, 80));
       store.recordAction('profileViews', lead.url);
       store.save();
+      if (tooManyFails()) break;
+      if (pause) await sleep(humanPauseMs([30, 90]));
       continue;
     }
     const cur = store.refresh(lead.url) || lead;
@@ -107,8 +133,10 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     switch (r.result) {
       case 'sent':
         store.setStatus(cur.url, 'invited', { invitedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString() });
-        store.recordAction('connects', cur.url, { note: r.noteSent ? note : '' });
-        sent++; budget--;
+        store.recordAction('connects', cur.url, { note: r.noteSent ? note : '', noteIndex, campaign: cfg.name });
+        sent++; budget--; failStreak = 0;
+        delete cur.attempts; delete cur.lastTryError;
+        if (store.data.meta.health) delete store.data.meta.health;
         log(`invited ${cur.name || cur.url}`);
         break;
       case 'off-limits':
@@ -136,9 +164,10 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
         store.setStatus(cur.url, 'skipped', { error: 'no Connect button on profile' });
         break;
       default:
-        store.setStatus(cur.url, 'error', { error: 'send not confirmed' });
+        failed(cur.url, 'send not confirmed');
     }
     store.save();
+    if (tooManyFails()) break;
     if (pause) await sleep(humanPauseMs(cfg.pauseBetweenActionsSec));
   }
   log(`connect: ${sent} sent this pass`);

@@ -16,6 +16,7 @@ import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCo
 import { scoreLead } from './rank.js';
 import { render, renderChecked, nameFor } from './template.js';
 import { rankLeads, cleanLead } from './rank.js';
+import { learn, rankLearned, noteStats } from './learn.js';
 import { allClients, offLimits } from './offlimits.js';
 import { searchLocations } from './actions/search.js';
 
@@ -65,6 +66,16 @@ function firstPreview(store, cfg) {
   return top ? { name: top.name, ...renderChecked(cfg.firstDegree.message, top, cfg.role) } : null;
 }
 
+// The latest invite for this role: who and when, for the status line.
+function lastInvite(store, leads) {
+  const urls = new Set(leads.map(l => l.url));
+  for (let i = store.data.actions.length - 1; i >= 0; i--) {
+    const a = store.data.actions[i];
+    if (a.type === 'connects' && urls.has(a.url)) { const l = store.get(a.url); return { name: l?.name || '', at: a.at }; }
+  }
+  return null;
+}
+
 function readCampaignRaw(name) {
   if (!NAME_RE.test(String(name || ''))) return null;
   const f = path.join(CAMPAIGN_DIR, `${name}.json`);
@@ -110,6 +121,7 @@ export function state(jobs, campaignName) {
     try { const r = readCampaignRaw(name)?.role; return { name, title: r?.title || name, location: r?.location || '' }; }
     catch { return { name, title: name, location: '' }; }
   });
+  const model = cfg?.role ? learn(s.leads, cfg.role) : null;
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
@@ -119,7 +131,12 @@ export function state(jobs, campaignName) {
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
     client: cfg?.role?.client || null,
-    leads: rankLeads(s.leads, cfg?.role).map(l => ({ ...l, offLimits: l.offLimits || offLimits(l, clients)?.name || null, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
+    health: store.data.meta.health || null,
+    lastInvite: lastInvite(store, s.leads),
+    learning: model ? { active: model.active, hardNo: model.hardNo, picks: model.picks, accepted: model.accepted, replied: model.replied, favours: model.favours, marksDown: model.marksDown } : null,
+    noteStats: cfg?.connectionNotes ? noteStats(cfg.connectionNotes, store, c) : [],
+    uiVersion: (() => { try { return fs.statSync(UI).mtimeMs; } catch { return 0; } })(),
+    leads: rankLearned(s.leads, cfg?.role, model).map(l => ({ ...l, offLimits: l.offLimits || offLimits(l, clients)?.name || null, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
     weeklyLimit: weeklyLimitActive(store),
     ownName: store.data.meta.ownName || null,
@@ -380,9 +397,52 @@ export function createApp({ jobs = new Jobs() } = {}) {
   return server;
 }
 
+// When Sourcer's own files change (an update was copied in), the app restarts itself: the running
+// job is stopped politely, remembered, and started again once the new version is up. Only when
+// started by Sourcer.command, which starts the app again when it exits with code 75.
+const RESUME = path.join(HOME, 'resume.json');
+const SRC = path.dirname(fileURLToPath(import.meta.url));
+function codeStamp() {
+  let latest = 0;
+  const walk = d => { for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+    const p = path.join(d, f.name);
+    if (f.isDirectory()) walk(p); else if (/\.js$/.test(f.name)) latest = Math.max(latest, fs.statSync(p).mtimeMs);
+  } };
+  try { walk(SRC); } catch {}
+  return latest;
+}
+function watchForUpdates(jobs) {
+  let stamp = codeStamp(), changedAt = 0;
+  setInterval(() => {
+    const now = codeStamp();
+    if (now !== stamp) { stamp = now; changedAt = Date.now(); return; }
+    if (!changedAt || Date.now() - changedAt < 10000) return;      // wait until the copy has finished
+    changedAt = 0;
+    const cur = jobs.status();
+    log('Sourcer was updated. Restarting to load the new version.');
+    if (cur.running && ['run', 'search'].includes(cur.name)) {
+      fs.writeFileSync(RESUME, JSON.stringify({ name: cur.name, campaign: cur.campaign, args: jobs.current?.args || [], at: new Date().toISOString() }), { mode: 0o600 });
+    }
+    if (cur.running) jobs.stop();
+    const wait = setInterval(() => { if (!jobs.status().running) { clearInterval(wait); process.exit(75); } }, 500);
+    setTimeout(() => { jobs.killAll(); process.exit(75); }, 8000).unref();
+  }, 5000).unref();
+}
+function resumeJob(jobs) {
+  try {
+    const r = JSON.parse(fs.readFileSync(RESUME, 'utf8'));
+    fs.rmSync(RESUME, { force: true });
+    if (r?.name && Date.now() - new Date(r.at) < 10 * 60000) {
+      log(`carrying on with ${r.name} after the update`);
+      jobs.start(r.name, { campaign: r.campaign, args: r.args || [] });
+    }
+  } catch {}
+}
+
 export function startApp({ port = 4747 } = {}) {
   const jobs = new Jobs();
   const server = createApp({ jobs });
+  if (process.env.SOURCER_SUPERVISED) { watchForUpdates(jobs); resumeJob(jobs); }
   // Closing the Terminal window (or Ctrl+C) stops the running job and its Chrome too.
   for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { jobs.killAll(); process.exit(0); });
   process.on('exit', () => jobs.killAll());

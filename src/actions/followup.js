@@ -4,6 +4,7 @@ import { goto, humanScroll, snap } from '../browser.js';
 import { renderChecked } from '../template.js';
 import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
+import { notify } from '../notify.js';
 import { isRecruiterUrl } from '../store.js';
 import { resolveRecruiterLead } from './connect.js';
 import { allClients, offLimits } from '../offlimits.js';
@@ -95,6 +96,7 @@ export function dueMessage(lead, cfg, now = new Date()) {
 function markReplied(store, lead, thread) {
   store.setStatus(lead.url, 'replied', { repliedAt: new Date().toISOString(), lastReply: thread.lastText?.slice(0, 500) || '' });
   log(`REPLY from ${lead.name || lead.url}: ${thread.lastText?.slice(0, 120)}`);
+  notify(`${lead.name || 'Someone'} replied`, thread.lastText || 'Open Sourcer to see it.');
 }
 
 function recordSent(store, lead, msg) {
