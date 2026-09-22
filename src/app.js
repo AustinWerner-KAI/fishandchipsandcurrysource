@@ -11,10 +11,12 @@ import { exportCsv, importLeads, queueMessages } from './actions/import.js';
 import { weeklyLimitActive } from './actions/connect.js';
 import { Jobs } from './jobs.js';
 import { log } from './log.js';
+import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants } from './role.js';
+import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
 
-const EDITABLE = ['mode', 'searchUrl', 'maxSearchPages', 'autoApprove', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
+const EDITABLE = ['mode', 'role', 'searchUrl', 'maxSearchPages', 'autoApprove', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
 
 function readCampaignRaw(name) {
   const f = path.join(CAMPAIGN_DIR, `${name}.json`);
@@ -37,6 +39,16 @@ export function saveCampaign(name, patch) {
   }
 }
 
+// The search the role would run right now, with the location ids we already know. Missing ones
+// are looked up in the browser when Search is pressed.
+export function rolePreview(cfg) {
+  if (!cfg?.role?.boolean) return null;
+  const geo = cfg.role.geo || {};
+  const names = searchLocations(cfg.role);
+  const ids = names.map(n => geo[n.toLowerCase()] || lookupGeo(n) || null);   // strict here: the browser gets first go at cities
+  return { url: buildSearchUrl(cfg.role.boolean, ids.filter(Boolean)), locations: names.map((n, i) => ({ name: n, known: !!ids[i] })) };
+}
+
 export function state(jobs, campaignName) {
   const store = new Store();
   const campaigns = listCampaigns();
@@ -46,7 +58,7 @@ export function state(jobs, campaignName) {
   const s = c ? summarise(store, c) : { leads: [], counts: {}, caps: null, today: {}, lastStop: null, weekly: null };
   const shots = fs.existsSync(SCREENSHOT_DIR) ? fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('.png')).sort().slice(-5).reverse() : [];
   return {
-    campaigns, campaign: c, cfg, cfgError,
+    campaigns, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     leads: s.leads.map(l => ({ ...l, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
     weeklyLimit: weeklyLimitActive(store),
@@ -139,6 +151,38 @@ export function createApp({ jobs = new Jobs() } = {}) {
       if (u.pathname === '/api/campaign') {
         const cfg = saveCampaign(b.name, b.config || {});
         return json(200, { ok: true, cfg });
+      }
+      if (u.pathname === '/api/role/draft') {
+        // { text } or { file: { name, base64 } }
+        let text = String(b.text || '');
+        if (b.file?.base64) text = await extractText(b.file.name, Buffer.from(b.file.base64, 'base64'));
+        if (!text.trim()) return json(400, { error: 'The spec is empty' });
+        return json(200, { text, draft: draftRole(text) });
+      }
+      if (u.pathname === '/api/role/boolean') {
+        const titles = b.titles?.length ? b.titles : titleVariants(b.title);
+        return json(200, { titles, boolean: buildBoolean({ titles, domain: b.domain || [], skills: b.skills || [], exclude: b.exclude || [] }) });
+      }
+      if (u.pathname === '/api/role/save') {
+        // { campaign?, role: { title, location, workType, candidateLocations, titles, domain, skills, exclude, boolean } }
+        const role = b.role || {};
+        if (!role.title) return json(400, { error: 'Give the role a title' });
+        if (!role.boolean) return json(400, { error: 'The boolean search is empty' });
+        let name = b.campaign || slugFor(role.title, role.location);
+        const existing = readCampaignRaw(name);
+        if (!b.campaign && existing && existing.role?.title !== role.title) name = `${name}-${Date.now().toString(36).slice(-4)}`;
+        const keep = existing?.role?.geo || {};
+        const base = existing ? {} : {
+          mode: 'candidates',
+          connectionNotes: ['Hi {firstName}, I run search for digital asset firms and your background caught my eye. Would be good to connect.'],
+          followUps: [
+            { afterDays: 0, text: `Thanks for connecting {firstName}. I'm working on a ${role.title} role${role.location ? ' in ' + role.location : ''} that looks close to what you've been doing. Open to a quick chat this week?` },
+            { afterDays: 4, text: "Hey {firstName}, just checking this didn't get buried. Happy to send the brief over if useful, no pressure." },
+          ],
+          dailyCaps: { connects: 15, messages: 25, profileViews: 60 },
+        };
+        const cfg = saveCampaign(name, { ...base, mode: 'candidates', ...(existing ? {} : { searchUrl: '' }), role: { ...role, geo: keep } });
+        return json(200, { ok: true, campaign: name, cfg, preview: rolePreview(cfg) });
       }
       if (u.pathname === '/api/note') {
         const store = new Store();

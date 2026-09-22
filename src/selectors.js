@@ -9,6 +9,12 @@ export const SEL = {
   searchResultLinks: ['a[href*="/in/"]'],
   searchNoResults: ['.search-reusables__no-results', 'h2:has-text("No results found")'],
 
+  // Locations filter on the people search page (used to turn "Dubai" into LinkedIn's location id)
+  locationsFilterButton: ['button#searchFilter_geoUrn', 'button[aria-label*="Locations filter"]', 'button:has-text("Locations")'],
+  locationsInput: ['input[aria-label="Add a location"]', 'input[placeholder="Add a location"]', '.search-reusables__filter-value-item input[type="text"]'],
+  locationsSuggestion: ['.basic-typeahead__triggered-content [role="option"]', '.search-typeahead-v2__hit', '[role="listbox"] [role="option"]', '.basic-typeahead__selectable'],
+  locationsShowResults: ['button[aria-label="Apply current filter to show results"]', 'button:has(span:text-is("Show results"))'],
+
   // Profile page. Action buttons are looked up inside the top card (the section holding the h1)
   // and by the person's name, so a "People you may know" card further down can never be clicked.
   topCard: ['main section:has(h1)', 'main .pv-top-card', 'main'],

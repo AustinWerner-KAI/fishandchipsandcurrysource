@@ -20,7 +20,7 @@ export function summarise(store, campaignName) {
   const since = startOfLocalDay(new Date(), tz).toISOString();
   const lastStop = [...store.data.actions].reverse().find(a => a.type === 'stopped');
   const weekly = [...store.data.actions].reverse().find(a => a.type === 'weeklyLimit');
-  return { leads, counts, caps, today, since, lastStop, weekly };
+  return { leads, counts, caps, today, since, lastStop, weekly, tz };
 }
 
 export function renderPage(store, campaignName, campaigns) {
@@ -29,7 +29,7 @@ export function renderPage(store, campaignName, campaigns) {
   const waiting = s.leads.filter(l => l.status === 'accepted' && !l.queue.length);
   const rows = [...s.leads].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
   const cap = k => s.caps ? `${s.today[k]} / ${s.caps[k]}` : String(s.today[k]);
-  const when = iso => iso ? new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Dubai', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const when = iso => iso ? new Date(iso).toLocaleString('en-GB', { timeZone: s.tz, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   const chip = st => `<span class="chip chip-${st}">${st}</span>`;
   const row = l => `<tr data-status="${l.status}">
     <td><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.name || l.url.replace('https://www.linkedin.com/in/', ''))}</a><div class="sub">${esc(l.headline)}</div></td>
@@ -64,7 +64,7 @@ label.ok{color:var(--muted);font-size:12px;white-space:nowrap}
 .reply{padding:8px 0;border-bottom:1px solid var(--line)}.reply:last-child{border:0}.reply q{display:block;margin-top:2px;color:var(--ink)}
 @media (max-width:640px){td:nth-child(4),th:nth-child(4){display:none}}
 </style></head><body><div class="wrap">
-<div class="top"><div><h1>Sourcer</h1><div class="sub">Campaign activity. Today resets at midnight Dubai time.</div></div>
+<div class="top"><div><h1>Sourcer</h1><div class="sub">Campaign activity. Today resets at midnight ${esc(s.tz)} time.</div></div>
 <div><select id="camp" onchange="location='/?c='+this.value">${campaigns.map(c => `<option ${c === campaignName ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
 <a class="sub" style="margin-left:10px" href="/export.csv?c=${encodeURIComponent(campaignName)}">Export CSV</a></div></div>
 ${s.lastStop && s.lastStop.at > s.since ? `<div class="alert"><b>Stopped today:</b> ${esc(s.lastStop.reason)}</div>` : ''}

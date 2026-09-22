@@ -253,3 +253,51 @@ export async function collectSearchResults(page, url, pageNo) {
   if (!usable.length) await snap(page, `search-empty-p${pageNo}`);
   return usable;
 }
+
+// Turns a place name ("Dubai", "Switzerland") into LinkedIn's location id for the geoUrn filter.
+// Tries LinkedIn's own typeahead first (same call the search box makes), then the Locations filter
+// on the search page. Returns { id, name } or null. Never throws on "looks different".
+export async function resolveGeo(page, name) {
+  const wanted = String(name || '').trim();
+  if (!wanted) return null;
+  if (!/linkedin\.com/.test(page.url())) await goto(page, 'https://www.linkedin.com/search/results/people/?keywords=a');
+  // 1. typeahead API, from inside the page so cookies and CSRF come along
+  try {
+    const hit = await page.evaluate(async (q) => {
+      const m = document.cookie.match(/JSESSIONID="?([^";]+)/);
+      const r = await fetch(`/voyager/api/typeahead/hitsV2?keywords=${encodeURIComponent(q)}&origin=OTHER&q=type&type=GEO`, {
+        headers: { 'csrf-token': m ? m[1] : '', 'x-restli-protocol-version': '2.0.0', accept: 'application/vnd.linkedin.normalized+json+2.1' },
+      });
+      if (!r.ok) return null;
+      const t = await r.text();
+      const ids = [...t.matchAll(/urn:li:(?:fs_)?geo:(\d+)/g)].map(x => x[1]);
+      const nm = t.match(/"text"\s*:\s*"([^"]{2,80})"/);
+      return ids.length ? { id: ids[0], name: nm ? nm[1] : q } : null;
+    }, wanted);
+    if (hit) { log(`location "${wanted}" -> ${hit.name} (${hit.id})`); return hit; }
+  } catch (e) { warn('location typeahead failed', e.message); }
+  // 2. the Locations filter on the search page
+  try {
+    await goto(page, 'https://www.linkedin.com/search/results/people/?keywords=a');
+    const btn = await firstVisible(page, SEL.locationsFilterButton, 4000);
+    if (!btn) { await snap(page, 'no-locations-filter'); return null; }
+    await btn.click();
+    await sleep(randomBetween(600, 1200));
+    const input = await firstVisible(page, SEL.locationsInput, 4000);
+    if (!input) { await snap(page, 'no-locations-input'); return null; }
+    await typeLikeHuman(input, wanted);
+    await sleep(randomBetween(900, 1600));
+    const opt = await firstVisible(page, SEL.locationsSuggestion, 5000);
+    if (!opt) { await snap(page, 'no-location-suggestion'); return null; }
+    const label = (await opt.innerText()).split('\n')[0].trim();
+    await opt.click();
+    await sleep(randomBetween(500, 1000));
+    const show = await firstVisible(page, SEL.locationsShowResults, 4000);
+    if (show) { await show.click(); await sleep(randomBetween(1500, 2500)); }
+    const m = page.url().match(/geoUrn=%5B%22(\d+)%22|geoUrn=\[%22(\d+)|geoUrn=\["(\d+)/);
+    const id = m && (m[1] || m[2] || m[3]);
+    if (id) { log(`location "${wanted}" -> ${label} (${id})`); return { id, name: label || wanted }; }
+    await snap(page, 'no-geo-in-url');
+  } catch (e) { warn('location filter failed', e.message); }
+  return null;
+}
