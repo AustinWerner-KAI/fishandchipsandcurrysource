@@ -1,13 +1,37 @@
 import * as linkedin from '../linkedin.js';
-import { render, checkNote } from '../template.js';
+import { renderChecked, checkNote } from '../template.js';
 import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, pick, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
 import { isRecruiterUrl } from '../store.js';
+import { cleanLead } from '../rank.js';
 
 const WEEK = 7 * 86400000;
 
 export function weeklyLimitActive(store, now = Date.now()) {
   return store.actionsSince(new Date(now - WEEK).toISOString(), 'weeklyLimit').length > 0;
+}
+
+// Swaps a Recruiter find for their normal /in/ profile (one profile view). Returns the lead, or null
+// when it could not be found or the person is already on file (never contacted twice).
+export async function resolveRecruiterLead(page, store, lead, ops = linkedin, pause = true) {
+  if (!ops.publicUrlFor) ops = { ...ops, publicUrlFor: (await import('./recruiter.js')).publicUrlFor };
+  let pub = null;
+  try { pub = await ops.publicUrlFor(page, lead.url); }
+  catch (e) { if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e; warn('recruiter lookup failed', lead.url, e.message); }
+  store.refresh();
+  store.recordAction('profileViews', lead.url);
+  if (!pub) { store.setStatus(lead.url, 'error', { error: 'could not find their normal LinkedIn profile from Recruiter' }); store.save(); return null; }
+  const r = store.rekey(lead.url, pub);
+  if (r.conflict) {
+    store.setStatus(lead.url, 'skipped', { error: `already on file (${r.conflict.campaign}, ${r.conflict.status})` });
+    store.save();
+    log(`${lead.name}: already on file as ${pub}, not contacted again`);
+    return null;
+  }
+  store.save();
+  log(`found ${lead.name}: ${pub}`);
+  if (pause) await sleep(humanPauseMs([8, 20]));
+  return r.lead;
 }
 
 export async function runConnect(page, store, cfg, { max, ops = linkedin, pause = true } = {}) {
@@ -19,6 +43,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
 
   const candidates = store.leads({ campaign: cfg.name, status: 'new' })
     .filter(l => cfg.autoApprove || l.approved)
+    .filter(l => cleanLead(l).degree !== '1st')          // already connected: they go in the 1st connections list
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.createdAt.localeCompare(b.createdAt));
   if (!candidates.length) { log('connect: nothing approved and waiting'); return { sent: 0 }; }
 
@@ -35,29 +60,18 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
 
     // Found in Recruiter: look up their normal profile first (one profile view)
     if (isRecruiterUrl(lead.url)) {
-      if (!ops.publicUrlFor) ops = { ...ops, publicUrlFor: (await import('./recruiter.js')).publicUrlFor };
-      let pub = null;
-      try { pub = await ops.publicUrlFor(page, lead.url); }
-      catch (e) { if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e; warn('recruiter lookup failed', lead.url, e.message); }
-      store.refresh();
-      store.recordAction('profileViews', lead.url);
-      if (!pub) { store.setStatus(lead.url, 'error', { error: 'could not find their normal LinkedIn profile from Recruiter' }); store.save(); continue; }
-      const r = store.rekey(lead.url, pub);
-      if (r.conflict) {
-        // Same person already on file (another role, an import, or already contacted): never invite twice.
-        store.setStatus(lead.url, 'skipped', { error: `already on file (${r.conflict.campaign}, ${r.conflict.status})` });
-        store.save();
-        log(`${lead.name}: already on file as ${pub}, not invited again`);
-        continue;
-      }
-      store.save();
-      lead = r.lead;
-      log(`found ${lead.name}: ${pub}`);
-      if (pause) await sleep(humanPauseMs([8, 20]));
+      lead = await resolveRecruiterLead(page, store, lead, ops, pause);
+      if (!lead) continue;
     }
 
     const template = pick(cfg.connectionNotes);
-    const note = template ? render(template, lead, cfg.role) : '';
+    const { text: note, problem } = template ? renderChecked(template, lead, cfg.role) : { text: '' };
+    if (problem) {
+      // never an invite that says "Hey ," : wait until Kai adds the name
+      store.refresh(); store.setStatus(lead.url, 'error', { error: problem }); store.save();
+      warn(`${lead.name || lead.url}: ${problem}, not invited`);
+      continue;
+    }
     const problems = note ? checkNote(note, cfg.noteMaxLength) : [];
     if (problems.length) { warn('note rejected', problems, note); continue; }
 
@@ -86,8 +100,8 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
         log(`invited ${cur.name || cur.url}`);
         break;
       case 'already-connected':
-        // already in the network before this campaign: no "thanks for connecting" template, but queued messages still work
-        store.setStatus(cur.url, 'accepted', { acceptedAt: new Date().toISOString(), preexisting: true, notes: [cur.notes, 'was already a 1st degree connection'].filter(Boolean).join(' | ') });
+        // already connected: back to the 1st connections list, where a free message can go instead
+        store.setStatus(cur.url, 'new', { degree: '1st', approved: false, notes: [cur.notes, 'already a 1st degree connection'].filter(Boolean).join(' | ') });
         log(`already connected: ${cur.name || cur.url}`);
         break;
       case 'pending':

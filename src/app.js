@@ -14,13 +14,13 @@ import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
 import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
 import { scoreLead } from './rank.js';
-import { render } from './template.js';
-import { rankLeads } from './rank.js';
+import { render, renderChecked, nameFor } from './template.js';
+import { rankLeads, cleanLead } from './rank.js';
 import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
 
-const EDITABLE = ['mode', 'role', 'inmail', 'searchUrl', 'maxSearchPages', 'autoApprove', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
+const EDITABLE = ['mode', 'role', 'firstDegree', 'inmail', 'searchUrl', 'maxSearchPages', 'autoApprove', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
 
 // Recruiter Lite lane: for people who have not accepted the connection. Sent by hand; the app writes the text.
 export const DEFAULT_INMAIL = {
@@ -40,17 +40,26 @@ export function inmailList(store, cfg, now = new Date()) {
     if (l.status !== 'invited' || !l.invitedAt || l.preexisting) continue;
     const sent = l.inmail || {};
     if (sent.followUpAt || sent.replied) continue;                          // lane over
-    const item = { url: l.url, name: l.name, headline: l.headline, subject: render(im.subject, l, cfg.role), score: scoreLead(l, cfg.role).score ?? 0 };
+    const subj = renderChecked(im.subject, l, cfg.role);
+    const item = { url: l.url, name: l.name, headline: l.headline, subject: subj.text, problem: subj.problem, score: scoreLead(l, cfg.role).score ?? 0 };
     if (sent.sentAt) {
-      if (now - new Date(sent.sentAt) >= (im.followUpAfterDays ?? 4) * 86400000) out.push({ ...item, kind: 'followUp', text: render(im.followUp, l, cfg.role) });
+      if (now - new Date(sent.sentAt) >= (im.followUpAfterDays ?? 4) * 86400000) { const r = renderChecked(im.followUp, l, cfg.role); out.push({ ...item, kind: 'followUp', text: r.text, problem: item.problem || r.problem }); }
       continue;
     }
-    if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000) firsts.push({ ...item, kind: 'inmail', text: render(im.body, l, cfg.role) });
+    if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000) { const r = renderChecked(im.body, l, cfg.role); firsts.push({ ...item, kind: 'inmail', text: r.text, problem: item.problem || r.problem }); }
   }
   // A new InMail costs a credit: offer only as many as are left this month, best matches first.
   const credits = inmailCredits(store, im.monthlyCredits ?? 30, now, ACCOUNT_TZ);
   firsts.sort((a, b) => b.score - a.score);
   return [...out, ...firsts.slice(0, credits.left)];
+}
+
+// The 1st connections message as the best-matched person on that list would get it.
+function firstPreview(store, cfg) {
+  if (!cfg?.firstDegree?.message) return null;
+  const top = rankLeads(store.leads({ campaign: cfg.name, status: 'new' }), cfg.role).filter(l => l.degree === '1st')
+    .sort((a, b) => (b.rank.score ?? 0) - (a.rank.score ?? 0))[0];
+  return top ? { name: top.name, ...renderChecked(cfg.firstDegree.message, top, cfg.role) } : null;
 }
 
 function readCampaignRaw(name) {
@@ -100,6 +109,8 @@ export function state(jobs, campaignName) {
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
+    firstDegreePreview: firstPreview(store, cfg),
+
     inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), ACCOUNT_TZ) : null,
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
@@ -271,6 +282,47 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (b.dryRun) return json(200, { ok: true, n: store.clearUncontacted(b.campaign, { dryRun: true }) });
         const n = store.clearUncontacted(b.campaign);
         store.recordAction('cleared', '-', { campaign: b.campaign, n });
+        store.save();
+        return json(200, { ok: true, n });
+      }
+      if (u.pathname === '/api/preview') {
+        // { campaign, url } every message exactly as this person would get it
+        const cfg = loadCampaign(b.campaign);
+        const l = new Store().get(b.url);
+        if (!l) return json(404, { error: 'no such person' });
+        const one = (label, t) => t ? { label, ...renderChecked(t, l, cfg.role) } : null;
+        const list = [
+          ...cfg.connectionNotes.map((t, i) => one(cfg.connectionNotes.length > 1 ? `Connection note ${i + 1}` : 'Connection note', t)),
+          ...cfg.followUps.map((f, i) => one(`After they accept, message ${i + 1}`, f.text)),
+          cfg.inmail && one('InMail subject', cfg.inmail.subject), cfg.inmail && one('InMail', cfg.inmail.body), cfg.inmail && one('InMail follow-up', cfg.inmail.followUp),
+          one('1st connections message', cfg.firstDegree?.message), one('1st connections follow-up', cfg.firstDegree?.followUp),
+        ].filter(Boolean);
+        return json(200, { name: l.name, firstName: nameFor(l), list });
+      }
+      if (u.pathname === '/api/firstname') {
+        // { url, firstName } Kai fills in a name Sourcer could not read; a person held for it goes back to the list
+        const store = new Store();
+        const l = store.get(b.url);
+        const fn = String(b.firstName || '').trim().slice(0, 40);
+        if (!l) return json(404, { error: 'no such person' });
+        if (!/^[\p{L}][\p{L}'. -]*$/u.test(fn)) return json(400, { error: 'Just their first name, letters only' });
+        l.firstName = fn;
+        if (/first name/.test(l.error || '')) { l.error = ''; if (l.status === 'error' && !l.invitedAt) l.status = 'new'; }
+        store.save();
+        return json(200, { ok: true });
+      }
+      if (u.pathname === '/api/direct') {
+        // { campaign, urls } message these 1st connections: free, sent by the runner as LinkedIn messages
+        if (!readCampaignRaw(b.campaign)) return json(400, { error: 'Pick a role first' });
+        const store = new Store();
+        const at = new Date().toISOString();
+        let n = 0;
+        for (const url of [].concat(b.urls || [])) {
+          const l = store.get(url);
+          if (!l || l.campaign !== b.campaign || l.status !== 'new' || cleanLead(l).degree !== '1st' || l.direct) continue;
+          store.setStatus(l.url, 'accepted', { degree: '1st', preexisting: true, acceptedAt: at, direct: { at }, approved: true });
+          n++;
+        }
         store.save();
         return json(200, { ok: true, n });
       }

@@ -48,7 +48,17 @@ const DOMAINS = [
   { words: ['trading', 'market making', 'market maker', 'hedge fund', 'prop trading', 'quant'], boolean: ['trading', '"market making"', 'quant'] },
 ];
 
+// Hard skills a Recruiter "Skill keywords" filter can use. The key skill for a role is picked from these.
+const TECH_SKILLS = [
+  'azure', 'aws', 'gcp', 'google cloud', 'kubernetes', 'terraform', 'docker', 'devsecops', 'siem', 'splunk', 'iam',
+  'zero trust', 'penetration testing', 'threat modeling', 'incident response', 'soc 2', 'iso 27001', 'hsm', 'mpc', 'cryptography',
+  'solidity', 'rust', 'golang', 'go', 'python', 'typescript', 'java', 'c++', 'kafka', 'sql', 'snowflake', 'react', 'node',
+  'aml', 'kyc', 'mica', 'vara', 'fca', 'derivatives', 'options', 'perpetuals', 'market making', 'otc', 'custody', 'tokenomics',
+  'smart contracts', 'smart contract', 'zk', 'evm', 'layer 2', 'defi',
+];
+
 const SKILL_WORDS = [
+  'azure', 'gcp', 'google cloud', 'terraform', 'docker', 'devsecops', 'siem', 'iam', 'zero trust', 'java', 'kafka', 'cryptography', 'mpc', 'hsm',
   'solidity', 'rust', 'golang', 'go', 'python', 'typescript', 'kubernetes', 'aws', 'react', 'node',
   'aml', 'kyc', 'mica', 'vara', 'fca', 'compliance', 'licensing', 'regulatory',
   'custody', 'derivatives', 'options', 'perpetuals', 'market making', 'liquidity', 'otc',
@@ -107,6 +117,28 @@ export function guessWorkType(text) {
   if (/\bhybrid\b/.test(t)) return 'hybrid';
   if (/\bon[- ]?site\b|\bin[- ]office\b|\boffice[- ]based\b|\brelocat/.test(t)) return 'onsite';
   return guessLocation(text) ? 'onsite' : 'remote';
+}
+
+const countOf = (t, w) => (t.match(new RegExp(`(^|[^a-z0-9+])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9+])`, 'g')) || []).length;
+const SKILL_LABEL = { aws: 'AWS', gcp: 'GCP', iam: 'IAM', siem: 'SIEM', aml: 'AML', kyc: 'KYC', mica: 'MiCA', vara: 'VARA', fca: 'FCA', otc: 'OTC', zk: 'ZK', evm: 'EVM', mpc: 'MPC', hsm: 'HSM', sql: 'SQL', defi: 'DeFi', devsecops: 'DevSecOps', 'soc 2': 'SOC 2', 'iso 27001': 'ISO 27001' };
+const labelSkill = w => SKILL_LABEL[w] || w.replace(/\b[a-z]/g, c => c.toUpperCase());
+
+// The one skill that matters most in the spec (e.g. "Azure"), for Recruiter's Skill keywords filter.
+// Only hard skills count, never words already in the title, and a skill in the title line or
+// the requirements counts double.
+export function keySkill(text, title = '') {
+  const t = String(text || '').toLowerCase();
+  const inTitle = String(title).toLowerCase();
+  const head = t.split('\n').slice(0, 3).join(' ');
+  const req = (t.match(/(requirements?|must have|what you.ll bring|you have|qualifications?)[\s\S]{0,1500}/) || [''])[0];
+  let best = null;
+  for (const w of TECH_SKILLS) {
+    if (countOf(inTitle, w)) continue;
+    const n = countOf(t, w) + countOf(head, w) + countOf(req, w);
+    const at = t.indexOf(w);                 // on a tie, the one the spec mentions first
+    if (n && (!best || n > best.n || (n === best.n && at < best.at))) best = { w, n, at };
+  }
+  return best ? labelSkill(best.w) : '';
 }
 
 export function guessDomain(text) {
@@ -212,7 +244,9 @@ export function draftRole(text) {
   const skills = guessSkills(text);
   const titles = titleVariants(title);
   const required = splitTitle(title).modifiers;      // "Cloud" from "Senior Cloud Security Engineer"
+  const key = keySkill(text, title);
   return {
+    recruiterSkills: key ? [key] : [],
     title, location, workType,
     // remote roles: where the candidate may sit. Starts equal to the office location; the recruiter widens it.
     candidateLocations: location ? [location] : [],

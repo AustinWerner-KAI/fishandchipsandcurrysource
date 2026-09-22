@@ -286,3 +286,18 @@ test('audit: InMail Sent and They replied count once; bad hours are refused; job
   r = await post('/api/clear', { campaign: 'example', dryRun: true });
   assert.equal(typeof r.body.n, 'number');
 });
+
+test('1st connections: /api/direct lines up only uncontacted 1st degree people in that role', async () => {
+  const st = new Store();
+  st.upsertLead({ url: 'linkedin.com/in/fd-one', name: 'Fd One', campaign: 'example', degree: '1st' });
+  st.upsertLead({ url: 'linkedin.com/in/fd-two', name: 'Fd Two', campaign: 'example', degree: '2nd' });
+  st.save();
+  const r = await post('/api/direct', { campaign: 'example', urls: ['linkedin.com/in/fd-one', 'linkedin.com/in/fd-two'] });
+  assert.equal(r.body.n, 1);
+  const one = new Store().get('linkedin.com/in/fd-one');
+  assert.equal(one.status, 'accepted');
+  assert.ok(one.direct.at);
+  assert.equal(new Store().get('linkedin.com/in/fd-two').status, 'new');
+  const again = await post('/api/direct', { campaign: 'example', urls: ['linkedin.com/in/fd-one'] });
+  assert.equal(again.body.n, 0);
+});

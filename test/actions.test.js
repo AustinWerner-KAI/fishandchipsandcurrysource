@@ -48,16 +48,17 @@ test('connect only touches approved leads and stops at the cap', async () => {
 
 test('connect handles LinkedIn outcomes', async () => {
   const s = fresh();
-  s.upsertLead({ url: 'linkedin.com/in/x', name: 'X', campaign: 'c1', approved: true });
-  s.upsertLead({ url: 'linkedin.com/in/y', name: 'Y', campaign: 'c1', approved: true });
+  s.upsertLead({ url: 'linkedin.com/in/x', name: 'Xavier Xu', campaign: 'c1', approved: true });
+  s.upsertLead({ url: 'linkedin.com/in/y', name: 'Yara Yu', campaign: 'c1', approved: true });
   s.save();
   const results = { 'https://www.linkedin.com/in/x/': 'already-connected', 'https://www.linkedin.com/in/y/': 'weekly-limit' };
   const ops = { sendConnectionRequest: async (p, url) => ({ result: results[url], info: {} }) };
   const r = await runConnect(null, s, { ...cfg, dailyCaps: { ...cfg.dailyCaps, connects: 10 } }, { ops, pause: false });
-  assert.equal(s.get('linkedin.com/in/x').status, 'accepted');
+  assert.equal(s.get('linkedin.com/in/x').status, 'new');          // back to the 1st connections list
+  assert.equal(s.get('linkedin.com/in/x').degree, '1st');
+  assert.equal(s.get('linkedin.com/in/x').approved, false);
   assert.equal(r.weeklyLimit, true);
   assert.equal(s.get('linkedin.com/in/y').status, 'new');
-  assert.equal(s.get('linkedin.com/in/x').preexisting, true);
   // the weekly limit is remembered: no more connects for 7 days
   assert.equal(weeklyLimitActive(s), true);
   const r2 = await runConnect(null, s, cfg, { ops: { sendConnectionRequest: async () => { throw new Error('must not be called'); } }, pause: false });
@@ -87,7 +88,7 @@ test('connect picks up a dashboard change made mid-run', async () => {
 
 test('checkpoint errors bubble up and stop the run', async () => {
   const s = fresh();
-  s.upsertLead({ url: 'linkedin.com/in/x', campaign: 'c1', approved: true });
+  s.upsertLead({ url: 'linkedin.com/in/x', name: 'Xavier Xu', campaign: 'c1', approved: true });
   s.save();
   const err = new CheckpointError('checkpoint');
   const ops = { sendConnectionRequest: async () => { throw err; } };
@@ -292,4 +293,74 @@ test('audit: templates never go to someone in an InMail conversation; old queued
   await runMessages(null, s, cfg, { ops, pause: false });
   assert.deepEqual(sent, []);
   assert.equal(s.get(a.url).status, 'replied');
+});
+
+test('1st connections: free message, one follow-up, Recruiter find looked up first, old chat skipped', async () => {
+  const fcfg = { ...cfg, workingHours: null, firstDegree: { message: 'Hi {firstName}, about {role}', followUpAfterDays: 4, followUp: 'Bump {firstName}' }, role: { title: 'Cloud Engineer' } };
+  const lead = { status: 'accepted', queue: [], messages: [], firstName: 'Ann', direct: { at: '2026-09-20T00:00:00Z' }, preexisting: true };
+  assert.equal(dueMessage(lead, fcfg, new Date('2026-09-20T01:00:00Z')).text, 'Hi Ann, about Cloud Engineer');
+  lead.messages.push({ lane: 'direct', at: '2026-09-20T01:00:00Z', text: 'x' });
+  assert.equal(dueMessage(lead, fcfg, new Date('2026-09-22T01:00:00Z')), null);
+  assert.equal(dueMessage(lead, fcfg, new Date('2026-09-24T02:00:00Z')).text, 'Bump Ann');
+  lead.messages.push({ lane: 'direct', at: '2026-09-24T02:00:00Z', text: 'y' });
+  assert.equal(dueMessage(lead, fcfg, new Date('2026-10-30T00:00:00Z')), null);
+
+  const s = fresh();
+  const a = s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/AAA1', name: 'Rec One', campaign: 'c1', degree: '1st' });
+  const b = s.upsertLead({ url: 'linkedin.com/in/oldchat', name: 'Old Chat', campaign: 'c1', degree: '1st' });
+  for (const l of [a, b]) s.setStatus(l.url, 'accepted', { preexisting: true, acceptedAt: '2026-09-20T00:00:00Z', direct: { at: '2026-09-20T00:00:00Z' } });
+  s.save();
+  const sent = [];
+  const ops = { readOwnName: async () => 'Kai Crayford', closeThread: async () => {},
+    publicUrlFor: async () => 'https://www.linkedin.com/in/rec-one/',
+    openThread: async (p, url) => url.includes('oldchat') ? { opened: true, lastFrom: 'them', theySpoke: true, editor: {} } : { opened: true, lastFrom: 'me', theySpoke: true, editor: {} },
+    sendMessageInOpenThread: async (p, e, text) => { sent.push(text); return true; } };
+  await runMessages(null, s, fcfg, { ops, pause: false });
+  assert.deepEqual(sent, ['Hi Rec, about Cloud Engineer']);            // earlier words in an old chat do not block it
+  assert.equal(s.get('linkedin.com/in/rec-one').status, 'messaged');
+  assert.equal(s.get('linkedin.com/in/rec-one').messages[0].lane, 'direct');
+  assert.equal(s.get('linkedin.com/in/oldchat').status, 'skipped');
+});
+
+test('connect never invites a 1st connection', async () => {
+  const s = fresh();
+  s.upsertLead({ url: 'linkedin.com/in/first', campaign: 'c1', approved: true, degree: '1st' });
+  s.save();
+  let calls = 0;
+  const ops = { sendConnectionRequest: async () => { calls++; return { result: 'sent', info: {} }; } };
+  await runConnect(null, s, { ...cfg, workingHours: null }, { ops, pause: false });
+  assert.equal(calls, 0);
+});
+
+test('names: every message says the real first name, and nothing goes without one', async () => {
+  const { render, renderChecked, unknownTags, nameFor } = await import('../src/template.js');
+  const role = { title: 'Senior Cloud Security Engineer', location: 'New York', workType: 'hybrid' };
+  const kai = "Hey {firstName}, just wondering if you're on the market at the moment, as I have a new role, {role}, you might like. Let me know. Kai";
+  for (const [name, first] of [['Jordan Reyes', 'Jordan'], ['JORDAN REYES', 'Jordan'], ['priya nair', 'Priya'], ['Dr. Jane Doe, CISSP', 'Jane'], ['Anne-Marie Lopez', 'Anne-Marie'], ['José Álvarez', 'José']]) {
+    const lead = { name, firstName: (await import('../src/store.js')).firstNameOf(name) };
+    const { text, problem } = renderChecked(kai, lead, role);
+    assert.equal(problem, '', name);
+    assert.ok(text.startsWith(`Hey ${first}, just`), `${name} -> ${text}`);
+    assert.doesNotMatch(text, /[{}\[\]]/);
+  }
+  // every spelling Kai might type
+  for (const tag of ['{firstName}', '{firstname}', '{FirstName}', '{name}', '[firstname]']) assert.equal(render(`Hi ${tag}`, { firstName: 'Sam' }), 'Hi Sam');
+  assert.match(renderChecked('Hi {firstName}, {role name}', { firstName: 'Sam' }, role).problem, /unknown tag/);   // a misspelt tag is held back...
+  assert.deepEqual(unknownTags('Role: {role name} {fristName}'), ['{role name}', '{fristName}']);   // ...so saving refuses it
+  // no name, or only an initial: held back, never "Hey ,"
+  for (const lead of [{}, { firstName: '' }, { firstName: 'J' }, { firstName: 'J.' }]) assert.match(renderChecked(kai, lead, role).problem, /first name/);
+  assert.equal(nameFor({ firstName: 'MCDONALD' }), 'Mcdonald');
+  // the runner holds back a connection note and a message with no name
+  const s = fresh();
+  s.upsertLead({ url: 'linkedin.com/in/noname', name: '', campaign: 'c1', approved: true });
+  const m = s.upsertLead({ url: 'linkedin.com/in/noname2', name: '', campaign: 'c1' });
+  s.setStatus(m.url, 'accepted', { acceptedAt: '2026-09-20T00:00:00Z', direct: { at: '2026-09-20T00:00:00Z' }, preexisting: true });
+  s.save();
+  let calls = 0;
+  const fcfg = { ...cfg, workingHours: null, firstDegree: { message: 'Hi {firstName}', followUpAfterDays: 4, followUp: 'x' } };
+  await runConnect(null, s, fcfg, { ops: { sendConnectionRequest: async () => { calls++; return { result: 'sent', info: {} }; } }, pause: false });
+  await runMessages(null, s, fcfg, { ops: { readOwnName: async () => 'Kai Crayford', openThread: async () => { calls++; return { opened: false }; }, closeThread: async () => {} }, pause: false });
+  assert.equal(calls, 0);
+  assert.match(s.get('linkedin.com/in/noname').error, /first name/);
+  assert.match(s.get('linkedin.com/in/noname2').error, /first name/);
 });

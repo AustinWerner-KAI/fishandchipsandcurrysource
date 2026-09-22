@@ -96,3 +96,11 @@ test('recruiter skills: two at most', async () => {
   assert.deepEqual(recruiterSkills({ recruiterSkills: ['AWS', ' Cloud Security ', 'AWS', 'Kubernetes'] }), ['AWS', 'Cloud Security']);
   assert.deepEqual(recruiterSkills({}), []);
 });
+
+test('key skill: the one hard skill that matters, never a title word', async () => {
+  const { keySkill, draftRole } = await import('../src/role.js');
+  const spec = 'Senior Cloud Security Engineer\nNew York, hybrid\nRequirements:\n- Securing Azure environments\n- Azure AD and IAM\n- Some Python\nNice to have: AWS';
+  assert.equal(keySkill(spec, 'Senior Cloud Security Engineer'), 'Azure');
+  assert.deepEqual(draftRole(spec).recruiterSkills, ['Azure']);
+  assert.equal(keySkill('Head of Sales\nDubai\nGreat communicator', 'Head of Sales'), '');
+});

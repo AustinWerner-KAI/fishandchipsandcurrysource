@@ -3,6 +3,7 @@ import path from 'node:path';
 import { CAMPAIGN_DIR } from './paths.js';
 import { DEFAULT_CAPS } from './limits.js';
 import { WORK_TYPES } from './role.js';
+import { unknownTags } from './template.js';
 
 const DEFAULTS = {
   mode: 'candidates',            // 'candidates' (template follow-ups) or 'newbusiness' (per-person queued messages)
@@ -13,6 +14,12 @@ const DEFAULTS = {
   connectionNotes: [],           // one or more; picked at random per lead. Empty = send without a note
   noteMaxLength: 300,
   followUps: [],                 // candidates mode: [{ afterDays: 2, afterHours: 0, text: '...' }]
+  // Already 1st degree connections: messages are free (no InMail credit). Sent by the runner as LinkedIn messages.
+  firstDegree: {
+    message: "Hi {firstName},\n\nHope you're well. I'm running a search for a {role} with a growing digital asset business in {location}. {workType}.\n\nYour background looks close to what they're after, so you were one of the first people I thought of.\n\nOpen to hearing a bit more? A yes or no is fine either way.\n\nKai",
+    followUpAfterDays: 4,
+    followUp: "Hi {firstName}, just bringing this back up in case it got buried. If the timing isn't right, no problem at all. Happy to keep you in mind for the next one. Kai",
+  },
   inmail: null,                  // Recruiter Lite lane, sent by hand: { afterDays: 7, subject, body, followUpAfterDays: 4, followUp }
   dailyCaps: { ...DEFAULT_CAPS },
   workingHours: { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5], timezone: 'Asia/Dubai' },
@@ -36,6 +43,7 @@ export function loadCampaign(name) {
     ...raw,
     name,
     dailyCaps: { ...DEFAULTS.dailyCaps, ...(raw.dailyCaps || {}) },
+    firstDegree: { ...DEFAULTS.firstDegree, ...(raw.firstDegree || {}) },
     workingHours: raw.workingHours === null ? null : { ...DEFAULTS.workingHours, ...(raw.workingHours || {}) },
   };
   validate(cfg);
@@ -65,6 +73,20 @@ export function validate(cfg) {
   const pa = cfg.pauseBetweenActionsSec, pc = cfg.pauseBetweenCyclesMin;
   if (!Array.isArray(pa) || pa.length !== 2 || !(pa[0] >= 20) || !(pa[1] >= pa[0])) errs.push('pause between actions: at least 20 seconds, and the maximum not below the minimum');
   if (!Array.isArray(pc) || pc.length !== 2 || !(pc[0] >= 5) || !(pc[1] >= pc[0])) errs.push('pause between passes: at least 5 minutes');
+  // a misspelt tag would quietly come out empty, so it is refused here
+  const texts = [
+    ...cfg.connectionNotes.map(t => ['Connection note', t]),
+    ...cfg.followUps.map((f, i) => [`After they accept, message ${i + 1}`, f.text]),
+    ...(cfg.inmail ? [['InMail subject', cfg.inmail.subject], ['InMail', cfg.inmail.body], ['InMail follow-up', cfg.inmail.followUp]] : []),
+    ...(cfg.firstDegree ? [['1st connections message', cfg.firstDegree.message], ['1st connections follow-up', cfg.firstDegree.followUp]] : []),
+  ];
+  for (const [where, t] of texts) {
+    const bad = unknownTags(t);
+    if (bad.length) errs.push(`${where}: ${bad[0]} is not a tag. Use {firstName} {role} {location} {workType}`);
+  }
+  const fd = cfg.firstDegree;
+  if (fd && (typeof fd.message !== 'string' || !fd.message.trim())) errs.push('1st connections: the message is empty');
+  if (fd && !(Number(fd.followUpAfterDays) >= 1)) errs.push('1st connections: follow-up at least 1 day later');
   const wh = cfg.workingHours;
   if (wh) {
     try { new Intl.DateTimeFormat('en', { timeZone: wh.timezone || 'Asia/Dubai' }); } catch { errs.push(`working hours: "${wh.timezone}" is not a timezone (try America/New_York)`); }

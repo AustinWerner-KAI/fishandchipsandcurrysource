@@ -1,11 +1,14 @@
 import * as linkedin from '../linkedin.js';
 import { sameText } from '../linkedin.js';
 import { goto, humanScroll, snap } from '../browser.js';
-import { render } from '../template.js';
+import { renderChecked } from '../template.js';
 import { ACCOUNT_TZ, remaining, humanPauseMs, sleep, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
+import { isRecruiterUrl } from '../store.js';
+import { resolveRecruiterLead } from './connect.js';
 
 const DAY = 86400000;
+const checked = (t, lead, role) => { const r = renderChecked(t, lead, role); return r.problem ? r : { text: r.text }; };
 const HOUR = 3600000;
 
 export async function ensureOwnName(page, store, ops = linkedin) {
@@ -59,6 +62,17 @@ export function dueMessage(lead, cfg, now = new Date()) {
     if (q.notBefore && new Date(q.notBefore) > now) return null;
     return { text: q.text, source: 'queue', note: q.note, resume: !!q.resume };
   }
+  // 1st connections Kai chose to message: one message, one follow-up, then stop
+  if (lead.direct) {
+    const fd = cfg.firstDegree || {};
+    const steps = [{ days: 0, text: fd.message }, { days: fd.followUpAfterDays ?? 4, text: fd.followUp }];
+    const done = lead.messages.filter(m => m.lane === 'direct');
+    const step = steps[done.length];
+    if (!step || !step.text) return null;
+    const base = done.length ? done[done.length - 1].at : lead.direct.at;
+    if (new Date(base).getTime() + step.days * DAY > now.getTime()) return null;
+    return { ...checked(step.text, lead, cfg.role), source: 'step', stepIndex: done.length, lane: 'direct' };
+  }
   if (cfg.mode !== 'candidates') return null;
   if (lead.preexisting) return null;   // they were already a contact; templates would read wrong
   if (lead.inmail?.sentAt) return null; // already in an InMail conversation; connection templates would read wrong
@@ -68,7 +82,7 @@ export function dueMessage(lead, cfg, now = new Date()) {
   const base = lead.messages.length ? lead.messages[lead.messages.length - 1].at : lead.acceptedAt;
   if (!base) return null;
   if (new Date(base).getTime() + (step.afterDays || 0) * DAY + (step.afterHours || 0) * 3600000 > now.getTime()) return null;
-  return { text: render(step.text, lead, cfg.role), source: 'step', stepIndex };
+  return { ...checked(step.text, lead, cfg.role), source: 'step', stepIndex };
 }
 
 function markReplied(store, lead, thread) {
@@ -78,7 +92,7 @@ function markReplied(store, lead, thread) {
 
 function recordSent(store, lead, msg) {
   if (msg.source === 'queue') lead.queue.shift();
-  lead.messages.push({ step: msg.stepIndex ?? null, text: msg.text, at: new Date().toISOString(), note: msg.note || '' });
+  lead.messages.push({ step: msg.stepIndex ?? null, text: msg.text, at: new Date().toISOString(), note: msg.note || '', ...(msg.lane ? { lane: msg.lane } : {}) });
   store.setStatus(lead.url, 'messaged');
   store.recordAction('messages', lead.url);
 }
@@ -106,6 +120,18 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     let lead = store.refresh(picked.url);
     const msg = lead && dueMessage(lead, cfg, new Date());
     if (!msg) continue;
+    if (msg.problem) {
+      // no message goes out with a gap where the name should be
+      if (lead.error !== msg.problem) { lead.error = msg.problem; store.save(); warn(`${lead.name || lead.url}: ${msg.problem}, not sent`); }
+      continue;
+    }
+
+    // found in Recruiter: look up their normal profile first (one more view)
+    if (isRecruiterUrl(lead.url)) {
+      if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) < 2) { log('messages: profile view cap reached'); break; }
+      lead = await resolveRecruiterLead(page, store, lead, ops, pause);
+      if (!lead) continue;
+    }
 
     let t;
     try {
@@ -134,7 +160,16 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     // Once they have written, only Kai's own reply (a queued message marked resume) may go.
     // No template or older queued message ever goes again, even after Kai answered by hand.
     const kaiReply = msg.source === 'queue' && msg.resume;
-    if ((t.theySpoke || t.lastFrom === 'them') && !kaiReply) {
+    if (msg.lane === 'direct' && msg.stepIndex === 0 && t.lastFrom === 'them') {
+      // an old chat where they wrote last: a cold message would read wrong
+      store.setStatus(lead.url, 'skipped', { error: 'they wrote last in an older chat: message them by hand', skippedByHand: true });
+      await ops.closeThread(page);
+      store.save();
+      continue;
+    }
+    // 1st connections: an old chat may hold their earlier words, so only a new last word counts
+    const theyReplied = msg.lane === 'direct' ? t.lastFrom === 'them' : (t.theySpoke || t.lastFrom === 'them');
+    if (theyReplied && !kaiReply) {
       markReplied(store, lead, t);
       await ops.closeThread(page);
       store.save();
@@ -207,8 +242,8 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
     store.recordAction('profileViews', lead.url);
     lead.lastCheckedAt = new Date().toISOString();
     if (t.opened) {
-      if (t.lastFrom === 'them' || (t.theySpoke && !lead.queue.length)) { markReplied(store, lead, t); replies++; }
-      else if (cfg.mode === 'candidates' && !lead.queue.length && lead.messages.length >= cfg.followUps.length && lead.messages.length
+      if (t.lastFrom === 'them' || (t.theySpoke && !lead.queue.length && !lead.direct)) { markReplied(store, lead, t); replies++; }
+      else if ((cfg.mode === 'candidates' || lead.direct) && !lead.queue.length && lead.messages.length >= (lead.direct ? 2 : cfg.followUps.length) && lead.messages.length
         && now - new Date(lead.messages[lead.messages.length - 1].at).getTime() > 14 * DAY) {
         store.setStatus(lead.url, 'done');
       }
