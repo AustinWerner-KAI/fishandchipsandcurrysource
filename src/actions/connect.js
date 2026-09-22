@@ -2,6 +2,7 @@ import * as linkedin from '../linkedin.js';
 import { render, checkNote } from '../template.js';
 import { remaining, humanPauseMs, sleep, pick, withinWorkingHours } from '../limits.js';
 import { log, warn } from '../log.js';
+import { isRecruiterUrl } from '../store.js';
 
 const WEEK = 7 * 86400000;
 
@@ -28,8 +29,25 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) <= 0) { log('connect: profile view cap reached'); break; }
 
     // fresh copy: the dashboard may have un-approved this person since the list was built
-    const lead = store.refresh(picked.url);
+    let lead = store.refresh(picked.url);
     if (!lead || lead.status !== 'new' || !(cfg.autoApprove || lead.approved)) continue;
+
+    // Found in Recruiter: look up their normal profile first (one profile view)
+    if (isRecruiterUrl(lead.url)) {
+      if (!ops.publicUrlFor) ops = { ...ops, publicUrlFor: (await import('./recruiter.js')).publicUrlFor };
+      let pub = null;
+      try { pub = await ops.publicUrlFor(page, lead.url); }
+      catch (e) { if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e; warn('recruiter lookup failed', lead.url, e.message); }
+      store.refresh();
+      store.recordAction('profileViews', lead.url);
+      if (!pub) { store.setStatus(lead.url, 'error', { error: 'could not find their normal LinkedIn profile from Recruiter' }); store.save(); continue; }
+      const moved = store.rekey(lead.url, pub);
+      store.save();
+      if (moved.url !== pub || moved.status !== 'new') { log(`already on file under ${pub}, skipped`); continue; }
+      lead = moved;
+      log(`found ${lead.name}: ${pub}`);
+      if (pause) await sleep(humanPauseMs([8, 20]));
+    }
 
     const template = pick(cfg.connectionNotes);
     const note = template ? render(template, lead, cfg.role) : '';

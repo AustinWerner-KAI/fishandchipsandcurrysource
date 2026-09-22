@@ -36,6 +36,11 @@ export async function urlForRole(page, cfg) {
 }
 
 export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
+  // Recruiter Lite is the default for a role; "linkedin" uses normal people search.
+  if (!url && !cfg.searchUrl && cfg.role && (cfg.role.source || 'recruiter') === 'recruiter') {
+    const { runRecruiterSearch } = await import('./recruiter.js');
+    return runRecruiterSearch(page, store, cfg, { maxPages });
+  }
   let searchUrl = url || cfg.searchUrl;
   if (!searchUrl && cfg.role) searchUrl = await urlForRole(page, cfg);
   if (!searchUrl) throw new Error('Nothing to search. Build the role in the app, or put a LinkedIn search URL in the campaign settings.');

@@ -27,9 +27,14 @@ export function normalizeUrl(input) {
   try { u = new URL(s); } catch { return null; }
   if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) return null;
   const m = u.pathname.match(/\/in\/([^/?#]+)/i);
-  if (!m) return null;
-  return `https://www.linkedin.com/in/${decodeURIComponent(m[1])}/`;
+  if (m) return `https://www.linkedin.com/in/${decodeURIComponent(m[1])}/`;
+  // Recruiter Lite profile (found by a Recruiter search). Swapped for the /in/ URL when first opened.
+  const t = u.pathname.match(/\/talent\/profile\/([A-Za-z0-9_-]+)/);
+  if (t) return `https://www.linkedin.com/talent/profile/${t[1]}`;
+  return null;
 }
+
+export const isRecruiterUrl = url => /\/talent\/profile\//.test(String(url || ''));
 
 export function firstNameOf(name) {
   if (!name) return '';
@@ -149,6 +154,35 @@ export class Store {
     if (!lead) throw new Error(`Unknown lead ${url}`);
     lead.status = status;
     Object.assign(lead, extra, { updatedAt: new Date().toISOString() });
+    return lead;
+  }
+
+  // Remove people from a campaign who were never contacted (status new or skipped). Anyone invited,
+  // messaged or replied stays, so a fresh search can never contact them twice.
+  clearUncontacted(campaign, statuses = ['new', 'skipped']) {
+    let n = 0;
+    for (const [url, l] of Object.entries(this.data.leads)) {
+      if (l.campaign === campaign && statuses.includes(l.status)) { delete this.data.leads[url]; n++; }
+    }
+    return n;
+  }
+
+  // A person found in Recruiter keeps their Recruiter URL after they are moved to their /in/ URL.
+  findByRecruiterUrl(url) {
+    const k = normalizeUrl(url);
+    return this.data.leads[k] || Object.values(this.data.leads).find(l => l.recruiterUrl === k) || null;
+  }
+
+  // Move a lead from its Recruiter key to its normal /in/ key. If that person is already on file
+  // (found another way), keep the existing record and drop this one.
+  rekey(oldUrl, newUrl) {
+    const from = normalizeUrl(oldUrl), to = normalizeUrl(newUrl);
+    const lead = this.data.leads[from];
+    if (!lead || !to || from === to) return this.data.leads[to] || lead;
+    delete this.data.leads[from];
+    if (this.data.leads[to]) { const keep = this.data.leads[to]; keep.recruiterUrl = keep.recruiterUrl || from; return keep; }
+    lead.url = to; lead.recruiterUrl = from;
+    this.data.leads[to] = lead;
     return lead;
   }
 

@@ -11,7 +11,18 @@ export const SEL = {
 
   // Recruiter Lite contract chooser (blocks Talent URLs when a person has more than one contract)
   contractChooser: ['form[data-test-id="chooser-form"]', 'main:has-text("Choose a contract")', 'section:has(h1:has-text("Choose a contract"))'],
-  recruiterLiteContract: ['div:has-text("Recruiter Lite") button:has-text("Select")', 'section:has(h4:has-text("Recruiter Lite")) button:has-text("Select")', 'button[aria-label*="Select Recruiter Lite"]'],
+  // seen in Kai's recording, 22 Sep 2026: <button data-live-test-contract-select="Recruiter Lite - Kai Crayford" aria-label="Select Recruiter Lite - Kai Crayford contract">
+  recruiterLiteContract: ['button[data-live-test-contract-select^="Recruiter Lite"]', 'button[aria-label^="Select Recruiter Lite"]', 'button[data-test-contract-select]:near(:text("Recruiter Lite"))'],
+  // Recruiter home search box: placeholder "Start a new search...", aria "Search by job title, ideal candidate, keyword, or boolean"
+  recruiterSearchBox: ['input[aria-label^="Search by job title"]', 'input[placeholder^="Start a new search"]'],
+
+  // Recruiter search results and profile (seen 22 Sep 2026)
+  recruiterResultItem: ['li[data-test-paginated-profile-list-item-container]', '[data-test-paginated-list-item]'],
+  recruiterAddLocation: ['button[aria-label="Add a Candidate geographic location"]', 'button:has(span:text-is("Candidate geographic locations"))'],
+  recruiterFacetInput: ['input[aria-label*="location" i]:focus', '.search-facet input[type="text"]:focus', 'input:focus'],
+  recruiterFacetOption: ['[role="listbox"] [role="option"]', '.typeahead-facet [role="option"]', '.artdeco-typeahead__result'],
+  recruiterNextPage: ['a[data-test-pagination-next]', 'button[data-test-pagination-next]', 'a[aria-label="Next"]', 'button[aria-label="Next"]', '[data-test-pagination-next-btn]'],
+  recruiterPublicProfile: ['a[data-test-personal-info-profile-link]'],
 
   // Locations filter on the people search page (used to turn "Dubai" into LinkedIn's location id)
   locationsFilterButton: ['button#searchFilter_geoUrn', 'button[aria-label*="Locations filter"]', 'button:has-text("Locations")'],

@@ -93,6 +93,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
       </div>
       <div class="row"><button class="small" id="btnEditBool" onclick="openBool()">Edit search</button><button class="small" onclick="editRole()">Edit role</button><a class="sub" id="rsLink" href="#" target="_blank">Open this search on LinkedIn</a><span class="sub" id="rsGeo"></span></div>
       <div class="sub" id="rsHours" style="margin-top:4px"></div>
+      <div class="row" style="margin-top:6px"><label class="sub" for="rsSource">Search in</label><select id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite (full boolean, location filter)</option><option value="linkedin">Normal LinkedIn search</option></select></div>
     </div>
 
     <div id="w1">
@@ -161,6 +162,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
         <label class="sub">Sort <select id="sortBy" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">best match</option><option value="latest">latest</option></select></label>
         <button class="small primary" onclick="approveTop()">Approve top <span id="topN">15</span></button>
         <button class="small" onclick="approveVisible(true)">Approve all shown</button>
+        <button class="small danger" onclick="clearList()" title="Removes everyone not yet contacted for this role">Clear list</button>
         <button class="small" onclick="approveVisible(false)">Un-approve all shown</button>
         <a class="sub" id="exportLink" href="#">Export CSV</a>
       </div>
@@ -261,7 +263,7 @@ function render(){
   const steps=[
     [!!S.loggedInAt, 'Log in to LinkedIn', S.loggedInAt ? `done ${when(S.loggedInAt)}${S.recruiterLoggedInAt ? ', Recruiter too' : '. Recruiter: press Log in to Recruiter'}` : 'Press the button top right. Log in by hand in the window that opens.'],
     [!!(S.cfg&&S.cfg.role), 'Set up the role', S.cfg&&S.cfg.role ? S.cfg.role.title : 'Paste the job spec in the Role box and follow the three steps.'],
-    [S.leads.length>0, 'Find people', S.leads.length ? `${S.leads.length} people for this role` : 'Press Search. LinkedIn is searched with the boolean from the role.'],
+    [S.leads.length>0, 'Find people', S.leads.length ? `${S.leads.length} people for this role` : 'Press Search. Recruiter Lite is searched with the boolean and location from the role.'],
     [approved>0 || (c.invited+c.accepted+c.messaged+c.replied)>0, 'Approve who to contact', approved ? `${approved} approved and waiting` : 'Tick the approved box next to each person, or send the CSV to Claude to shortlist.'],
     [(c.invited+c.accepted+c.messaged+c.replied)>0, 'Run', 'Run one pass to watch it work, then Run all day. Keep this window and your Mac awake.'],
   ];
@@ -326,6 +328,7 @@ async function recordRoute(){
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
 async function approveVisible(on){ const urls = S.leads.filter(l=>(!filter||l.status===filter)&&l.status==='new').map(l=>l.url); if(!urls.length) return toast('No new people shown'); if(!confirm(`${on?'Approve':'Un-approve'} ${urls.length} people?`)) return; await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
 async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!l.approved&&l.rank&&l.rank.score>0).sort((a,b)=>b.rank.score-a.rank.score).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Connection requests go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
+async function clearList(){ const n=S.leads.filter(l=>['new','skipped'].includes(l.status)).length; const kept=S.leads.length-n; if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted?${kept?` The ${kept} already contacted stay, so nobody gets a second invite.`:''} You can search again straight after.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
 async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 async function doImport(){ const text=$('#importText').value.trim(); if(!text) return; const r=await api('/api/import',{campaign:S.campaign,text,approve:$('#importApprove').checked}); toast(`${r.added} added, ${r.skipped} skipped`); $('#importText').value=''; load(); }
 async function queueJson(){ let items; try{ items=JSON.parse($('#queueJson').value); }catch{ return toast('That is not valid JSON', true);} const r=await api('/api/queue',{campaign:S.campaign, items:[].concat(items)}); toast(`${r.n} queued`); $('#queueJson').value=''; load(); }
@@ -390,12 +393,14 @@ function renderRole(){
   const where = role.workType==='remote' ? `remote · candidates in ${(role.candidateLocations||[]).join(', ')||'anywhere'}` : `${role.workType||'onsite'} · ${role.location||''}`;
   $('#rsWhere').textContent=where;
   $('#rsBoolean').textContent=role.boolean||'';
+  $('#rsSource').value = role.source || 'recruiter';
   const p=S.rolePreview; $('#rsLink').href=p?p.url:'#';
   const unknown=p?p.locations.filter(l=>!l.known).map(l=>l.name):[];
   $('#rsGeo').textContent = unknown.length ? `Location id for ${unknown.join(', ')} is looked up on LinkedIn when you press Search.` : '';
   const h=S.hours, wh=S.cfg.workingHours;
   $('#rsHours').textContent = wh ? (h.open ? `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Open now.` : `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Nothing sends until ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'the next working day'}.`) : '';
 }
+async function setSource(v){ await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, source:v}}); toast(v==='recruiter'?'Searches now run in Recruiter Lite':'Searches now run in normal LinkedIn'); load(); }
 // ---- quick boolean edit ----
 let boolOpen=false;
 function boolProblems(b){ const p=[]; let d=0; for(const ch of b){ if(ch==='(') d++; if(ch===')') d--; if(d<0) break; } if(d!==0) p.push('brackets do not match'); if(((b.match(/"/g)||[]).length)%2) p.push('a quote is not closed'); if(/\b(and|or|not)\b/.test(b)) p.push('write AND, OR, NOT in capitals'); if(/[—–]/.test(b)) p.push('contains a long dash'); return p; }

@@ -223,6 +223,16 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const cfg = saveCampaign(name, { ...base, mode: 'candidates', ...(existing ? {} : { searchUrl: '' }), role: { ...role, geo: keep } });
         return json(200, { ok: true, campaign: name, cfg, preview: rolePreview(cfg) });
       }
+      if (u.pathname === '/api/clear') {
+        // { campaign } wipes the uncontacted people for this role
+        if (!b.campaign) return json(400, { error: 'no role chosen' });
+        if (jobs.status().running) return json(400, { error: 'Stop the running job first' });
+        const store = new Store();
+        const n = store.clearUncontacted(b.campaign);
+        store.recordAction('cleared', '-', { campaign: b.campaign, n });
+        store.save();
+        return json(200, { ok: true, n });
+      }
       if (u.pathname === '/api/inmail-sent') {
         // { url, kind: 'inmail' | 'followUp' } Kai pressed "Sent" after pasting it into Recruiter Lite
         const store = new Store();

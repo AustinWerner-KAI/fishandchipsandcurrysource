@@ -6,7 +6,8 @@ import { stdin as input, stdout as output } from 'node:process';
 import { exec } from 'node:child_process';
 import { Store } from './store.js';
 import { loadCampaign, listCampaigns } from './config.js';
-import { openBrowser, closeBrowser, isLoggedIn, hasLoginCookie, saveSession } from './browser.js';
+import { openBrowser, closeBrowser, isLoggedIn, hasLoginCookie, saveSession, passContractChooser } from './browser.js';
+import { SEL } from './selectors.js';
 import { runSearch } from './actions/search.js';
 import { importLeads, exportCsv, approveLeads, queueMessages } from './actions/import.js';
 import { runConnect } from './actions/connect.js';
@@ -137,7 +138,18 @@ async function main() {
       return withBrowser(async page => {
         const dir = path.join(HOME, 'probe'); fs.mkdirSync(dir, { recursive: true });
         const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        await page.goto(target, { waitUntil: 'domcontentloaded' });
+        // "#sourcer-type=<text>" on the URL: type that into Recruiter's search box and press Return first
+        const [base, frag] = target.split('#sourcer-type=');
+        await page.goto(base, { waitUntil: 'domcontentloaded' });
+        await passContractChooser(page);
+        await new Promise(r => setTimeout(r, 4000));
+        if (frag) {
+          const box = page.locator(SEL.recruiterSearchBox.join(', ')).first();
+          await box.click(); await new Promise(r => setTimeout(r, 600));
+          await box.pressSequentially(decodeURIComponent(frag), { delay: 20 });
+          await new Promise(r => setTimeout(r, 1200));
+          await page.keyboard.press('Enter');
+        }
         await new Promise(r => setTimeout(r, +(opt('wait') || 8000)));
         for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, 600); await new Promise(r => setTimeout(r, 700)); }
         await page.screenshot({ path: path.join(dir, `${stamp}.png`), fullPage: true });

@@ -166,3 +166,68 @@ test('role save: timezone follows the office, message 1 waits 3 hours, InMail la
   const st = await get(`/api/state?c=${r.body.campaign || 'head-of-sales-london-uk'}`);
   assert.ok('open' in st.hours);
 });
+
+test('clear list removes only people never contacted', async () => {
+  await post('/api/import', { campaign: 'example', text: 'https://www.linkedin.com/in/clear-a/\nhttps://www.linkedin.com/in/clear-b/\nhttps://www.linkedin.com/in/clear-c/' });
+  const st = new Store();
+  st.setStatus('https://www.linkedin.com/in/clear-b/', 'invited', { invitedAt: new Date().toISOString() });
+  st.setStatus('https://www.linkedin.com/in/clear-c/', 'skipped');
+  st.save();
+  const before = new Store().leads({ campaign: 'example' }).length;
+  const r = await post('/api/clear', { campaign: 'example' });
+  assert.equal(r.status, 200);
+  const after = new Store().leads({ campaign: 'example' });
+  assert.equal(after.length, before - r.body.n);
+  assert.ok(after.some(l => l.url.includes('/clear-b/')), 'invited person kept');
+  assert.ok(!after.some(l => l.url.includes('/clear-a/') || l.url.includes('/clear-c/')));
+  assert.ok(after.every(l => !['new', 'skipped'].includes(l.status)));
+});
+
+test('recruiter: store keys, rekey to /in/, connect looks up the normal profile first', async () => {
+  const { normalizeUrl, isRecruiterUrl } = await import('../src/store.js');
+  assert.equal(normalizeUrl('https://www.linkedin.com/talent/profile/AEMAAB-x_1?searchHistoryId=1'), 'https://www.linkedin.com/talent/profile/AEMAAB-x_1');
+  assert.equal(isRecruiterUrl('https://www.linkedin.com/talent/profile/AEMAAB'), true);
+  const st = new Store();
+  st.upsertLead({ url: 'https://www.linkedin.com/talent/profile/AEMrec1', name: 'Rec One', campaign: 'example', approved: true });
+  st.upsertLead({ url: 'https://www.linkedin.com/talent/profile/AEMrec2', name: 'Rec Two', campaign: 'example', approved: true });
+  st.upsertLead({ url: 'https://www.linkedin.com/in/rec-two-already/', name: 'Rec Two', campaign: 'example' });
+  st.setStatus('https://www.linkedin.com/in/rec-two-already/', 'invited', { invitedAt: new Date().toISOString() });
+  st.save();
+  const { runConnect } = await import('../src/actions/connect.js');
+  const { loadCampaign } = await import('../src/config.js');
+  const cfg = { ...loadCampaign('example'), workingHours: null, connectionNotes: ['Hi {firstName}'] };
+  const sent = [];
+  const ops = {
+    publicUrlFor: async (_p, u) => u.endsWith('AEMrec1') ? 'https://www.linkedin.com/in/rec-one/' : 'https://www.linkedin.com/in/rec-two-already/',
+    sendConnectionRequest: async (_p, url) => { sent.push(url); return { result: 'sent', info: {} }; },
+  };
+  const store = new Store();
+  await runConnect(null, store, cfg, { ops, pause: false });
+  const s2 = new Store();
+  assert.ok(sent.includes('https://www.linkedin.com/in/rec-one/'), 'invited on the /in/ URL');
+  assert.ok(!sent.some(u => u.includes('rec-two')), 'never re-invites someone already on file');
+  assert.equal(s2.get('https://www.linkedin.com/in/rec-one/').recruiterUrl, 'https://www.linkedin.com/talent/profile/AEMrec1');
+  assert.equal(s2.get('https://www.linkedin.com/talent/profile/AEMrec1'), undefined);
+  assert.equal(s2.findByRecruiterUrl('https://www.linkedin.com/talent/profile/AEMrec1').url, 'https://www.linkedin.com/in/rec-one/');
+  assert.equal(s2.get('https://www.linkedin.com/in/rec-two-already/').status, 'invited');
+});
+
+test('recruiter: reads people from a real Recruiter results page', async () => {
+  const { chromium } = await import('playwright');
+  const exe = process.env.SOURCER_CHROME;
+  const b = await chromium.launch(exe ? { executablePath: exe } : {}).catch(() => null);
+  if (!b) return;   // no browser available on this machine
+  try {
+    const { readRecruiterResults } = await import('../src/actions/recruiter.js');
+    const p = await b.newPage();
+    await p.setContent(fs.readFileSync(path.join(process.cwd(), 'test/fixtures/recruiter-results.html'), 'utf8'));
+    const rows = await readRecruiterResults(p);
+    assert.ok(rows.length >= 10);
+    assert.equal(new Set(rows.map(r => r.recruiterUrl)).size, rows.length, 'no duplicates');
+    const ali = rows.find(r => r.name === 'Candidate 1');
+    assert.match(ali.headline, /Senior Security Engineer/);
+    assert.equal(ali.location, 'Dubai, United Arab Emirates');
+    assert.equal(ali.degree, '1st');
+    assert.match(ali.recruiterUrl, /^https:\/\/www\.linkedin\.com\/talent\/profile\/AEMAA/);
+  } finally { await b.close(); }
+});
