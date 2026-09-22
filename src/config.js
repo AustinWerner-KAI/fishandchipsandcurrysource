@@ -56,11 +56,15 @@ export function validate(cfg) {
   if (!['candidates', 'newbusiness'].includes(cfg.mode)) errs.push(`mode must be candidates or newbusiness`);
   for (const [k, v] of Object.entries(cfg.dailyCaps)) if (!(Number.isInteger(v) && v >= 0)) errs.push(`dailyCaps.${k} must be a whole number`);
   if (cfg.dailyCaps.connects > 25) errs.push('dailyCaps.connects above 25 is asking for a restriction. Keep it at 25 or lower.');
+  if ((cfg.dailyCaps.weeklyConnects ?? 80) > 150) errs.push('weekly invites above 150 is asking for a restriction. Keep it at 150 or lower.');
   if (cfg.dailyCaps.messages > 40) errs.push('dailyCaps.messages above 40 is asking for a restriction. Keep it at 40 or lower.');
   for (const n of cfg.connectionNotes) {
     if (typeof n !== 'string') errs.push('connectionNotes must be strings');
     else if (n.length > cfg.noteMaxLength) errs.push(`connection note over ${cfg.noteMaxLength} chars: "${n.slice(0, 40)}..."`);
   }
+  const pa = cfg.pauseBetweenActionsSec, pc = cfg.pauseBetweenCyclesMin;
+  if (!Array.isArray(pa) || pa.length !== 2 || !(pa[0] >= 20) || !(pa[1] >= pa[0])) errs.push('pause between actions: at least 20 seconds, and the maximum not below the minimum');
+  if (!Array.isArray(pc) || pc.length !== 2 || !(pc[0] >= 5) || !(pc[1] >= pc[0])) errs.push('pause between passes: at least 5 minutes');
   if (cfg.role) {
     if (!cfg.role.title) errs.push('role.title is empty');
     if ((cfg.role.recruiterSkills || []).length > 2) errs.push('role.recruiterSkills: two at most');

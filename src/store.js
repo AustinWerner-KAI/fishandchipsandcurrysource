@@ -159,10 +159,13 @@ export class Store {
 
   // Remove people from a campaign who were never contacted (status new or skipped). Anyone invited,
   // messaged or replied stays, so a fresh search can never contact them twice.
-  clearUncontacted(campaign, statuses = ['new', 'skipped']) {
+  clearUncontacted(campaign) {
     let n = 0;
     for (const [url, l] of Object.entries(this.data.leads)) {
-      if (l.campaign === campaign && statuses.includes(l.status)) { delete this.data.leads[url]; n++; }
+      if (l.campaign !== campaign) continue;
+      const touched = l.invitedAt || l.acceptedAt || (l.messages && l.messages.length) || (l.queue && l.queue.length) || l.inmail;
+      const clearable = l.status === 'new' || (l.status === 'skipped' && l.skippedByHand);
+      if (clearable && !touched) { delete this.data.leads[url]; n++; }
     }
     return n;
   }
@@ -175,15 +178,17 @@ export class Store {
 
   // Move a lead from its Recruiter key to its normal /in/ key. If that person is already on file
   // (found another way), keep the existing record and drop this one.
+  // Returns { lead } when moved, or { conflict } when the /in/ URL is already on file (nothing is changed then).
   rekey(oldUrl, newUrl) {
     const from = normalizeUrl(oldUrl), to = normalizeUrl(newUrl);
     const lead = this.data.leads[from];
-    if (!lead || !to || from === to) return this.data.leads[to] || lead;
+    if (!lead || !to) return { lead: null };
+    if (from === to) return { lead };
+    if (this.data.leads[to]) return { conflict: this.data.leads[to] };
     delete this.data.leads[from];
-    if (this.data.leads[to]) { const keep = this.data.leads[to]; keep.recruiterUrl = keep.recruiterUrl || from; return keep; }
     lead.url = to; lead.recruiterUrl = from;
     this.data.leads[to] = lead;
-    return lead;
+    return { lead };
   }
 
   leads(filter = {}) {

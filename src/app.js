@@ -12,7 +12,8 @@ import { weeklyLimitActive } from './actions/connect.js';
 import { Jobs } from './jobs.js';
 import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
-import { nextWorkingStart, withinWorkingHours } from './limits.js';
+import { nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
+import { scoreLead } from './rank.js';
 import { render } from './template.js';
 import { rankLeads } from './rank.js';
 import { searchLocations } from './actions/search.js';
@@ -24,6 +25,7 @@ const EDITABLE = ['mode', 'role', 'inmail', 'searchUrl', 'maxSearchPages', 'auto
 // Recruiter Lite lane: for people who have not accepted the connection. Sent by hand; the app writes the text.
 export const DEFAULT_INMAIL = {
   afterDays: 7,
+  monthlyCredits: 30,
   subject: '{role}, {location}',
   body: "Hi {firstName},\n\nI'm running a search for a {role} with a growing digital asset business in {location}. {workType}.\n\nYour background looks close to what they're after, which is why I'm reaching out directly rather than posting it.\n\nWould you be open to hearing a bit more? A yes or no is fine either way.\n\nKai",
   followUpAfterDays: 4,
@@ -33,29 +35,32 @@ export const DEFAULT_INMAIL = {
 // People due an InMail: invited, not accepted after `afterDays`, plus those whose one follow-up is due.
 export function inmailList(store, cfg, now = new Date()) {
   const im = cfg?.inmail; if (!im) return [];
-  const out = [];
+  const out = [], firsts = [];
   for (const l of store.leads({ campaign: cfg.name })) {
     if (l.status !== 'invited' || !l.invitedAt || l.preexisting) continue;
     const sent = l.inmail || {};
-    if (sent.followUpAt) continue;                                           // both sent; lane over
+    if (sent.followUpAt || sent.replied) continue;                          // lane over
+    const item = { url: l.url, name: l.name, headline: l.headline, subject: render(im.subject, l, cfg.role), score: scoreLead(l, cfg.role).score ?? 0 };
     if (sent.sentAt) {
-      if (now - new Date(sent.sentAt) >= (im.followUpAfterDays ?? 4) * 86400000)
-        out.push({ url: l.url, name: l.name, headline: l.headline, kind: 'followUp', subject: render(im.subject, l, cfg.role), text: render(im.followUp, l, cfg.role) });
+      if (now - new Date(sent.sentAt) >= (im.followUpAfterDays ?? 4) * 86400000) out.push({ ...item, kind: 'followUp', text: render(im.followUp, l, cfg.role) });
       continue;
     }
-    if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000)
-      out.push({ url: l.url, name: l.name, headline: l.headline, kind: 'inmail', subject: render(im.subject, l, cfg.role), text: render(im.body, l, cfg.role) });
+    if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000) firsts.push({ ...item, kind: 'inmail', text: render(im.body, l, cfg.role) });
   }
-  return out;
+  // A new InMail costs a credit: offer only as many as are left this month, best matches first.
+  const credits = inmailCredits(store, im.monthlyCredits ?? 30, now, cfg.workingHours?.timezone);
+  firsts.sort((a, b) => b.score - a.score);
+  return [...out, ...firsts.slice(0, credits.left)];
 }
 
 function readCampaignRaw(name) {
+  if (!NAME_RE.test(String(name || ''))) return null;
   const f = path.join(CAMPAIGN_DIR, `${name}.json`);
   return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null;
 }
 
 export function saveCampaign(name, patch) {
-  if (!/^[a-z0-9][a-z0-9-_]{0,40}$/i.test(name)) throw new Error('Campaign name: letters, numbers, dashes only');
+  if (!NAME_RE.test(name)) throw new Error('Campaign name: letters, numbers, dashes only');
   fs.mkdirSync(CAMPAIGN_DIR, { recursive: true });
   const f = path.join(CAMPAIGN_DIR, `${name}.json`);
   const before = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null;
@@ -88,9 +93,15 @@ export function state(jobs, campaignName) {
   if (c) { try { cfg = loadCampaign(c); } catch (e) { cfgError = e.message; cfg = { name: c, ...(readCampaignRaw(c) || {}) }; } }
   const s = c ? summarise(store, c) : { leads: [], counts: {}, caps: null, today: {}, lastStop: null, weekly: null };
   const shots = fs.existsSync(SCREENSHOT_DIR) ? fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('.png')).sort().slice(-5).reverse() : [];
+  const roles = campaigns.map(name => {
+    try { const r = readCampaignRaw(name)?.role; return { name, title: r?.title || name, location: r?.location || '' }; }
+    catch { return { name, title: name, location: '' }; }
+  });
   return {
-    campaigns, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
+    campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
+    inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), cfg.workingHours?.timezone) : null,
+    week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
     leads: rankLeads(s.leads, cfg?.role).map(l => ({ ...l, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
@@ -105,17 +116,39 @@ export function state(jobs, campaignName) {
   };
 }
 
+const MAX_BODY = 15 * 1024 * 1024;   // a spec PDF, base64
 async function body(req) {
   let b = '';
-  for await (const ch of req) b += ch;
+  for await (const ch of req) { b += ch; if (b.length > MAX_BODY) throw new Error('Request too large'); }
   return b ? JSON.parse(b) : {};
 }
+
+// Only this page may drive the app. A website open in the same browser cannot: its requests carry
+// another Origin (or no JSON content type), and a DNS-rebinding page carries another Host.
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+export function allowedRequest(req) {
+  const host = req.headers.host || '';
+  if (!LOCAL_HOST.test(host)) return 'bad host';
+  if (req.method !== 'POST') return null;
+  if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return 'JSON only';
+  const origin = req.headers.origin;
+  if (origin && origin !== 'null') {
+    let o; try { o = new URL(origin); } catch { return 'bad origin'; }
+    if (!LOCAL_HOST.test(o.host) || o.host !== host) return 'bad origin';
+  } else if (origin === 'null') return 'bad origin';
+  const site = req.headers['sec-fetch-site'];
+  if (site && !['same-origin', 'none'].includes(site)) return 'cross-site';
+  return null;
+}
+const NAME_RE = /^[a-z0-9][a-z0-9-_]{0,40}$/i;
 
 export function createApp({ jobs = new Jobs() } = {}) {
   const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, 'http://localhost');
     const json = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
     const c = u.searchParams.get('c') || undefined;
+    const refused = allowedRequest(req);
+    if (refused) { res.writeHead(403, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ error: `refused: ${refused}` })); }
     try {
       if (req.method === 'GET' && u.pathname === '/') {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -141,7 +174,8 @@ export function createApp({ jobs = new Jobs() } = {}) {
       if (u.pathname === '/api/job') {
         if (b.action === 'stop') return json(200, jobs.stop());
         const args = [];
-        if (b.action === 'search' && b.url) args.push(b.url);
+        if (b.campaign && !NAME_RE.test(b.campaign)) return json(400, { error: 'bad role name' });
+        if (b.action === 'search' && b.url) { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url)) return json(400, { error: 'search needs a linkedin.com URL' }); args.push(b.url); }
         if (b.action === 'record') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'record needs a linkedin.com URL' }); args.push(String(b.name || 'route').slice(0, 40), b.url); }
         if (b.action === 'probe') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'probe needs a linkedin.com URL' }); args.push(b.url); }
         return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
@@ -161,7 +195,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const l = store.get(b.url);
         if (!l) return json(404, { error: 'no such lead' });
         if (!STATUSES.includes(b.status)) return json(400, { error: 'bad status' });
-        store.setStatus(l.url, b.status, b.status === 'skipped' ? { error: 'skipped by hand' } : {});
+        store.setStatus(l.url, b.status, b.status === 'skipped' ? { error: 'excluded by hand', skippedByHand: true } : { skippedByHand: false, error: '' });
         store.save();
         return json(200, { ok: true });
       }
@@ -204,9 +238,11 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const role = b.role || {};
         if (!role.title) return json(400, { error: 'Give the role a title' });
         if (!role.boolean) return json(400, { error: 'The boolean search is empty' });
+        if (b.campaign && !NAME_RE.test(b.campaign)) return json(400, { error: 'bad role name' });
         let name = b.campaign || slugFor(role.title, role.location);
+        // A new role never lands on an existing one, even with the same title and place.
+        if (!b.campaign && readCampaignRaw(name)) name = `${name}-${Date.now().toString(36).slice(-4)}`;
         const existing = readCampaignRaw(name);
-        if (!b.campaign && existing && existing.role?.title !== role.title) name = `${name}-${Date.now().toString(36).slice(-4)}`;
         const keep = existing?.role?.geo || {};
         const base = existing ? {} : {
           mode: 'candidates',
@@ -220,7 +256,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         };
         const tz = timezoneFor(role.location);
         if (tz && (!existing || existing.role?.location !== role.location)) base.workingHours = { ...(existing?.workingHours || { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5] }), timezone: tz };
-        const cfg = saveCampaign(name, { ...base, mode: 'candidates', ...(existing ? {} : { searchUrl: '' }), role: { ...role, geo: keep } });
+        const cfg = saveCampaign(name, { ...base, ...(existing ? {} : { mode: 'candidates', searchUrl: '' }), role: { ...role, geo: keep } });
         return json(200, { ok: true, campaign: name, cfg, preview: rolePreview(cfg) });
       }
       if (u.pathname === '/api/clear') {
@@ -242,6 +278,17 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const at = new Date().toISOString();
         if (b.kind === 'followUp') l.inmail.followUpAt = at; else l.inmail.sentAt = at;
         store.recordAction(b.kind === 'followUp' ? 'inmailFollowUp' : 'inmail', l.url, {});
+        store.save();
+        return json(200, { ok: true });
+      }
+      if (u.pathname === '/api/inmail-replied') {
+        // { url } they answered the InMail: stop the lane, and Recruiter gives the credit back within 90 days
+        const store = new Store();
+        const l = store.get(b.url);
+        if (!l) return json(404, { error: 'no such lead' });
+        l.inmail = { ...(l.inmail || {}), replied: new Date().toISOString() };
+        if (l.inmail.sentAt && Date.now() - new Date(l.inmail.sentAt) < 90 * 86400000) store.recordAction('inmailRefund', l.url, {});
+        store.setStatus(l.url, 'replied', { repliedAt: new Date().toISOString(), lastReply: String(b.text || 'Replied to the InMail (see Recruiter)').slice(0, 500) });
         store.save();
         return json(200, { ok: true });
       }

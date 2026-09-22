@@ -26,7 +26,29 @@ export function todayCount(store, type, now = new Date(), timeZone = 'Asia/Dubai
 
 export function remaining(store, caps, type, now = new Date(), timeZone = 'Asia/Dubai') {
   const cap = caps?.[type] ?? DEFAULT_CAPS[type] ?? 0;
-  return Math.max(0, cap - todayCount(store, type, now, timeZone));
+  let left = Math.max(0, cap - todayCount(store, type, now, timeZone));
+  // invites also have a rolling 7 day ceiling, well under LinkedIn's weekly limit
+  if (type === 'connects') left = Math.min(left, weekRemaining(store, caps, now));
+  return left;
+}
+
+export const DEFAULT_WEEKLY_CONNECTS = 80;
+export function weekCount(store, type, now = new Date()) {
+  return store.actionsSince(new Date(now.getTime() - 7 * 86400000).toISOString(), type).length;
+}
+export function weekRemaining(store, caps, now = new Date()) {
+  return Math.max(0, (caps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS) - weekCount(store, 'connects', now));
+}
+
+// Recruiter Lite InMail credits: a monthly allowance; a reply within 90 days gives the credit back.
+export const DEFAULT_INMAIL_CREDITS = 30;
+export function inmailCredits(store, total = DEFAULT_INMAIL_CREDITS, now = new Date(), timeZone = 'Asia/Dubai') {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone, year: 'numeric', month: '2-digit' }).formatToParts(now).reduce((o, x) => (o[x.type] = x.value, o), {});
+  const monthStart = new Date(Date.parse(`${p.year}-${p.month}-01T00:00:00Z`) - tzOffsetMinutes(now, timeZone) * 60000).toISOString();
+  const sent = store.actionsSince(monthStart, 'inmail').length;
+  const back = store.actionsSince(monthStart, 'inmailRefund').length;
+  const used = Math.max(0, sent - back);
+  return { total, used, left: Math.max(0, total - used) };
 }
 
 export function withinWorkingHours(hours, now = new Date()) {

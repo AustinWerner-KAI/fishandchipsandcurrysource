@@ -5,417 +5,430 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sourcer</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#6b7280;--line:#e5e7eb;--accent:#1f4fd8;--ok:#0f8a4b;--warn:#b45309;--bad:#b91c1c;--soft:#eef2ff}
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#5f6672;--line:#e3e5ea;--accent:#1f4fd8;--ok:#0f7a43;--warn:#b45309;--bad:#b91c1c;--soft:#eef2ff}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--ink:#e6e8ee;--muted:#9aa3b2;--line:#262a33;--accent:#7aa2ff;--ok:#3ecf8e;--warn:#f5b048;--bad:#ff6b6b;--soft:#1c2233}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
-.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
-h1{font-size:20px;margin:0}
-h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:19px;margin:0}
+h2{font-size:12px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
 .sub{color:var(--muted);font-size:12px}
-select,input[type=text],input[type=number],input[type=time],input[type=date],textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);width:100%}
-input[type=number]{width:90px}input[type=time]{width:120px}
+input[type=text],input[type=number],input[type=time],input[type=date],select,textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);width:100%}
+input[type=number]{width:80px}input[type=time]{width:120px}
 textarea{min-height:70px;resize:vertical}
 button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap}
 button:hover{border-color:var(--muted)}
 button.primary{background:var(--accent);color:#fff;border-color:transparent}
 button.danger{color:var(--bad);border-color:var(--bad)}
-button.small{padding:3px 9px;font-size:12px}
+button.small{padding:4px 10px;font-size:12px}
 button:disabled{opacity:.45;cursor:default}
+.link{border:0;background:none;color:var(--accent);padding:0;font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:820px){.grid2{grid-template-columns:1fr}}
+.alert{border-left:3px solid var(--warn);padding:8px 12px;background:var(--card);border-radius:6px;margin-bottom:10px}
+.alert.bad{border-color:var(--bad)}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:var(--card)}
 .pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
-.pill.on .dot{background:var(--ok);box-shadow:0 0 0 3px rgba(15,138,75,.2)}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.stat b{display:block;font-size:22px;font-weight:600}.stat span{color:var(--muted);font-size:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media (max-width:820px){.grid2{grid-template-columns:1fr}}
-.alert{border-left:3px solid var(--warn);padding:8px 12px;background:var(--card);border-radius:6px;margin-bottom:12px}
-.alert.bad{border-color:var(--bad)}
-.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
-.step{padding:10px 12px;border:1px solid var(--line);border-radius:8px}
-.step b{display:block;margin-bottom:3px}.step.done{border-color:var(--ok)}.step.done b::before{content:"✓ ";color:var(--ok)}
-table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 6px;border-bottom:1px solid var(--line)}
+.pill.on .dot{background:var(--ok)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:14px 0 12px;overflow-x:auto}
+.tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--muted);font-weight:500}
+.tab.on{color:var(--ink);border-bottom-color:var(--accent)}
+.tab .sub{margin-left:6px}
+.role-title{font-size:18px;font-weight:600}
+code.bool{display:block;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0;white-space:pre-wrap;word-break:break-word}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.filters button{font-size:12px;padding:4px 10px;border-radius:999px}
+.filters button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;color:var(--muted);font-weight:600;padding:6px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em}
 td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 a{color:var(--accent);text-decoration:none}
-.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
-.chip-replied{background:var(--ok);color:#fff;border-color:transparent}.chip-accepted{color:var(--ok);border-color:var(--ok)}.chip-invited{color:var(--accent);border-color:var(--accent)}
-.chip-error{color:var(--bad);border-color:var(--bad)}.chip-skipped,.chip-done{color:var(--muted)}
-.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.filters button{font-size:12px;padding:4px 10px;border-radius:999px}.filters button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.log{background:#0b0d12;color:#cfd6e4;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:10px 12px;border-radius:8px;height:220px;overflow:auto;white-space:pre-wrap}
-.log .w{color:#f5b048}.log .r{color:#3ecf8e}.log .s{color:#7aa2ff}
-.person{padding:10px 0;border-bottom:1px solid var(--line)}.person:last-child{border:0}
-.person q{display:block;margin-top:2px}
-.composer{margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:8px;background:var(--soft)}
-.composer textarea{min-height:80px}
-.composer .row{margin-top:6px}
-.field{margin-bottom:10px}.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
-.shots{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.shots a img{height:70px;border:1px solid var(--line);border-radius:6px}
-.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
-.toast.show{opacity:1}
-details summary{cursor:pointer;color:var(--muted);font-size:12px}
-.muted{color:var(--muted)}
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+.chip-replied{background:var(--ok);color:#fff;border-color:transparent}.chip-accepted,.chip-messaged{color:var(--ok);border-color:var(--ok)}.chip-invited{color:var(--accent);border-color:var(--accent)}.chip-error{color:var(--bad);border-color:var(--bad)}
 .match{display:inline-block;min-width:34px;text-align:center;padding:3px 6px;border-radius:6px;font-weight:600;font-size:13px}
 .match.hi{background:var(--ok);color:#fff}.match.mid{border:1px solid var(--ok);color:var(--ok)}.match.lo{color:var(--muted);border:1px solid var(--line)}
+.scroll{max-height:560px;overflow:auto}
+.person{padding:10px 0;border-bottom:1px solid var(--line)}.person:last-child{border:0}
+.person q{display:block;margin-top:4px;white-space:pre-wrap}
+.composer{margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:8px;background:var(--soft)}
+.field{margin-bottom:10px}.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+details.card>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;list-style:none}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::before{content:"▸ "}details.card[open]>summary::before{content:"▾ "}
+details.card[open]>summary{margin-bottom:10px}
+.log{background:#0b0d12;color:#cfd6e4;font:12px/1.5 ui-monospace,Menlo,monospace;padding:10px 12px;border-radius:8px;height:200px;overflow:auto;white-space:pre-wrap}
+.log .w{color:#f5b048}.log .r{color:#3ecf8e}.log .s{color:#7aa2ff}
+.shots{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.shots img{height:64px;border:1px solid var(--line);border-radius:6px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#16181d;color:#fff;padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+.hide{display:none!important}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="top">
-    <div class="row">
-      <h1>Sourcer</h1>
-      <select id="campaign" style="width:auto" onchange="setCampaign(this.value)"></select>
-      <button class="small" onclick="newRole()">+ new role</button>
-    </div>
+
+  <div class="row between">
+    <h1>Sourcer</h1>
     <div class="row">
       <span id="jobPill" class="pill"><span class="dot"></span><span id="jobText">idle</span></span>
-      <button id="btnLogin" onclick="job('login')">Log in to LinkedIn</button>
-      <button id="btnLoginR" onclick="job('login-recruiter')" title="Recruiter Lite has its own sign-in">Log in to Recruiter</button>
-      <button id="btnSearch" onclick="job('search')">Search</button>
-      <button id="btnOnce" onclick="job('once')">Run one pass</button>
-      <button id="btnRun" class="primary" onclick="job('run')">Run all day</button>
-      <button id="btnStop" class="danger" onclick="job('stop')" disabled>Stop</button>
+      <span class="sub" id="signedIn"></span>
+      <button class="small" id="btnLogin" onclick="job('login')">Log in to LinkedIn</button>
+      <button class="small" id="btnLoginR" onclick="job('login-recruiter')">Log in to Recruiter</button>
     </div>
   </div>
+
+  <nav class="tabs" id="tabs" aria-label="Roles"></nav>
   <div id="alerts"></div>
 
-  <div class="card" id="roleCard">
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Role</h2><span class="sub" id="roleStep"></span></div>
-    <div id="roleSummary" style="display:none">
-      <div><b id="rsTitle"></b> <span class="sub" id="rsWhere"></span></div>
-      <div class="sub" style="margin:6px 0;word-break:break-word"><code id="rsBoolean"></code></div>
-      <div id="boolEdit" style="display:none;margin:6px 0">
-        <label for="boolText" class="sub" style="display:block;margin-bottom:3px">Boolean search. Use AND, OR, NOT, brackets and "quotes". Location stays as set in the role.</label>
-        <textarea id="boolText" style="min-height:80px;font-family:ui-monospace,Menlo,monospace;font-size:12px"></textarea>
-        <div class="row" style="margin-top:6px"><button class="small primary" onclick="saveBool(true)">Save and search</button><button class="small" onclick="saveBool(false)">Save</button><button class="small" onclick="closeBool()">Cancel</button><span class="sub" id="boolCheck"></span></div>
-      </div>
-      <div class="row"><button class="small" id="btnEditBool" onclick="openBool()">Edit search</button><button class="small" onclick="editRole()">Edit role</button><a class="sub" id="rsLink" href="#" target="_blank">Open this search on LinkedIn</a><span class="sub" id="rsGeo"></span></div>
-      <div class="sub" id="rsHours" style="margin-top:4px"></div>
-      <div class="row" style="margin-top:6px" id="rsSkillsRow"><label class="sub" for="rsSkills">Recruiter skills (1 or 2)</label><input type="text" id="rsSkills" placeholder="e.g. AWS, Cloud Security" style="width:260px;padding:3px 8px"><button class="small" onclick="saveSkills()">Save</button><span class="sub" id="rsSkillHint"></span></div>
-      <div class="row" style="margin-top:6px"><label class="sub" for="rsSource">Search in</label><select id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite (full boolean, location filter)</option><option value="linkedin">Normal LinkedIn search</option></select></div>
+  <section id="wizard" class="card hide">
+    <div class="row between"><h2 style="margin:0">New role</h2><span class="sub" id="roleStep"></span></div>
+    <div id="w1" style="margin-top:10px">
+      <div class="field"><label for="specText">Paste the job spec, or pick the file (.pdf, .docx, .txt)</label>
+        <textarea id="specText" style="min-height:160px"></textarea></div>
+      <div class="row"><input type="file" id="specFile" aria-label="Spec file" accept=".txt,.pdf,.docx" style="width:auto"><button class="primary" onclick="readSpec()">Read spec</button><button class="link" onclick="closeWizard()">Cancel</button></div>
     </div>
-
-    <div id="w1">
-      <div class="field"><label>Paste the job spec, or drop in the file (.txt, .pdf, .docx)</label>
-        <textarea id="specText" style="min-height:140px" placeholder="Head of Compliance&#10;Location: Dubai (hybrid)&#10;&#10;We are a licensed digital asset exchange looking for..."></textarea></div>
-      <div class="row"><input type="file" id="specFile" accept=".txt,.pdf,.docx,text/plain,application/pdf" style="width:auto"><button class="primary" onclick="readSpec()">Read spec</button></div>
-    </div>
-
-    <div id="w2" style="display:none">
-      <div class="sub" style="margin-bottom:8px">Check what I read from the spec. Fix anything wrong.</div>
+    <div id="w2" class="hide" style="margin-top:10px">
       <div class="grid2">
         <div>
-          <div class="field"><label>Role title</label><input type="text" id="rTitle"></div>
-          <div class="field"><label>Office location (city, country)</label><input type="text" id="rLocation" placeholder="Dubai, UAE"></div>
+          <div class="field"><label for="rTitle">Role title</label><input type="text" id="rTitle"></div>
+          <div class="field"><label for="rLocation">Office location</label><input type="text" id="rLocation" placeholder="New York"></div>
         </div>
         <div>
           <div class="field"><label>Work type</label>
-            <div class="row" id="rWork">
-              <label class="sub"><input type="radio" name="wt" value="onsite"> On site</label>
-              <label class="sub"><input type="radio" name="wt" value="hybrid"> Hybrid</label>
-              <label class="sub"><input type="radio" name="wt" value="remote"> Remote</label>
-            </div></div>
-          <div class="field" id="rCandField"><label>Where can candidates be based? Comma separated. Countries work best.</label><input type="text" id="rCand" placeholder="UAE, United Kingdom, Singapore"></div>
+            <div class="row"><label class="sub"><input type="radio" name="wt" value="onsite"> On site</label><label class="sub"><input type="radio" name="wt" value="hybrid"> Hybrid</label><label class="sub"><input type="radio" name="wt" value="remote"> Remote</label></div></div>
+          <div class="field" id="rCandField"><label for="rCand">Where can candidates be based? Countries, comma separated</label><input type="text" id="rCand"></div>
         </div>
       </div>
-      <div class="row"><button onclick="showStep(1)">Back</button><button class="primary" onclick="toStep3()">Next: build the search</button></div>
+      <div class="row"><button onclick="showStep(1)">Back</button><button class="primary" onclick="toStep3()">Next: the search</button><button class="link" onclick="closeWizard()">Cancel</button></div>
     </div>
-
-    <div id="w3" style="display:none">
+    <div id="w3" class="hide" style="margin-top:10px">
       <div class="grid2">
         <div>
-          <div class="field"><label>Job titles to look for, one per line</label><textarea id="rTitles" style="min-height:110px"></textarea></div>
-          <div class="field"><label>Industry words (any of these), comma separated</label><input type="text" id="rDomain"></div>
+          <div class="field"><label for="rTitles">Job titles, one per line</label><textarea id="rTitles" style="min-height:100px"></textarea></div>
+          <div class="field"><label for="rDomain">Industry words (any), comma separated</label><input type="text" id="rDomain"></div>
         </div>
         <div>
-          <div class="field"><label>Must also mention (all of these), comma separated. The modifier from the title goes here, e.g. Cloud. Empty means wider.</label><input type="text" id="rSkills"><div class="sub" id="rSkillHints" style="margin-top:4px"></div></div>
-          <div class="field"><label>Leave out anyone with these words</label><input type="text" id="rExclude"></div>
+          <div class="field"><label for="rSkills">Must also mention (all), comma separated</label><input type="text" id="rSkills"><div class="sub" id="rSkillHints" style="margin-top:4px"></div></div>
+          <div class="field"><label for="rExclude">Leave out anyone with</label><input type="text" id="rExclude"></div>
         </div>
       </div>
-      <div class="field"><label>Boolean search. Built from the fields above. You can edit it by hand.</label><textarea id="rBoolean" style="min-height:70px;font-family:ui-monospace,Menlo,monospace;font-size:12px"></textarea></div>
-      <div class="row"><button onclick="keepStep3();showStep(2)">Back</button><button onclick="rebuildBoolean()">Rebuild from fields</button><button class="primary" onclick="saveRole()">Save role</button><button class="primary" id="btnSaveSearch" onclick="saveRole(true)">Save and search LinkedIn</button></div>
+      <div class="field"><label for="rBoolean">Boolean search. Edit freely.</label><textarea id="rBoolean" style="min-height:70px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea></div>
+      <div class="row"><button onclick="keepStep3();showStep(2)">Back</button><button onclick="rebuildBoolean()">Rebuild</button><button class="primary" onclick="saveRole(true)">Save and search</button><button onclick="saveRole(false)">Save</button><button class="link" onclick="closeWizard()">Cancel</button></div>
     </div>
-  </div>
+  </section>
 
-  <div id="setup" class="card">
-    <h2>Getting started</h2>
-    <div class="steps" id="steps"></div>
-  </div>
-
-  <div class="stats" id="stats"></div>
-
-  <div class="card">
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Activity</h2><div class="row"><span class="sub" id="jobSub"></span><button class="small" id="btnRecord" onclick="recordRoute()" title="Opens the browser and writes down each page and click while you do something once">Show me once (record)</button></div></div>
-    <div class="log" id="log">Nothing running. Press a button above.</div>
-    <div class="shots" id="shots"></div>
-  </div>
-
-  <div id="replies"></div>
-  <div id="inmail"></div>
-  <div id="waiting"></div>
-
-  <div class="card">
-    <div class="row" style="justify-content:space-between;margin-bottom:8px">
-      <h2 style="margin:0">People <span id="leadCount" class="muted"></span></h2>
-      <div class="row">
-        <label class="sub">Sort <select id="sortBy" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">best match</option><option value="latest">latest</option></select></label>
-        <button class="small primary" onclick="approveTop()">Approve top <span id="topN">15</span></button>
-        <button class="small" onclick="approveVisible(true)">Approve all shown</button>
-        <button class="small danger" onclick="clearList()" title="Removes everyone not yet contacted for this role">Clear list</button>
-        <button class="small" onclick="approveVisible(false)">Un-approve all shown</button>
-        <a class="sub" id="exportLink" href="#">Export CSV</a>
+  <main id="rolePane" class="hide">
+    <section class="card">
+      <div class="row between" style="align-items:flex-start">
+        <div>
+          <div class="role-title" id="rsTitle"></div>
+          <div class="sub" id="rsWhere"></div>
+        </div>
+        <div class="row">
+          <button class="primary" id="btnSearch" onclick="job('search')">Search</button>
+          <button id="btnRun" onclick="job('run')">Run all day</button>
+          <button class="danger" id="btnStop" onclick="job('stop')" disabled>Stop</button>
+        </div>
       </div>
-    </div>
-    <div class="filters" id="filters"></div>
-    <div style="max-height:520px;overflow:auto"><table><thead><tr><th>Match</th><th>Person</th><th>Status</th><th>Approved</th><th>Activity</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
-  </div>
-
-  <div class="grid2">
-    <div class="card">
-      <h2>Add people</h2>
-      <div class="field"><label>Paste LinkedIn profile links, one per line (from Recruiter Lite, Sales Nav, anywhere)</label><textarea id="importText" placeholder="https://www.linkedin.com/in/someone/"></textarea></div>
-      <div class="row"><label class="sub"><input type="checkbox" id="importApprove"> approve them straight away</label><button class="primary" onclick="doImport()">Add</button></div>
-    </div>
-    <div class="card">
-      <h2>Hand-written messages</h2>
-      <div class="sub" style="margin-bottom:6px">Optional. Paste JSON from Claude to send a specific message to specific people. These go before the template follow-ups.</div>
-      <textarea id="queueJson" placeholder='[{"url":"https://www.linkedin.com/in/someone/","text":"Thanks for connecting Sara. How are you finding the market at the moment?","note":"route: pulse"}]'></textarea>
-      <div class="row" style="margin-top:6px"><button class="primary" onclick="queueJson()">Queue these</button></div>
-    </div>
-  </div>
-
-  <div class="card" id="settings">
-    <h2>Role settings</h2>
-    <div id="cfgError"></div>
-    <div class="grid2">
-      <div>
-        <div class="field" style="display:none"><label>Type</label>
-          <select id="cfgMode"><option value="newbusiness">New business (handshake note, then messages you or Claude write per person)</option><option value="candidates">Candidates (timed template follow-ups)</option></select></div>
-        <div class="field"><label>LinkedIn search URL. Normally empty: the role above builds it. Paste one here only to override it.</label><input type="text" id="cfgSearchUrl" placeholder="https://www.linkedin.com/search/results/people/?keywords=..."></div>
-        <div class="field"><label>Connection request notes, one per line. Picked at random. {firstName} is filled in. Max 300 characters.</label><textarea id="cfgNotes"></textarea></div>
-        <div class="field" id="followUpsField"><label>Messages after they accept. One per line: <code>days | message</code>, counted from the previous message. Add hours with <code>0 +3h |</code>.</label><textarea id="cfgFollowUps" placeholder="0 +3h | Thanks for connecting {firstName}. Worth a look?&#10;4 | Hey {firstName}, just checking this didn't get buried."></textarea></div>
-        <div class="field"><label>Recruiter Lite InMail, for people who have not accepted after <input type="number" id="imAfter" min="1" max="30" style="width:60px"> days. You send it by hand; the app writes it and lists who is due.</label>
-          <input type="text" id="imSubject" placeholder="subject" style="margin-bottom:6px"><textarea id="imBody" style="min-height:120px" placeholder="InMail body"></textarea></div>
-        <div class="field"><label>The one InMail follow-up, <input type="number" id="imFollowAfter" min="1" max="30" style="width:60px"> days later if no reply.</label><textarea id="imFollow" placeholder="follow-up"></textarea></div>
+      <code class="bool" id="rsBoolean"></code>
+      <div id="boolEdit" class="hide">
+        <textarea id="boolText" aria-label="Boolean search" style="min-height:80px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea>
+        <div class="row" style="margin-top:6px"><button class="small primary" onclick="saveBool(true)">Save and search</button><button class="small" onclick="saveBool(false)">Save</button><button class="small" onclick="closeBool()">Cancel</button><span class="sub" id="boolCheck"></span></div>
       </div>
-      <div>
-        <div class="field"><label>Daily caps</label>
-          <div class="row"><span class="sub">connects</span><input type="number" id="capConnects" min="0" max="25"><span class="sub">messages</span><input type="number" id="capMessages" min="0" max="40"><span class="sub">profile views</span><input type="number" id="capViews" min="0" max="150"></div>
-          <div class="sub" style="margin-top:4px">Keep connects at 15 or under. Above 25 is refused.</div></div>
-        <div class="field"><label>Working hours (<span id="tzLabel">Dubai</span> time)</label>
-          <div class="row"><input type="time" id="hStart"><span class="sub">to</span><input type="time" id="hEnd"></div>
-          <div class="row" style="margin-top:6px" id="days"></div></div>
-        <div class="field"><label>Pause between actions (seconds, min to max)</label><div class="row"><input type="number" id="pauseMin" min="20"><span class="sub">to</span><input type="number" id="pauseMax" min="30"></div></div>
-        <div class="field"><label>Pages of search results to collect</label><input type="number" id="cfgPages" min="1" max="20"></div>
-        <div class="field"><label class="sub"><input type="checkbox" id="cfgAuto"> Auto-approve everyone found by search (not recommended)</label></div>
-        <div class="row"><button class="primary" onclick="saveSettings()">Save settings</button><span class="sub">Changes apply on the next pass.</span></div>
+      <div class="row" style="margin-top:4px">
+        <button class="small" id="btnEditBool" onclick="openBool()">Edit search</button>
+        <label class="sub" for="rsSource">Search in</label>
+        <select id="rsSource" style="width:auto;padding:3px 6px" onchange="setSource(this.value)"><option value="recruiter">Recruiter Lite</option><option value="linkedin">LinkedIn</option></select>
+        <span id="rsSkillsWrap" class="row"><label class="sub" for="rsSkills">Skills (1 or 2)</label><input type="text" id="rsSkills" style="width:200px;padding:3px 8px" placeholder="AWS, Cloud Security"><button class="small" onclick="saveSkills()">Save</button></span>
+        <button class="link" onclick="editRole()">Edit role</button>
       </div>
-    </div>
-  </div>
+      <div class="sub" id="rsSkillHint" style="margin-top:4px"></div>
+      <div class="sub" id="rsHours" style="margin-top:4px"></div>
+    </section>
 
-  <details class="sub"><summary>Where things live</summary><div id="home"></div></details>
+    <section id="replies"></section>
+    <section id="inmail"></section>
+
+    <section class="card">
+      <div class="row between">
+        <h2 style="margin:0">People <span id="leadCount"></span></h2>
+        <div class="row">
+          <select id="sortBy" aria-label="Sort" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">Best match</option><option value="latest">Latest</option></select>
+          <button class="small primary" onclick="approveTop()">Approve top <span id="topN">15</span></button>
+          <button class="small" onclick="approveVisible(false)">Un-approve shown</button>
+          <a class="sub" id="exportLink" href="#">Export CSV</a>
+          <button class="small danger" onclick="clearList()">Clear list</button>
+        </div>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div class="sub" id="today" style="margin-bottom:6px"></div>
+      <div class="scroll"><table><thead><tr><th>Match</th><th>Person</th><th>Status</th><th>OK</th><th>Next</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+    </section>
+
+    <details class="card" id="activity"><summary>Activity</summary>
+      <div class="log" id="log">Nothing running.</div>
+      <div class="shots" id="shots"></div>
+    </details>
+
+    <details class="card" id="settings"><summary>Outreach and settings</summary>
+      <div id="cfgError"></div>
+      <div class="grid2">
+        <div>
+          <div class="field"><label for="cfgNotes">Connection note. One per line, picked at random. Max 300 characters.</label><textarea id="cfgNotes"></textarea></div>
+          <div class="field"><label for="cfgFollowUps">After they accept. One per line: <code>days | message</code>, add hours with <code>0 +3h |</code></label><textarea id="cfgFollowUps" style="min-height:100px"></textarea></div>
+          <div class="field"><label for="imBody">Recruiter InMail, for people not accepted after <input type="number" id="imAfter" aria-label="Days before InMail" min="1" max="30" style="width:56px"> days</label>
+            <input type="text" id="imSubject" aria-label="InMail subject" placeholder="subject" style="margin-bottom:6px"><textarea id="imBody" style="min-height:110px"></textarea></div>
+          <div class="field"><label for="imFollow">The one InMail follow-up, <input type="number" id="imFollowAfter" aria-label="Days before follow-up" min="1" max="30" style="width:56px"> days later</label><textarea id="imFollow"></textarea></div>
+          <div class="sub">Tags: {firstName} {role} {location} {workType}</div>
+        </div>
+        <div>
+          <div class="field"><label>Daily caps</label>
+            <div class="row"><span class="sub">invites</span><input type="number" id="capConnects" aria-label="Invites a day" min="0" max="25"><span class="sub">messages</span><input type="number" id="capMessages" aria-label="Messages a day" min="0" max="40"><span class="sub">views</span><input type="number" id="capViews" aria-label="Profile views a day" min="0" max="150"></div>
+            <div class="row" style="margin-top:6px"><span class="sub">invites a week</span><input type="number" id="capWeek" aria-label="Invites a week" min="0" max="150"><span class="sub">InMails a month</span><input type="number" id="imCredits" aria-label="InMail credits a month" min="0" max="150"></div>
+            <div class="sub" style="margin-top:4px">These count across all roles: it is one LinkedIn account.</div></div>
+          <div class="field"><label>Working hours (<span id="tzLabel">Dubai</span>)</label>
+            <div class="row"><input type="time" id="hStart" aria-label="Start"><span class="sub">to</span><input type="time" id="hEnd" aria-label="End"></div>
+            <div class="row" style="margin-top:6px" id="days"></div></div>
+          <div class="field"><label>Pause between actions, seconds</label><div class="row"><input type="number" id="pauseMin" min="20" aria-label="Minimum pause"><span class="sub">to</span><input type="number" id="pauseMax" min="30" aria-label="Maximum pause"></div></div>
+          <div class="field"><label for="cfgPages">Pages of results per search</label><input type="number" id="cfgPages" min="1" max="20"></div>
+          <div class="field"><label for="cfgSearchUrl">Override search URL (normally empty)</label><input type="text" id="cfgSearchUrl"></div>
+          <button class="primary" onclick="saveSettings()">Save settings</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="card"><summary>More tools</summary>
+      <div class="grid2">
+        <div>
+          <div class="field"><label for="importText">Add people by profile link, one per line</label><textarea id="importText"></textarea></div>
+          <div class="row"><label class="sub"><input type="checkbox" id="importApprove"> approve straight away</label><button class="small" onclick="doImport()">Add</button></div>
+        </div>
+        <div>
+          <div class="field"><label for="queueJson">Hand-written messages (JSON from Claude). Sent before the templates.</label><textarea id="queueJson"></textarea></div>
+          <button class="small" onclick="queueJson()">Queue these</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="small" id="btnOnce" onclick="job('once')">Run one pass now</button>
+        <button class="small" id="btnRecord" onclick="recordRoute()">Show me once (record)</button>
+        <span class="sub">Data: <span id="home"></span></span>
+      </div>
+    </details>
+  </main>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status"></div>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let sortBy = 'match', S = null, campaign = localStorage.getItem('campaign') || '', filter = '', lastLog = 0, openComposer = null;
+const key = u => String(u).replace(/[^a-z0-9]/gi,'');
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const GROUPS = { todo: ['new'], contacted: ['invited','accepted','messaged'], replied: ['replied'], closed: ['done','skipped','error'] };
+const GROUP_LABEL = { todo: 'To approve', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
+let S = null, campaign = '', filter = 'todo', sortBy = 'match', lastLog = 0, openComposer = null, settingsDirty = false, currentTz = 'Asia/Dubai', mode = 'role', boolOpen = false, R = null;
+try { campaign = localStorage.getItem('campaign') || ''; } catch {}
 
-function toast(m, bad){ const t=$('#toast'); t.textContent=m; t.style.background=bad?'var(--bad)':'var(--ink)'; t.style.color='#fff'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
-function toggle(id){ const e=document.getElementById(id); e.style.display = e.style.display==='none' ? '' : 'none'; }
+function toast(m, bad){ const t=$('#toast'); t.textContent=m; t.style.background=bad?'var(--bad)':'#16181d'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2800); }
 async function api(path, body){ const r = await fetch(path, body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {}); const j = await r.json().catch(()=>({})); if(!r.ok){ toast(j.error||'failed', true); throw new Error(j.error||'failed'); } return j; }
-function whenIn(iso, tz){ const d=new Date(iso); const a=d.toLocaleString('en-GB',{timeZone:tz,weekday:'short',hour:'2-digit',minute:'2-digit'}); const b=d.toLocaleString('en-GB',{hour:'2-digit',minute:'2-digit'}); return `${a} ${tz.split('/').pop().replace('_',' ')} (${b} here)`; }
-function when(iso){ const tz=(S&&S.cfg&&S.cfg.workingHours&&S.cfg.workingHours.timezone)||'Asia/Dubai'; return iso ? new Date(iso).toLocaleString('en-GB',{timeZone:tz,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
+const tzOf = () => (S&&S.cfg&&S.cfg.workingHours&&S.cfg.workingHours.timezone)||'Asia/Dubai';
+function when(iso){ return iso ? new Date(iso).toLocaleString('en-GB',{timeZone:tzOf(),day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
+function whenIn(iso, tz){ const d=new Date(iso); return `${d.toLocaleString('en-GB',{timeZone:tz,weekday:'short',hour:'2-digit',minute:'2-digit'})} ${tz.split('/').pop().replace('_',' ')} (${d.toLocaleString('en-GB',{hour:'2-digit',minute:'2-digit'})} here)`; }
+function remember(c){ try { localStorage.setItem('campaign', c); } catch {} }
 
 async function load(){
   S = await api('/api/state?c=' + encodeURIComponent(campaign));
-  if (S.campaign !== campaign) { campaign = S.campaign || ''; localStorage.setItem('campaign', campaign); }
+  if (S.campaign !== campaign) { campaign = S.campaign || ''; remember(campaign); }
+  if (!S.campaigns.length && mode !== 'wizard') { mode = 'wizard'; showStep(1); }
   render();
 }
-function setCampaign(c){ campaign=c; localStorage.setItem('campaign', c); load(); }
+function setCampaign(c){ campaign=c; remember(c); mode='role'; closeBool(); settingsDirty=false; openComposer=null; load(); }
 
+function renderTabs(){
+  const tabs = (S.roles||[]).map(r => `<button class="tab ${mode==='role'&&r.name===S.campaign?'on':''}" data-act="tab" data-name="${esc(r.name)}">${esc(r.title)}${r.location?`<span class="sub">${esc(r.location)}</span>`:''}</button>`).join('');
+  $('#tabs').innerHTML = tabs + `<button class="tab ${mode==='wizard'?'on':''}" onclick="openWizard()">+ New role</button>`;
+}
 function applyJob(j){
   $('#jobPill').classList.toggle('on', j.running);
-  const h=S&&S.hours; const waiting = j.running && j.name==='run' && h && !h.open && h.nextStart;
-  $('#jobText').textContent = j.running ? (waiting ? `running, waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}`) : 'idle';
-  $('#jobSub').textContent = j.running ? `started ${when(j.startedAt)}` : (j.history.length ? `last: ${j.history[j.history.length-1].name} ${when(j.history[j.history.length-1].endedAt)}` : '');
-  for (const id of ['btnLogin','btnLoginR','btnSearch','btnOnce','btnRun']) $('#'+id).disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign));
+  const h=S&&S.hours, waiting = j.running && j.name==='run' && h && !h.open && h.nextStart;
+  $('#jobText').textContent = j.running ? (j.stopping ? 'stopping' : waiting ? `waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}`) : 'idle';
+  for (const id of ['btnLogin','btnLoginR','btnSearch','btnRun','btnOnce','btnRecord']) { const b=$('#'+id); if(b) b.disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign)); }
   $('#btnStop').disabled = !j.running;
-  $('#btnStop').textContent = j.stopping ? 'Stopping… press again to force' : 'Stop';
-  $('#btnRecord').disabled = j.running;
+  $('#btnStop').textContent = j.stopping ? 'Force stop' : 'Stop';
+  if (j.running) $('#activity').open = true;
 }
+
 function render(){
-  const draft = openComposer ? { t: $('#t-'+key(openComposer.url))?.value, n: $('#n-'+key(openComposer.url))?.value, d: $('#d-'+key(openComposer.url))?.value } : null;
-  const sel=$('#campaign'); sel.innerHTML = S.campaigns.map(c=>`<option ${c===S.campaign?'selected':''}>${esc(c)}</option>`).join('') || '<option>(no role yet)</option>';
-  $('#exportLink').href = '/export.csv?c=' + encodeURIComponent(S.campaign||'');
+  renderTabs();
   applyJob(S.job);
-
+  $('#signedIn').textContent = [S.loggedInAt?'LinkedIn ✓':'', S.recruiterLoggedInAt?'Recruiter ✓':''].filter(Boolean).join(' · ');
   const al=[];
-  if (S.lastStop && Date.now()-new Date(S.lastStop.at).getTime() < 12*3600e3) al.push(`<div class="alert bad"><b>Stopped:</b> ${esc(S.lastStop.reason)}</div>`);
-  if (S.weeklyLimit) al.push(`<div class="alert"><b>LinkedIn weekly invitation limit hit.</b> Connection requests pause for 7 days. Messages still go.</div>`);
-  if (S.cfgError) al.push(`<div class="alert bad"><b>Campaign settings problem:</b> ${esc(S.cfgError)}</div>`);
+  if (!S.loggedInAt) al.push(`<div class="alert">Press <b>Log in to LinkedIn</b>, then <b>Log in to Recruiter</b>. You log in by hand once; it is remembered.</div>`);
+  if (S.lastStop && Date.now()-new Date(S.lastStop.at).getTime() < 6*3600e3) al.push(`<div class="alert bad"><b>Stopped:</b> ${esc(S.lastStop.reason)}</div>`);
+  if (S.weeklyLimit) al.push(`<div class="alert">LinkedIn weekly invitation limit hit. Invites pause for 7 days. Messages still go.</div>`);
+  if (S.cfgError) al.push(`<div class="alert bad"><b>Settings problem:</b> ${esc(S.cfgError)}</div>`);
   $('#alerts').innerHTML = al.join('');
+  $('#wizard').classList.toggle('hide', mode!=='wizard');
+  $('#rolePane').classList.toggle('hide', mode!=='role' || !S.campaign);
+  if (mode!=='role' || !S.campaign) return;
+  renderRole();
+  renderReplies();
+  renderInmail();
+  renderPeople();
+  if (!settingsDirty) fillSettings();
+  $('#home').textContent = S.home;
+  $('#shots').innerHTML = (S.screenshots||[]).map(f=>`<a href="/screenshots/${encodeURIComponent(f)}" target="_blank" title="${esc(f)}"><img src="/screenshots/${encodeURIComponent(f)}" alt="screenshot ${esc(f)}"></a>`).join('');
+}
 
-  const c=S.counts||{}, approved = S.leads.filter(l=>l.approved && l.status==='new').length;
-  const steps=[
-    [!!S.loggedInAt, 'Log in to LinkedIn', S.loggedInAt ? `done ${when(S.loggedInAt)}${S.recruiterLoggedInAt ? ', Recruiter too' : '. Recruiter: press Log in to Recruiter'}` : 'Press the button top right. Log in by hand in the window that opens.'],
-    [!!(S.cfg&&S.cfg.role), 'Set up the role', S.cfg&&S.cfg.role ? S.cfg.role.title : 'Paste the job spec in the Role box and follow the three steps.'],
-    [S.leads.length>0, 'Find people', S.leads.length ? `${S.leads.length} people for this role` : 'Press Search. Recruiter Lite is searched with the boolean and location from the role.'],
-    [approved>0 || (c.invited+c.accepted+c.messaged+c.replied)>0, 'Approve who to contact', approved ? `${approved} approved and waiting` : 'Tick the approved box next to each person, or send the CSV to Claude to shortlist.'],
-    [(c.invited+c.accepted+c.messaged+c.replied)>0, 'Run', 'Run one pass to watch it work, then Run all day. Keep this window and your Mac awake.'],
-  ];
-  $('#setup').style.display = steps.every(s=>s[0]) ? 'none' : '';
-  $('#steps').innerHTML = steps.map((s,i)=>`<div class="step ${s[0]?'done':''}"><b>${i+1}. ${s[1]}</b><span class="sub">${esc(s[2])}</span></div>`).join('');
+function renderRole(){
+  const role = S.cfg && S.cfg.role;
+  if (!role) { $('#rsTitle').textContent = S.campaign; $('#rsWhere').textContent = 'No role set up. Use + New role.'; $('#rsBoolean').textContent = S.cfg.searchUrl||''; return; }
+  $('#rsTitle').textContent = role.title;
+  $('#rsWhere').textContent = role.workType==='remote' ? `Remote · candidates in ${(role.candidateLocations||[]).join(', ')||'anywhere'}` : `${({onsite:'On site',hybrid:'Hybrid'})[role.workType]||'On site'} · ${role.location||''}`;
+  if (!boolOpen) $('#rsBoolean').textContent = role.boolean||'';
+  const src = role.source || 'recruiter';
+  $('#rsSource').value = src;
+  $('#rsSkillsWrap').classList.toggle('hide', src!=='recruiter');
+  if (document.activeElement !== $('#rsSkills')) $('#rsSkills').value = (role.recruiterSkills||[]).join(', ');
+  const sug = (role.suggestedSkills||[]).filter(x => !(role.recruiterSkills||[]).includes(x)).slice(0,4);
+  $('#rsSkillHint').textContent = src==='recruiter' && sug.length ? `Skills from the spec: ${sug.join(', ')}` : '';
+  const h=S.hours, wh=S.cfg.workingHours;
+  $('#rsHours').textContent = wh ? (h.open ? `Sends ${wh.start} to ${wh.end} ${wh.timezone}. Open now.` : `Sends ${wh.start} to ${wh.end} ${wh.timezone}. Next: ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'next working day'}.`) : '';
+}
+// One listener for every button that acts on a person: the URL travels in a data attribute, never inside JS source.
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b || b.tagName === 'INPUT') return;
+  const url = b.dataset.url, act = b.dataset.act;
+  if (act === 'tab') return setCampaign(b.dataset.name);
+  if (act === 'reply') return compose(url, true);
+  if (act === 'copyThread') return copyThread(url);
+  if (act === 'inmailSent') return inmailSent(url, b.dataset.kind);
+  if (act === 'inmailReplied') return inmailReplied(url);
+  if (act === 'queueOne') return queueOne(url, b.dataset.reply === '1');
+  if (act === 'cancelCompose') { openComposer = null; const box = document.getElementById('c-' + key(url)); if (box) box.innerHTML = ''; return; }
+  if (act === 'exclude') return setStatus(url, 'skipped');
+  if (act === 'putBack') return setStatus(url, 'new');
+});
+document.addEventListener('change', e => { const c = e.target.closest('input[data-act="approve"]'); if (c) approve(c.dataset.url, c.checked); });
 
-  const cap=k=>S.caps?`${S.today[k]||0} / ${S.caps[k]}`:String(S.today[k]||0);
-  $('#stats').innerHTML = [[approved,'approved, waiting'],[cap('connects'),'connects today'],[cap('messages'),'messages today'],[cap('profileViews'),'profile views today'],[c.invited||0,'invites pending'],[(c.accepted||0)+(c.messaged||0),'connected'],[c.replied||0,'replied']].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+function boolProblems(b){ const p=[]; let d=0; for(const ch of b){ if(ch==='(') d++; if(ch===')') d--; if(d<0) break; } if(d!==0) p.push('brackets do not match'); if(((b.match(/"/g)||[]).length)%2) p.push('a quote is not closed'); if(/\b(and|or|not)\b/.test(b)) p.push('write AND, OR, NOT in capitals'); return p; }
+function openBool(){ boolOpen=true; $('#boolText').value=S.cfg.role.boolean||''; $('#boolEdit').classList.remove('hide'); $('#rsBoolean').classList.add('hide'); $('#btnEditBool').classList.add('hide'); const t=$('#boolText'); t.oninput=()=>{ const p=boolProblems(t.value); $('#boolCheck').textContent = p.join(' · '); $('#boolCheck').style.color = p.length ? 'var(--bad)' : ''; }; t.oninput(); t.focus(); }
+function closeBool(){ boolOpen=false; $('#boolEdit').classList.add('hide'); $('#rsBoolean').classList.remove('hide'); $('#btnEditBool').classList.remove('hide'); }
+async function saveBool(andSearch){ const b=$('#boolText').value.trim().replace(/\s+/g,' '); if(!b) return toast('The search is empty', true); const p=boolProblems(b); if(p.length) return toast(p[0], true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, boolean:b, booleanEdited:true}}); closeBool(); await load(); toast(andSearch?'Saved. Searching.':'Search saved'); if(andSearch) job('search'); }
+async function setSource(v){ await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, source:v}}); toast(v==='recruiter'?'Searches run in Recruiter Lite':'Searches run in LinkedIn'); load(); }
+async function saveSkills(){ const list=$('#rsSkills').value.split(',').map(x=>x.trim()).filter(Boolean); if(list.length>2) return toast('Two skills at most', true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, recruiterSkills:list}}); toast(list.length?`Skills saved: ${list.join(', ')}`:'Skills cleared'); load(); }
 
-  $('#shots').innerHTML = (S.screenshots||[]).map(f=>`<a href="/screenshots/${encodeURIComponent(f)}" target="_blank" title="${esc(f)}"><img src="/screenshots/${encodeURIComponent(f)}" alt=""></a>`).join('');
+function renderReplies(){
+  const rep = S.leads.filter(l=>l.status==='replied').sort((a,b)=>(b.repliedAt||'').localeCompare(a.repliedAt||''));
+  $('#replies').innerHTML = rep.length ? `<div class="card" style="border-color:var(--accent)"><h2>Replies · ${rep.length}</h2>${rep.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)} · ${when(l.repliedAt)}</span><q>${esc(l.lastReply)}</q><div class="row" style="margin-top:6px"><button class="small primary" data-act="reply" data-url="${esc(l.url)}">Reply</button><button class="small" data-act="copyThread" data-url="${esc(l.url)}">Copy for Claude</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
+  if (openComposer) { if (rep.some(l=>l.url===openComposer.url)) compose(openComposer.url, openComposer.reply, true); else openComposer=null; }
+}
+function renderInmail(){
+  const im = S.inmail||[];
+  const cr = S.inmailCredits;
+  const credits = cr ? `${cr.left} of ${cr.total} InMails left this month` : '';
+  $('#inmail').innerHTML = im.length ? `<div class="card"><div class="row between"><h2 style="margin:0">Ready for InMail · ${im.length}</h2><span class="sub">${credits}</span></div><div class="sub" style="margin:4px 0 6px">Did not accept the connection. Copy, send in Recruiter Lite, press Sent. Only as many as you have credits for, best matches first. Mark replies so the credit comes back.</div>${im.map((p,i)=>`<div class="person"><a href="${esc(p.url)}" target="_blank"><b>${esc(p.name)}</b></a> <span class="sub">${p.kind==='followUp'?'follow-up due, no credit needed':'InMail due, uses 1 credit'}</span><div class="sub"><b>Subject:</b> ${esc(p.subject)}</div><q>${esc(p.text)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="copyText(${i})">Copy</button><button class="small primary" data-act="inmailSent" data-url="${esc(p.url)}" data-kind="${p.kind==='followUp'?'followUp':'inmail'}">Sent</button>${p.kind==='followUp'?`<button class="small" data-act="inmailReplied" data-url="${esc(p.url)}">They replied</button>`:''}</div></div>`).join('')}</div>`
+    : (cr && cr.left===0 ? `<div class="alert">No InMail credits left this month (${cr.total} used). Mark replies with They replied to get credits back.</div>` : '');
+}
+function compose(url, reply, keep){
+  const l=S.leads.find(x=>x.url===url); if(!l) return;
+  if (!keep) openComposer={url, reply};
+  const box=document.getElementById('c-'+key(url)); if(!box || box.querySelector('textarea')) return;
+  box.innerHTML=`<div class="composer"><textarea id="t-${key(url)}" aria-label="Message to ${esc(l.name)}" placeholder="Short. No long dashes."></textarea><div class="row" style="margin-top:6px"><button class="primary small" data-act="queueOne" data-url="${esc(url)}" data-reply="${reply?1:0}">Send on next pass</button><button class="small" data-act="cancelCompose" data-url="${esc(url)}">Cancel</button></div></div>`;
+  const ta=$('#t-'+key(url));
+  if (openComposer && openComposer.url===url && openComposer.draft) ta.value = openComposer.draft;   // keep an unsent draft across refreshes
+  ta.oninput = () => { if (openComposer) openComposer.draft = ta.value; };
+  if (!keep) ta.focus();
+}
+async function queueOne(url, resume){ const text=$('#t-'+key(url)).value.trim(); if(!text) return; await api('/api/queue',{campaign:S.campaign, items:[{url,text,resume}]}); openComposer=null; toast('Queued. Goes on the next pass.'); load(); }
+function copyThread(url){ const l=S.leads.find(x=>x.url===url); navigator.clipboard.writeText(`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message. Keep it short.`); toast('Copied. Paste it to Claude.'); }
+function copyText(i){ const p=S.inmail[i]; navigator.clipboard.writeText(`${p.subject}\n\n${p.text}`); toast('Copied. Paste it into Recruiter Lite.'); }
+async function inmailReplied(url){ const text = prompt('Paste their reply (optional). It moves them to Replies and gives the InMail credit back.', ''); if (text===null) return; await api('/api/inmail-replied',{url, text}); toast('Moved to Replies. Credit back.'); load(); }
+async function inmailSent(url, kind){ await api('/api/inmail-sent',{url, kind}); toast(kind==='followUp'?'Recorded. Nothing more goes to them.':'Recorded. The follow-up shows here when due.'); load(); }
 
-  const replied = S.leads.filter(l=>l.status==='replied').sort((a,b)=>(b.repliedAt||'').localeCompare(a.repliedAt||''));
-  $('#replies').innerHTML = replied.length ? `<div class="card"><h2>Replies</h2>${replied.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)} · ${when(l.repliedAt)}</span><q>${esc(l.lastReply)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}', true)">Reply (goes on the next pass)</button><button class="small" onclick="copyThread('${esc(l.url)}')">Copy for Claude</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
-
-  const im=S.inmail||[];
-  $('#inmail').innerHTML = im.length ? `<div class="card"><h2>Ready for InMail (${im.length})</h2><div class="sub" style="margin-bottom:8px">Did not accept the connection. Copy, paste into Recruiter Lite, press Sent. One InMail, one follow-up, then nothing more.</div>${im.map((p,i)=>`<div class="person"><a href="${esc(p.url)}" target="_blank"><b>${esc(p.name)}</b></a> <span class="sub">${esc(p.headline)} · ${p.kind==='followUp'?'follow-up due':'InMail due'}</span><div class="sub" style="margin-top:4px"><b>Subject:</b> ${esc(p.subject)}</div><q style="white-space:pre-wrap">${esc(p.text)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="copyText(${i})">Copy</button><button class="small primary" onclick="inmailSent('${esc(p.url)}','${p.kind}')">Sent</button></div></div>`).join('')}</div>` : '';
-
-  const waiting = (S.cfg&&S.cfg.mode==='candidates') ? [] : S.leads.filter(l=>l.status==='accepted' && !l.queued);
-  $('#waiting').innerHTML = waiting.length ? `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Accepted, waiting for a first message (${waiting.length})</h2><button class="small" onclick="copyWaiting()">Copy list for Claude</button></div><div class="sub" style="margin:4px 0 8px">Research each one, pick the route, write the message. Or copy the list, give it to Claude, paste the JSON back below.</div>${waiting.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)}${l.preexisting?' · already a contact':''}</span><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}')">Write message</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
-
-  const counts=S.counts||{};
-  $('#filters').innerHTML = [['','all',S.leads.length],...S.statuses.map(s=>[s,s,counts[s]||0])].map(([f,l,n])=>`<button class="${f===filter?'on':''}" onclick="filter='${f}';render()">${l} ${n}</button>`).join('');
-  const sc = l => l.rank && l.rank.score != null ? l.rank.score : -1;
-  const rows = S.leads.filter(l=>!filter||l.status===filter).sort((a,b)=> sortBy==='match' ? (sc(b)-sc(a) || (b.updatedAt||'').localeCompare(a.updatedAt||'')) : (b.updatedAt||'').localeCompare(a.updatedAt||''));
+const sc = l => l.rank && l.rank.score != null ? l.rank.score : -1;
+function nextStep(l){
+  if (l.status==='new') return l.approved ? 'Invite on the next run' : 'Tick to approve';
+  if (l.status==='invited') return `Invited ${when(l.invitedAt)}`;
+  if (l.status==='accepted') return 'Message 1 due';
+  if (l.status==='messaged') return `${l.sent} sent`;
+  if (l.status==='replied') return 'You reply';
+  return esc(l.error||'') || 'Nothing more';
+}
+function renderPeople(){
+  const count = g => S.leads.filter(l=>GROUPS[g].includes(l.status)).length;
+  $('#filters').innerHTML = Object.keys(GROUPS).map(g=>`<button class="${g===filter?'on':''}" onclick="filter='${g}';render()">${GROUP_LABEL[g]} ${count(g)}</button>`).join('') + `<button class="${filter==='all'?'on':''}" onclick="filter='all';render()">All ${S.leads.length}</button>`;
+  const rows = S.leads.filter(l=>filter==='all'||GROUPS[filter].includes(l.status)).sort((a,b)=> sortBy==='match' ? (sc(b)-sc(a) || (b.updatedAt||'').localeCompare(a.updatedAt||'')) : (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  $('#leadCount').textContent = `· ${S.leads.length}`;
   $('#topN').textContent = (S.caps && S.caps.connects) || 15;
-  $('#leadCount').textContent = `(${rows.length})`;
+  $('#exportLink').href = '/export.csv?c=' + encodeURIComponent(S.campaign||'');
+  const cap = k => S.caps ? `${S.today[k]||0}/${S.caps[k]}` : String(S.today[k]||0);
+  const approved = S.leads.filter(l=>l.approved && l.status==='new').length;
+  const wk = S.week ? ` · this week ${S.week.connects}/${S.week.cap} invites` : '';
+  const crd = S.inmailCredits ? ` · ${S.inmailCredits.left}/${S.inmailCredits.total} InMails left` : '';
+  $('#today').textContent = `${approved} approved and waiting · today ${cap('connects')} invites, ${cap('messages')} messages, ${cap('profileViews')} profile views${wk}${crd}`;
   $('#rows').innerHTML = rows.map(l=>`<tr>
     <td><span class="match ${sc(l)>=70?'hi':sc(l)>=45?'mid':'lo'}">${sc(l)<0?'':sc(l)}</span></td>
-    <td><a href="${esc(l.url)}" target="_blank">${esc(l.name||l.url.replace('https://www.linkedin.com/in/',''))}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''}<div class="sub">${esc(l.headline)}</div>${l.rank&&l.rank.reasons.length?`<div class="sub" style="margin-top:2px">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
-    <td><span class="chip chip-${l.status}">${l.status}</span>${l.queued?`<div class="sub">${l.queued} queued</div>`:''}</td>
-    <td><input type="checkbox" ${l.approved?'checked':''} ${l.status!=='new'?'disabled':''} onchange="approve('${esc(l.url)}', this.checked)"></td>
-    <td class="sub">${l.sent} sent${l.invitedAt?`<br>invited ${when(l.invitedAt)}`:''}${l.acceptedAt?`<br>accepted ${when(l.acceptedAt)}`:''}</td>
-    <td class="sub">${esc(l.error||l.notes||'')}</td>
-    <td class="row">${['accepted','messaged','replied'].includes(l.status)?`<button class="small" onclick="compose('${esc(l.url)}')">Message</button>`:''}${l.status==='new'||l.status==='invited'?`<button class="small" onclick="setStatus('${esc(l.url)}','skipped')" title="Leave this person out. You can put them back.">Exclude</button>`:''}${l.status==='skipped'||l.status==='error'?`<button class="small" onclick="setStatus('${esc(l.url)}','new')">Put back</button>`:''}</td>
-  </tr>`).join('') || '<tr><td colspan="7" class="sub">Nobody here yet.</td></tr>';
-
-  if (!settingsDirty) fillSettings();
-  renderRole();
-  $('#home').textContent = S.home;
-  if (openComposer) { compose(openComposer.url, openComposer.reply, true); const k=key(openComposer.url); if (draft && $('#t-'+k)) { $('#t-'+k).value=draft.t||''; $('#n-'+k).value=draft.n||''; $('#d-'+k).value=draft.d||''; } }
+    <td><a href="${esc(l.recruiterUrl||l.url)}" target="_blank">${esc(l.name||'(no name)')}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''}<div class="sub">${esc(l.headline)}${l.location?` · ${esc(l.location)}`:''}</div>${l.rank&&l.rank.reasons.length?`<div class="sub">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
+    <td><span class="chip chip-${l.status}">${l.status==='skipped'?'excluded':l.status}</span></td>
+    <td><input type="checkbox" aria-label="Approve ${esc(l.name)}" ${l.approved?'checked':''} ${l.status!=='new'?'disabled':''} data-act="approve" data-url="${esc(l.url)}"></td>
+    <td class="sub">${nextStep(l)}</td>
+    <td>${l.status==='new'?`<button class="small" data-act="exclude" data-url="${esc(l.url)}">Exclude</button>`:''}${(l.status==='skipped'&&l.skippedByHand)||(l.status==='error'&&!l.invitedAt)?`<button class="small" data-act="putBack" data-url="${esc(l.url)}">Put back</button>`:''}</td>
+  </tr>`).join('') || `<tr><td colspan="6" class="sub">${S.leads.length ? 'Nobody in this group.' : 'Nobody yet. Press Search.'}</td></tr>`;
 }
-const key = u => u.replace(/[^a-z0-9]/gi,'');
+async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
+async function approveVisible(on){ const urls = S.leads.filter(l=>(filter==='all'||GROUPS[filter].includes(l.status))&&l.status==='new'&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
+async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
+async function clearList(){ const n=S.leads.filter(l=>['new','skipped'].includes(l.status)).length; if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted? Anyone already contacted stays.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
+async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 
-// ---- actions ----
 async function job(action){
   if (action==='stop') { await api('/api/job',{action:'stop'}); return load(); }
-  if (action==='run' && !confirm('Run all day inside working hours? Chrome will open and work through approved people. Keep this window open.')) return;
-  const url = action==='search' ? (settingsDirty ? $('#cfgSearchUrl').value.trim() : '') : undefined;
-  if (action==='search' && !(url || (S.cfg && (S.cfg.searchUrl || (S.cfg.role&&S.cfg.role.boolean))))) return toast('Set up the role first, or paste a LinkedIn search URL in the settings', true);
-  await api('/api/job',{action, campaign:S.campaign, url: url||undefined});
-  lastLog = 0; $('#log').textContent='';
+  if (action==='run' && !confirm('Run all day inside working hours? A Chrome window opens and works through approved people. Keep this window open and the Mac awake.')) return;
+  await api('/api/job',{action, campaign:S.campaign});
+  lastLog = 0; $('#log').textContent=''; $('#activity').open = true;
   load(); pollLog();
 }
 async function recordRoute(){
-  const where = prompt('What do you want to show me?\n\n1 = Recruiter search and a profile\n2 = Sending an InMail in Recruiter\n3 = Something else (you type the start page)', '1'); if (where===null) return;
-  const routes = { '1': ['recruiter-search','https://www.linkedin.com/talent/home'], '2': ['recruiter-inmail','https://www.linkedin.com/talent/home'] };
-  let r = routes[where.trim()];
-  if (!r) { const url = prompt('Start page (a linkedin.com link)', 'https://www.linkedin.com/talent/home'); if (!url) return; r = ['route', url]; }
-  alert('A browser window opens. Do the steps once at a normal pace. Do not send anything you do not mean to. Close the window when you are done. Nothing you type is recorded, only which box you typed in.');
-  await api('/api/job',{action:'record', campaign:S.campaign, name:r[0], url:r[1]}); lastLog=0; $('#log').textContent=''; load(); pollLog();
+  const what = prompt('What will you show me?\n1 = Recruiter search and a profile\n2 = Sending an InMail in Recruiter', '1'); if (what===null) return;
+  const name = what.trim()==='2' ? 'recruiter-inmail' : 'recruiter-search';
+  alert('A browser opens. Do it once at a normal pace, then quit that Chrome with Cmd+Q. Nothing you type is recorded.');
+  await api('/api/job',{action:'record', campaign:S.campaign, name, url:'https://www.linkedin.com/talent/home'}); lastLog=0; $('#log').textContent=''; $('#activity').open=true; load(); pollLog();
 }
-async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
-async function approveVisible(on){ const urls = S.leads.filter(l=>(!filter||l.status===filter)&&l.status==='new').map(l=>l.url); if(!urls.length) return toast('No new people shown'); if(!confirm(`${on?'Approve':'Un-approve'} ${urls.length} people?`)) return; await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
-async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!l.approved&&l.rank&&l.rank.score>0).sort((a,b)=>b.rank.score-a.rank.score).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Connection requests go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
-async function clearList(){ const n=S.leads.filter(l=>['new','skipped'].includes(l.status)).length; const kept=S.leads.length-n; if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted?${kept?` The ${kept} already contacted stay, so nobody gets a second invite.`:''} You can search again straight after.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
-async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
 async function doImport(){ const text=$('#importText').value.trim(); if(!text) return; const r=await api('/api/import',{campaign:S.campaign,text,approve:$('#importApprove').checked}); toast(`${r.added} added, ${r.skipped} skipped`); $('#importText').value=''; load(); }
 async function queueJson(){ let items; try{ items=JSON.parse($('#queueJson').value); }catch{ return toast('That is not valid JSON', true);} const r=await api('/api/queue',{campaign:S.campaign, items:[].concat(items)}); toast(`${r.n} queued`); $('#queueJson').value=''; load(); }
-function compose(url, reply, keep){
-  const l=S.leads.find(x=>x.url===url); if(!l) return;
-  if (!keep) { if (openComposer && openComposer.url!==url) { const o=document.getElementById('c-'+key(openComposer.url)); if(o) o.innerHTML=''; } openComposer={url, reply}; }
-  let box=document.getElementById('c-'+key(url));
-  if(!box){ // person not in replies/waiting: put it under the table
-    box=document.createElement('div'); box.id='c-'+key(url); $('#rows').parentElement.parentElement.appendChild(box); }
-  if (box.querySelector('textarea')) return;
-  box.innerHTML=`<div class="composer"><b>${esc(l.name)}</b> <span class="sub">${esc(l.headline)}</span>${l.lastMessage?`<div class="sub" style="margin-top:4px">last sent: ${esc(l.lastMessage)}</div>`:''}${l.lastReply?`<div class="sub">they said: ${esc(l.lastReply)}</div>`:''}
-    <textarea id="t-${key(url)}" placeholder="Short. No dashes. Easy to reply to. Never ask for anything in the first message."></textarea>
-    <div class="row"><input type="text" id="n-${key(url)}" placeholder="note for next time (what they build, route used)" style="flex:1;min-width:200px"><input type="date" id="d-${key(url)}" title="not before" style="width:150px"></div>
-    <div class="row"><button class="primary small" onclick="queueOne('${esc(url)}', ${!!reply})">Queue message</button><button class="small" onclick="openComposer=null;document.getElementById('c-${key(url)}').innerHTML=''">Cancel</button>${l.queued?`<button class="small" onclick="unqueue('${esc(url)}')">Remove queued (${l.queued})</button>`:''}<span class="sub" id="cnt-${key(url)}"></span></div></div>`;
-  const ta=$('#t-'+key(url)); ta.oninput=()=>{ $('#cnt-'+key(url)).textContent = `${ta.value.length} chars${/[—–]/.test(ta.value)?' · contains a dash, remove it':''}`; }; ta.focus();
-}
-async function queueOne(url, resume){ const k=key(url); const text=$('#t-'+k).value.trim(); if(!text) return; const d=$('#d-'+k).value; await api('/api/queue',{campaign:S.campaign, items:[{url,text,note:$('#n-'+k).value.trim(),notBefore:d?new Date(d+'T06:00:00Z').toISOString():null, resume}]}); openComposer=null; toast('Queued. Goes on the next pass.'); load(); }
-function copyText(i){ const p=S.inmail[i]; navigator.clipboard.writeText(`${p.subject}\n\n${p.text}`); toast('Copied. Paste it into Recruiter Lite.'); }
-async function inmailSent(url, kind){ await api('/api/inmail-sent',{url, kind}); toast(kind==='followUp' ? 'Recorded. Nothing more goes to them.' : 'Recorded. Follow-up shows here when due.'); load(); }
-async function unqueue(url){ await api('/api/unqueue',{url,index:0}); openComposer=null; load(); }
-function copyWaiting(){ const w=S.leads.filter(l=>l.status==='accepted'&&!l.queued); const txt='These people accepted my connection request. Research each one, pick Route A / B / pulse per the playbook, write the first message, and give me the queue JSON.\n\n'+w.map(l=>`- ${l.name} | ${l.headline} | ${l.url}${l.notes?' | note: '+l.notes:''}`).join('\n'); navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); }
-function copyThread(url){ const l=S.leads.find(x=>x.url===url); const txt=`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message per the playbook. Keep it short.`; navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); }
 
-// ---- settings ----
-let settingsDirty=false, currentTz='Asia/Dubai';
-document.querySelectorAll('#settings input, #settings select, #settings textarea').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
-$('#cfgMode').addEventListener('change', ()=>{ $('#followUpsField').style.display = $('#cfgMode').value==='candidates' ? '' : 'none'; });
+document.querySelectorAll('#settings input, #settings textarea').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
 function fillSettings(){
-  const c=S.cfg; if(!c){ return; }
-  $('#cfgMode').value=c.mode||'newbusiness'; $('#followUpsField').style.display = $('#cfgMode').value==='candidates' ? '' : 'none';
-  $('#cfgSearchUrl').value=c.searchUrl||''; $('#cfgNotes').value=(c.connectionNotes||[]).join('\n');
+  const c=S.cfg; if(!c) return;
+  $('#cfgNotes').value=(c.connectionNotes||[]).join('\n');
   $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays}${f.afterHours?` +${f.afterHours}h`:''} | ${f.text}`).join('\n');
   const im=c.inmail||{}; $('#imAfter').value=im.afterDays??7; $('#imSubject').value=im.subject||''; $('#imBody').value=im.body||''; $('#imFollowAfter').value=im.followUpAfterDays??4; $('#imFollow').value=im.followUp||'';
-  const caps=c.dailyCaps||{}; $('#capConnects').value=caps.connects??12; $('#capMessages').value=caps.messages??20; $('#capViews').value=caps.profileViews??50;
+  const caps=c.dailyCaps||{}; $('#capConnects').value=caps.connects??15; $('#capMessages').value=caps.messages??25; $('#capViews').value=caps.profileViews??60; $('#capWeek').value=caps.weeklyConnects??80; $('#imCredits').value=(c.inmail&&c.inmail.monthlyCredits)??30;
   const h=c.workingHours||{}; $('#hStart').value=h.start||'09:30'; $('#hEnd').value=h.end||'18:00';
   currentTz=h.timezone||'Asia/Dubai'; $('#tzLabel').textContent=currentTz;
   const days=h.days||[1,2,3,4,5]; $('#days').innerHTML=DAYS.map((d,i)=>`<label class="sub"><input type="checkbox" class="day" value="${i}" ${days.includes(i)?'checked':''}> ${d}</label>`).join('');
   document.querySelectorAll('.day').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
   const p=c.pauseBetweenActionsSec||[60,240]; $('#pauseMin').value=p[0]; $('#pauseMax').value=p[1];
-  $('#cfgPages').value=c.maxSearchPages||5; $('#cfgAuto').checked=!!c.autoApprove;
+  $('#cfgPages').value=c.maxSearchPages||5; $('#cfgSearchUrl').value=c.searchUrl||'';
 }
 async function saveSettings(){
   const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+(?:\.\d+)?)\s*d?\s*(?:\+\s*(\d+)\s*h)?\s*\|\s*(.+)$/i); return m?{afterDays:+m[1],...(m[2]?{afterHours:+m[2]}:{}),text:m[3].trim()}:{afterDays:0,text:line}; });
-  const inmail = $('#imBody').value.trim() ? { afterDays:+$('#imAfter').value||7, subject:$('#imSubject').value.trim(), body:$('#imBody').value.trim(), followUpAfterDays:+$('#imFollowAfter').value||4, followUp:$('#imFollow').value.trim() } : null;
-  const config={ mode:'candidates', inmail, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, autoApprove:$('#cfgAuto').checked,
+  const inmail = $('#imBody').value.trim() ? { afterDays:+$('#imAfter').value||7, monthlyCredits:+$('#imCredits').value||0, subject:$('#imSubject').value.trim(), body:$('#imBody').value.trim(), followUpAfterDays:+$('#imFollowAfter').value||4, followUp:$('#imFollow').value.trim() } : null;
+  const config={ inmail, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5,
     connectionNotes:$('#cfgNotes').value.split('\n').map(s=>s.trim()).filter(Boolean), followUps,
-    dailyCaps:{connects:+$('#capConnects').value, messages:+$('#capMessages').value, profileViews:+$('#capViews').value},
+    dailyCaps:{connects:+$('#capConnects').value, messages:+$('#capMessages').value, profileViews:+$('#capViews').value, weeklyConnects:+$('#capWeek').value},
     workingHours:{start:$('#hStart').value, end:$('#hEnd').value, days:[...document.querySelectorAll('.day:checked')].map(e=>+e.value), timezone:currentTz},
     pauseBetweenActionsSec:[+$('#pauseMin').value, +$('#pauseMax').value] };
   await api('/api/campaign',{name:S.campaign, config}); settingsDirty=false; toast('Saved'); load();
 }
-// ---- role wizard ----
-let R=null, wizardOpen=false;
-function showStep(n){ for(const i of [1,2,3]) $('#w'+i).style.display = i===n?'':'none'; $('#roleSummary').style.display='none'; $('#roleStep').textContent=`step ${n} of 3`; wizardOpen=true; }
-function renderRole(){
-  const role=S.cfg&&S.cfg.role;
-  if (wizardOpen || boolOpen) return;
-  if (!role){ showStep(1); wizardOpen=false; return; }
-  for(const i of [1,2,3]) $('#w'+i).style.display='none';
-  $('#roleSummary').style.display=''; $('#roleStep').textContent='';
-  $('#rsTitle').textContent=role.title;
-  const where = role.workType==='remote' ? `remote · candidates in ${(role.candidateLocations||[]).join(', ')||'anywhere'}` : `${role.workType||'onsite'} · ${role.location||''}`;
-  $('#rsWhere').textContent=where;
-  $('#rsBoolean').textContent=role.boolean||'';
-  $('#rsSource').value = role.source || 'recruiter';
-  $('#rsSkillsRow').style.display = (role.source || 'recruiter') === 'recruiter' ? '' : 'none';
-  if (document.activeElement !== $('#rsSkills')) $('#rsSkills').value = (role.recruiterSkills || []).join(', ');
-  const sug = (role.suggestedSkills || []).filter(x => !(role.recruiterSkills || []).includes(x)).slice(0, 4);
-  $('#rsSkillHint').textContent = sug.length ? `from the spec: ${sug.join(', ')}` : '';
-  const p=S.rolePreview; $('#rsLink').href=p?p.url:'#';
-  const unknown=p?p.locations.filter(l=>!l.known).map(l=>l.name):[];
-  $('#rsGeo').textContent = unknown.length ? `Location id for ${unknown.join(', ')} is looked up on LinkedIn when you press Search.` : '';
-  const h=S.hours, wh=S.cfg.workingHours;
-  $('#rsHours').textContent = wh ? (h.open ? `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Open now.` : `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Nothing sends until ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'the next working day'}.`) : '';
-}
-async function saveSkills(){ const list=$('#rsSkills').value.split(',').map(x=>x.trim()).filter(Boolean); if(list.length>2) return toast('Two skills at most. More than that narrows Recruiter too far.', true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, recruiterSkills:list}}); toast(list.length?`Skills saved: ${list.join(', ')}. Used on the next Search.`:'Skills cleared'); load(); }
-async function setSource(v){ await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, source:v}}); toast(v==='recruiter'?'Searches now run in Recruiter Lite':'Searches now run in normal LinkedIn'); load(); }
-// ---- quick boolean edit ----
-let boolOpen=false;
-function boolProblems(b){ const p=[]; let d=0; for(const ch of b){ if(ch==='(') d++; if(ch===')') d--; if(d<0) break; } if(d!==0) p.push('brackets do not match'); if(((b.match(/"/g)||[]).length)%2) p.push('a quote is not closed'); if(/\b(and|or|not)\b/.test(b)) p.push('write AND, OR, NOT in capitals'); if(/[—–]/.test(b)) p.push('contains a long dash'); return p; }
-function openBool(){ boolOpen=true; $('#boolText').value=S.cfg.role.boolean||''; $('#boolEdit').style.display=''; $('#rsBoolean').style.display='none'; $('#btnEditBool').style.display='none'; const t=$('#boolText'); t.oninput=()=>{ const p=boolProblems(t.value); $('#boolCheck').textContent = p.length ? p.join(' · ') : `${t.value.length} characters`; $('#boolCheck').style.color = p.length ? 'var(--bad)' : ''; }; t.oninput(); t.focus(); }
-function closeBool(){ boolOpen=false; $('#boolEdit').style.display='none'; $('#rsBoolean').style.display=''; $('#btnEditBool').style.display=''; }
-async function saveBool(andSearch){ const b=$('#boolText').value.trim().replace(/\s+/g,' '); if(!b) return toast('The search is empty', true); const p=boolProblems(b); if(p.length) return toast(p[0], true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, boolean:b, booleanEdited:true}}); closeBool(); await load(); toast(andSearch?'Saved. Searching LinkedIn.':'Search saved'); if(andSearch) job('search'); }
 
-function newRole(){ R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); window.scrollTo({top:0,behavior:'smooth'}); }
-function editRole(){ const role=S.cfg.role; R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[]}; R.editing=S.campaign; fillStep2(); showStep(2); }
+function openWizard(){ mode='wizard'; R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); if (S) render(); }
+function closeWizard(){ if (!S.campaigns.length) return toast('Set up a role first'); mode='role'; R=null; render(); }
+function showStep(n){ for(const i of [1,2,3]) $('#w'+i).classList.toggle('hide', i!==n); $('#roleStep').textContent=`step ${n} of 3`; }
+function editRole(){ const role=S.cfg.role; if(!role) return openWizard(); R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[], editing:S.campaign}; mode='wizard'; fillStep2(); showStep(2); render(); }
 async function readSpec(){
   const f=$('#specFile').files[0]; const text=$('#specText').value.trim();
   if(!f && !text) return toast('Paste the spec or pick a file', true);
@@ -423,60 +436,48 @@ async function readSpec(){
   if(f){ const b64=await new Promise((res,rej)=>{const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f);}); body={file:{name:f.name, base64:b64}}; }
   const r=await api('/api/role/draft', body);
   if (f) { $('#specText').value=r.text; $('#specFile').value=''; }
-  R=r.draft; R.editing=null; R.suggested=R.skills||[]; R.skillsChosen=R.required||[]; fillStep2(); showStep(2);
+  R={...r.draft, editing:null, suggested:r.draft.skills||[], skillsChosen:r.draft.required||[]}; fillStep2(); showStep(2);
 }
-function fillStep2(){
-  $('#rTitle').value=R.title||''; $('#rLocation').value=R.location||'';
-  document.querySelectorAll('input[name=wt]').forEach(e=>{ e.checked = e.value===(R.workType||'onsite'); e.onchange=syncCand; });
-  $('#rCand').value=(R.candidateLocations||[]).join(', ');
-  syncCand();
-}
-function syncCand(){ const wt=document.querySelector('input[name=wt]:checked').value; $('#rCandField').style.display = wt==='remote' ? '' : 'none'; }
+function fillStep2(){ $('#rTitle').value=R.title||''; $('#rLocation').value=R.location||''; document.querySelectorAll('input[name=wt]').forEach(e=>{ e.checked = e.value===(R.workType||'onsite'); e.onchange=syncCand; }); $('#rCand').value=(R.candidateLocations||[]).join(', '); syncCand(); }
+function syncCand(){ const wt=document.querySelector('input[name=wt]:checked').value; $('#rCandField').classList.toggle('hide', wt!=='remote'); }
 const splitList = v => v.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
 function keepStep3(){ R.titles=splitList($('#rTitles').value); R.domain=splitList($('#rDomain').value); R.skillsChosen=splitList($('#rSkills').value); R.exclude=splitList($('#rExclude').value); R.boolean=$('#rBoolean').value.trim(); }
 function toStep3(){
   const title=$('#rTitle').value.trim(); if(!title) return toast('Give the role a title', true);
-  const wt=document.querySelector('input[name=wt]:checked').value;
-  const loc=$('#rLocation').value.trim();
+  const wt=document.querySelector('input[name=wt]:checked').value, loc=$('#rLocation').value.trim();
   if (wt!=='remote' && !loc) return toast('Where is the office?', true);
   if (title!==R.title) { R.titles=[]; R.boolean=''; }
   R.title=title; R.location=loc; R.workType=wt;
   R.candidateLocations = wt==='remote' ? splitList($('#rCand').value) : (loc?[loc]:[]);
-  if (wt==='remote' && !R.candidateLocations.length) return toast('Say where candidates can be based, or the search covers the whole world', true);
+  if (wt==='remote' && !R.candidateLocations.length) return toast('Say where candidates can be based', true);
   $('#rTitles').value=(R.titles||[]).join('\n'); $('#rDomain').value=(R.domain||[]).join(', ').replace(/"/g,'');
-  $('#rSkills').value=(R.skillsChosen||[]).join(', ');
-  $('#rSkillHints').innerHTML = (R.suggested||[]).length ? 'From the spec: '+R.suggested.map(w=>`<button class="small" onclick="addSkill('${esc(w)}')">${esc(w)}</button>`).join(' ') : '';
-  $('#rExclude').value=(R.exclude||[]).join(', ');
+  $('#rSkills').value=(R.skillsChosen||[]).join(', '); $('#rExclude').value=(R.exclude||[]).join(', ');
+  $('#rSkillHints').innerHTML = (R.suggested||[]).length ? 'From the spec: '+R.suggested.map((w,i)=>`<button class="small" onclick="addSkill(${i})">${esc(w)}</button>`).join(' ') : '';
   showStep(3);
   if (!(R.titles||[]).length || !R.boolean) rebuildBoolean(); else $('#rBoolean').value=R.boolean;
 }
-function addSkill(w){ const cur=splitList($('#rSkills').value); if(!cur.includes(w)) cur.push(w); $('#rSkills').value=cur.join(', '); rebuildBoolean(); }
-async function rebuildBoolean(){
-  const r=await api('/api/role/boolean',{ title:R.title, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value) });
-  if (!splitList($('#rTitles').value).length) $('#rTitles').value=r.titles.join('\n');
-  $('#rBoolean').value=r.boolean;
-}
+function addSkill(i){ const w=R.suggested[i]; const cur=splitList($('#rSkills').value); if(!cur.includes(w)) cur.push(w); $('#rSkills').value=cur.join(', '); rebuildBoolean(); }
+async function rebuildBoolean(){ const r=await api('/api/role/boolean',{ title:R.title, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value) }); if (!splitList($('#rTitles').value).length) $('#rTitles').value=r.titles.join('\n'); $('#rBoolean').value=r.boolean; R.built=r.boolean; }
 async function saveRole(andSearch){
-  const role={ title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations,
-    titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value),
-    boolean:$('#rBoolean').value.trim(), suggestedSkills:R.suggested||[] };
+  const prev = R.editing ? S.cfg.role : {};
+  const boolean=$('#rBoolean').value.trim();
+  const edited = R.built ? boolean !== R.built : !!prev.booleanEdited && boolean === (prev.boolean||'');
+  const role={ ...prev, title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, suggestedSkills:R.suggested||[] };
   if(!role.boolean) return toast('The boolean search is empty', true);
   const r=await api('/api/role/save',{ campaign:R.editing||undefined, role });
-  wizardOpen=false; R=null;
-  campaign=r.campaign; localStorage.setItem('campaign', campaign);
+  mode='role'; R=null; campaign=r.campaign; remember(campaign);
   await load();
-  toast(andSearch ? 'Saved. Searching LinkedIn.' : 'Role saved');
+  toast(andSearch ? 'Saved. Searching.' : 'Role saved');
   if (andSearch) job('search');
 }
 
-// ---- log ----
 async function pollLog(){
   const r = await api('/api/log?since='+lastLog);
   if (S) { const was=S.job.running; S.job=r.job; applyJob(r.job); if (was && !r.job.running) load().catch(()=>{}); }
   if (r.lines.length){ const el=$('#log'); if(lastLog===0) el.textContent=''; for(const l of r.lines){ const d=document.createElement('div'); d.textContent=l.text.replace(/^\d{4}-\d\d-\d\d /,''); if(/WARN|Error|error/.test(l.text)) d.className='w'; else if(/REPLY|accepted:|invited |messaged /.test(l.text)) d.className='r'; else if(/^[<>]{3}/.test(l.text)) d.className='s'; el.appendChild(d); lastLog=l.n; } el.scrollTop=el.scrollHeight; }
 }
-load().catch(()=>toast('Could not reach Sourcer. Is the window still open?', true));
-setInterval(()=>{ if(!settingsDirty && !openComposer && !boolOpen) load().catch(()=>{}); }, 8000);
+load().catch(()=>toast('Could not reach Sourcer. Is the Terminal window still open?', true));
+setInterval(()=>{ const a=document.activeElement; const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type!=='checkbox'; if(!typing && !boolOpen && mode==='role') load().catch(()=>{}); }, 8000);
 setInterval(()=>pollLog().catch(()=>{}), 2500);
 pollLog().catch(()=>{});
 </script>
