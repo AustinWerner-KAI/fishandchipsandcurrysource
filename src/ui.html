@@ -292,7 +292,9 @@ function render(){
   $('#signedIn').textContent = [S.loggedInAt?'LinkedIn ✓':'', S.recruiterLoggedInAt?'Recruiter ✓':''].filter(Boolean).join(' · ');
   const al=[];
   if (!S.loggedInAt) al.push(`<div class="alert">Press <b>Log in to LinkedIn</b>, then <b>Log in to Recruiter</b>. You log in by hand once; it is remembered.</div>`);
-  if (S.lastStop && Date.now()-new Date(S.lastStop.at).getTime() < 6*3600e3) al.push(`<div class="alert bad"><b>Stopped:</b> ${esc(S.lastStop.reason)}</div>`);
+  // a stop is old news once you have logged in again or a job has started since
+  const stopOld = S.lastStop && ((S.loggedInAt && S.loggedInAt > S.lastStop.at) || (S.job && S.job.startedAt && S.job.startedAt > S.lastStop.at) || (S.job && S.job.running));
+  if (S.lastStop && !stopOld && Date.now()-new Date(S.lastStop.at).getTime() < 6*3600e3) al.push(`<div class="alert bad"><b>Stopped:</b> ${esc(S.lastStop.reason)}</div>`);
   if (S.weeklyLimit) al.push(`<div class="alert">LinkedIn weekly invitation limit hit. Invites pause for 7 days. Messages still go.</div>`);
   if (S.cfgError) al.push(`<div class="alert bad"><b>Settings problem:</b> ${esc(S.cfgError)}</div>`);
   $('#alerts').innerHTML = al.join('');
