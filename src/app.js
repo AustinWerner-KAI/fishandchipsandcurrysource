@@ -121,7 +121,7 @@ export function state(jobs, campaignName) {
     try { const r = readCampaignRaw(name)?.role; return { name, title: r?.title || name, location: r?.location || '' }; }
     catch { return { name, title: name, location: '' }; }
   });
-  const model = cfg?.role ? learn(s.leads, cfg.role) : null;
+  const model = cfg?.role ? learn(s.leads, cfg.role, Date.now(), clients) : null;
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
@@ -189,7 +189,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
       }
       if (req.method === 'GET' && u.pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
       if (req.method === 'GET' && u.pathname === '/api/state') return json(200, state(jobs, c));
-      if (req.method === 'GET' && u.pathname === '/api/log') return json(200, { lines: jobs.since(+(u.searchParams.get('since') || 0)), job: jobs.status() });
+      if (req.method === 'GET' && u.pathname === '/api/log') return json(200, { lines: jobs.since(+(u.searchParams.get('since') || 0)), job: jobs.status(), boot: jobs.boot });
       if (req.method === 'GET' && u.pathname === '/export.csv') {
         const store = new Store();
         res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${c || 'leads'}.csv"` });
@@ -236,6 +236,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         return json(200, { ok: true });
       }
       if (u.pathname === '/api/queue') {
+        if (!readCampaignRaw(b.campaign)) return json(400, { error: 'Pick a role first' });
         // items: [{ url, text, note?, notBefore?, resume? }]
         const tmp = path.join(HOME, `queue-${Date.now()}.json`);
         fs.writeFileSync(tmp, JSON.stringify(b.items || []));
@@ -252,6 +253,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         return json(200, { ok: true });
       }
       if (u.pathname === '/api/import') {
+        if (!readCampaignRaw(b.campaign)) return json(400, { error: 'Pick a role first' });
         const tmp = path.join(HOME, `import-${Date.now()}.txt`);
         fs.writeFileSync(tmp, String(b.text || ''));
         try { return json(200, importLeads(new Store(), { name: b.campaign }, tmp, { approve: !!b.approve })); }
@@ -311,6 +313,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
       }
       if (u.pathname === '/api/preview') {
         // { campaign, url } every message exactly as this person would get it
+        if (!readCampaignRaw(b.campaign)) return json(400, { error: 'Pick a role first' });
         const cfg = loadCampaign(b.campaign);
         const l = new Store().get(b.url);
         if (!l) return json(404, { error: 'no such person' });
@@ -419,13 +422,15 @@ function watchForUpdates(jobs) {
     if (!changedAt || Date.now() - changedAt < 10000) return;      // wait until the copy has finished
     changedAt = 0;
     const cur = jobs.status();
+    // never in the middle of a login or a recording Kai is doing by hand: try again later
+    if (cur.running && ['login', 'login-recruiter', 'record', 'probe'].includes(cur.name)) { changedAt = Date.now(); return; }
     log('Sourcer was updated. Restarting to load the new version.');
-    if (cur.running && ['run', 'search'].includes(cur.name)) {
+    if (cur.running && ['run', 'search', 'once', 'followup', 'connect'].includes(cur.name)) {
       fs.writeFileSync(RESUME, JSON.stringify({ name: cur.name, campaign: cur.campaign, args: jobs.current?.args || [], at: new Date().toISOString() }), { mode: 0o600 });
     }
-    if (cur.running) jobs.stop();
+    if (cur.running) jobs.stop({ grace: 90000 });      // the person being contacted is finished first
     const wait = setInterval(() => { if (!jobs.status().running) { clearInterval(wait); process.exit(75); } }, 500);
-    setTimeout(() => { jobs.killAll(); process.exit(75); }, 8000).unref();
+    setTimeout(() => { jobs.killAll(); process.exit(75); }, 95000).unref();
   }, 5000).unref();
 }
 function resumeJob(jobs) {
