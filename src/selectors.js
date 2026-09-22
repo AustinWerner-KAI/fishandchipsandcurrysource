@@ -18,6 +18,13 @@ export const SEL = {
 
   // Recruiter search results and profile (seen 22 Sep 2026)
   recruiterResultItem: ['li[data-test-paginated-profile-list-item-container]', '[data-test-paginated-list-item]'],
+  // each filter lives in its own wrapper (seen in Kai's saved Recruiter page, 22 Sep 2026):
+  //   div.search-facet-wrapper.facet-locations > ... section.search-facet > button.facet-edit-button[data-test-facet-edit]
+  // clicking the + button swaps it for a text box inside the same wrapper
+  recruiterLocationFacet: ['.search-facet-wrapper.facet-locations', '[data-test-facet-locations]', '[data-facet-geo-locations]'],
+  recruiterSkillFacet: ['.search-facet-wrapper.facet-skills', '[data-test-facet-skills]'],
+  recruiterFacetEdit: ['button[data-test-facet-edit]', 'button.facet-edit-button', 'button[data-view-name="search-facet-add"]'],
+  recruiterFacetBox: ['input[role="combobox"]', 'input[type="text"]', 'input:not([type="checkbox"]):not([type="hidden"])'],
   recruiterAddLocation: ['button[aria-label="Add a Candidate geographic location"]', 'button:has(span:text-is("Candidate geographic locations"))'],
   recruiterAddSkill: ['button[aria-label*="Skill keywords" i]', 'button:has(span:text-is("Skill keywords anywhere on profile"))', '.facet-skills button[data-test-facet-edit]'],
   // only ever a filter's own box, never the main search box

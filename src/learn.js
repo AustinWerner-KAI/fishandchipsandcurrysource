@@ -8,6 +8,7 @@
 // Everything is plain counting, and every point it adds or takes away comes with a reason
 // Kai can read ("you pick: azure").
 import { cleanLead, scoreLead } from './rank.js';
+import { offLimits } from './offlimits.js';
 
 const DAY = 86400000;
 const STOP = new Set(('a an and at for of the to in on with by from as or & | - at @ ex former current currently ' +
@@ -30,11 +31,12 @@ export function features(lead) {
 }
 
 // Who teaches what, and how strongly. Returns [{ lead, w }] with w > 0 good, w < 0 bad.
-export function examples(leads, role, now = Date.now()) {
+export function examples(leads, role, now = Date.now(), clients = []) {
   const out = [];
   const approvedScores = [];
   for (const l of leads) {
-    if (l.offLimits || (l.status === 'skipped' && !l.skippedByHand)) continue;   // auto-skips teach nothing
+    // only Kai's own decisions and real results teach: not automatic skips, not people at clients
+    if (l.offLimits || l.autoSkip || (clients.length && offLimits(l, clients)) || (l.status === 'skipped' && !l.skippedByHand)) continue;
     const accepted = l.acceptedAt || ['accepted', 'messaged', 'replied', 'done'].includes(l.status);
     if (l.status === 'replied') out.push({ lead: l, w: 3 });
     else if (accepted && !l.preexisting) out.push({ lead: l, w: 2 });
@@ -47,15 +49,17 @@ export function examples(leads, role, now = Date.now()) {
   if (approvedScores.length >= 5) {
     const median = approvedScores.sort((a, b) => a - b)[Math.floor(approvedScores.length / 2)];
     for (const l of leads) {
-      if (l.status === 'new' && !l.approved && !l.offLimits && (scoreLead(l, role).score ?? 0) > median) out.push({ lead: l, w: -0.3 });
+      // 1st connections and people at clients cannot be ticked, so they were never passed over
+      if (l.status === 'new' && !l.approved && !l.offLimits && cleanLead(l).degree !== '1st' && !(clients.length && offLimits(l, clients))
+        && (scoreLead(l, role).score ?? 0) > median) out.push({ lead: l, w: -0.3 });
     }
   }
   return out;
 }
 
 // Builds the model: a weight per word, only for words seen in at least 3 examples.
-export function learn(leads, role, now = Date.now()) {
-  const ex = examples(leads, role, now);
+export function learn(leads, role, now = Date.now(), clients = []) {
+  const ex = examples(leads, role, now, clients);
   const pos = ex.filter(e => e.w > 0), neg = ex.filter(e => e.w < 0);
   const P = pos.reduce((s, e) => s + e.w, 0), N = neg.reduce((s, e) => s - e.w, 0);
   const counts = new Map();
@@ -114,10 +118,12 @@ export function adjust(lead, model) {
 export function noteStats(notes, store, campaign) {
   const stats = notes.map(() => ({ sent: 0, accepted: 0 }));
   for (const a of store.data.actions) {
-    if (a.type !== 'connects' || a.campaign !== campaign || !Number.isInteger(a.noteIndex) || !stats[a.noteIndex]) continue;
-    stats[a.noteIndex].sent++;
+    // matched on the wording, so an edited or reordered note starts its own trial
+    const i = a.type === 'connects' && a.campaign === campaign && typeof a.noteTemplate === 'string' ? notes.indexOf(a.noteTemplate) : -1;
+    if (i < 0) continue;
+    stats[i].sent++;
     const l = store.get(a.url) || Object.values(store.data.leads).find(x => x.recruiterUrl === a.url);
-    if (l && (l.acceptedAt || ['accepted', 'messaged', 'replied', 'done'].includes(l.status))) stats[a.noteIndex].accepted++;
+    if (l && (l.acceptedAt || ['accepted', 'messaged', 'replied', 'done'].includes(l.status))) stats[i].accepted++;
   }
   return stats.map(s => ({ ...s, rate: s.sent ? s.accepted / s.sent : null }));
 }

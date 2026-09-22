@@ -100,6 +100,13 @@ export function humanPauseMs(rangeSec = [45, 180], rng = Math.random) {
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// A wait between people or passes that ends early when a stop is asked for.
+export async function pauseFor(ms) {
+  const { stopRequested } = await import('./stop.js');
+  const end = Date.now() + ms;
+  while (Date.now() < end && !stopRequested()) await sleep(Math.min(1000, end - Date.now()));
+}
+
 export function pick(arr, rng = Math.random) {
   if (!arr || !arr.length) return undefined;
   return arr[Math.floor(rng() * arr.length)];
