@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sourcer</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#6b7280;--line:#e5e7eb;--accent:#1f4fd8;--ok:#0f8a4b;--warn:#b45309;--bad:#b91c1c;--soft:#eef2ff}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--ink:#e6e8ee;--muted:#9aa3b2;--line:#262a33;--accent:#7aa2ff;--ok:#3ecf8e;--warn:#f5b048;--bad:#ff6b6b;--soft:#1c2233}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:20px;margin:0}
+h2{font-size:13px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sub{color:var(--muted);font-size:12px}
+select,input[type=text],input[type=number],input[type=time],input[type=date],textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);width:100%}
+input[type=number]{width:90px}input[type=time]{width:120px}
+textarea{min-height:70px;resize:vertical}
+button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);color:#fff;border-color:transparent}
+button.danger{color:var(--bad);border-color:var(--bad)}
+button.small{padding:3px 9px;font-size:12px}
+button:disabled{opacity:.45;cursor:default}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:var(--card)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.on .dot{background:var(--ok);box-shadow:0 0 0 3px rgba(15,138,75,.2)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.stat b{display:block;font-size:22px;font-weight:600}.stat span{color:var(--muted);font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:820px){.grid2{grid-template-columns:1fr}}
+.alert{border-left:3px solid var(--warn);padding:8px 12px;background:var(--card);border-radius:6px;margin-bottom:12px}
+.alert.bad{border-color:var(--bad)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.step{padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+.step b{display:block;margin-bottom:3px}.step.done{border-color:var(--ok)}.step.done b::before{content:"✓ ";color:var(--ok)}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 6px;border-bottom:1px solid var(--line)}
+td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+a{color:var(--accent);text-decoration:none}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+.chip-replied{background:var(--ok);color:#fff;border-color:transparent}.chip-accepted{color:var(--ok);border-color:var(--ok)}.chip-invited{color:var(--accent);border-color:var(--accent)}
+.chip-error{color:var(--bad);border-color:var(--bad)}.chip-skipped,.chip-done{color:var(--muted)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.filters button{font-size:12px;padding:4px 10px;border-radius:999px}.filters button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.log{background:#0b0d12;color:#cfd6e4;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:10px 12px;border-radius:8px;height:220px;overflow:auto;white-space:pre-wrap}
+.log .w{color:#f5b048}.log .r{color:#3ecf8e}.log .s{color:#7aa2ff}
+.person{padding:10px 0;border-bottom:1px solid var(--line)}.person:last-child{border:0}
+.person q{display:block;margin-top:2px}
+.composer{margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:8px;background:var(--soft)}
+.composer textarea{min-height:80px}
+.composer .row{margin-top:6px}
+.field{margin-bottom:10px}.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+.shots{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.shots a img{height:70px;border:1px solid var(--line);border-radius:6px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+details summary{cursor:pointer;color:var(--muted);font-size:12px}
+.muted{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="row">
+      <h1>Sourcer</h1>
+      <select id="campaign" style="width:auto" onchange="setCampaign(this.value)"></select>
+      <button class="small" onclick="toggle('newCamp')">+ new campaign</button>
+    </div>
+    <div class="row">
+      <span id="jobPill" class="pill"><span class="dot"></span><span id="jobText">idle</span></span>
+      <button id="btnLogin" onclick="job('login')">Log in to LinkedIn</button>
+      <button id="btnSearch" onclick="job('search')">Search</button>
+      <button id="btnOnce" onclick="job('once')">Run one pass</button>
+      <button id="btnRun" class="primary" onclick="job('run')">Run all day</button>
+      <button id="btnStop" class="danger" onclick="job('stop')" disabled>Stop</button>
+    </div>
+  </div>
+  <div id="newCamp" class="card" style="display:none">
+    <div class="row"><input type="text" id="newCampName" placeholder="campaign name, e.g. l2-founders-sep" style="max-width:320px"><button class="primary" onclick="createCampaign()">Create</button><span class="sub">Copies the default new-business setup. Edit it below.</span></div>
+  </div>
+
+  <div id="alerts"></div>
+
+  <div id="setup" class="card">
+    <h2>Getting started</h2>
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Activity</h2><span class="sub" id="jobSub"></span></div>
+    <div class="log" id="log">Nothing running. Press a button above.</div>
+    <div class="shots" id="shots"></div>
+  </div>
+
+  <div id="replies"></div>
+  <div id="waiting"></div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <h2 style="margin:0">People <span id="leadCount" class="muted"></span></h2>
+      <div class="row">
+        <button class="small" onclick="approveVisible(true)">Approve all shown</button>
+        <button class="small" onclick="approveVisible(false)">Un-approve all shown</button>
+        <a class="sub" id="exportLink" href="#">Export CSV</a>
+      </div>
+    </div>
+    <div class="filters" id="filters"></div>
+    <table><thead><tr><th>Person</th><th>Status</th><th>Approved</th><th>Activity</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Add people</h2>
+      <div class="field"><label>Paste LinkedIn profile links, one per line (from Recruiter Lite, Sales Nav, anywhere)</label><textarea id="importText" placeholder="https://www.linkedin.com/in/someone/"></textarea></div>
+      <div class="row"><label class="sub"><input type="checkbox" id="importApprove"> approve them straight away</label><button class="primary" onclick="doImport()">Add</button></div>
+    </div>
+    <div class="card">
+      <h2>Messages from Claude</h2>
+      <div class="sub" style="margin-bottom:6px">Paste the JSON Claude gives you. Each item is a person and the message to send.</div>
+      <textarea id="queueJson" placeholder='[{"url":"https://www.linkedin.com/in/someone/","text":"Thanks for connecting Sara. How are you finding the market at the moment?","note":"route: pulse"}]'></textarea>
+      <div class="row" style="margin-top:6px"><button class="primary" onclick="queueJson()">Queue these</button></div>
+    </div>
+  </div>
+
+  <div class="card" id="settings">
+    <h2>Campaign settings</h2>
+    <div id="cfgError"></div>
+    <div class="grid2">
+      <div>
+        <div class="field"><label>Type</label>
+          <select id="cfgMode"><option value="newbusiness">New business (handshake note, then messages you or Claude write per person)</option><option value="candidates">Candidates (timed template follow-ups)</option></select></div>
+        <div class="field"><label>LinkedIn people search URL (used by the Search button)</label><input type="text" id="cfgSearchUrl" placeholder="https://www.linkedin.com/search/results/people/?keywords=..."></div>
+        <div class="field"><label>Connection request notes, one per line. Picked at random. {firstName} is filled in. Max 300 characters.</label><textarea id="cfgNotes"></textarea></div>
+        <div class="field" id="followUpsField"><label>Follow-ups (candidates only). One per line: <code>days | message</code>, days counted from the previous message.</label><textarea id="cfgFollowUps" placeholder="0 | Thanks for connecting {firstName}. Open to a quick chat this week?&#10;4 | Hey {firstName}, just checking this didn't get buried."></textarea></div>
+      </div>
+      <div>
+        <div class="field"><label>Daily caps</label>
+          <div class="row"><span class="sub">connects</span><input type="number" id="capConnects" min="0" max="25"><span class="sub">messages</span><input type="number" id="capMessages" min="0" max="40"><span class="sub">profile views</span><input type="number" id="capViews" min="0" max="150"></div>
+          <div class="sub" style="margin-top:4px">Keep connects at 15 or under. Above 25 is refused.</div></div>
+        <div class="field"><label>Working hours (Dubai time)</label>
+          <div class="row"><input type="time" id="hStart"><span class="sub">to</span><input type="time" id="hEnd"></div>
+          <div class="row" style="margin-top:6px" id="days"></div></div>
+        <div class="field"><label>Pause between actions (seconds, min to max)</label><div class="row"><input type="number" id="pauseMin" min="20"><span class="sub">to</span><input type="number" id="pauseMax" min="30"></div></div>
+        <div class="field"><label>Pages of search results to collect</label><input type="number" id="cfgPages" min="1" max="20"></div>
+        <div class="field"><label class="sub"><input type="checkbox" id="cfgAuto"> Auto-approve everyone found by search (not recommended)</label></div>
+        <div class="row"><button class="primary" onclick="saveSettings()">Save settings</button><span class="sub">Changes apply on the next pass.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <details class="sub"><summary>Where things live</summary><div id="home"></div></details>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let S = null, campaign = localStorage.getItem('campaign') || '', filter = '', lastLog = 0, openComposer = null;
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function toast(m, bad){ const t=$('#toast'); t.textContent=m; t.style.background=bad?'var(--bad)':'var(--ink)'; t.style.color='#fff'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
+function toggle(id){ const e=document.getElementById(id); e.style.display = e.style.display==='none' ? '' : 'none'; }
+async function api(path, body){ const r = await fetch(path, body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {}); const j = await r.json().catch(()=>({})); if(!r.ok){ toast(j.error||'failed', true); throw new Error(j.error||'failed'); } return j; }
+function when(iso){ return iso ? new Date(iso).toLocaleString('en-GB',{timeZone:'Asia/Dubai',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
+
+async function load(){
+  S = await api('/api/state?c=' + encodeURIComponent(campaign));
+  if (S.campaign !== campaign) { campaign = S.campaign || ''; localStorage.setItem('campaign', campaign); }
+  render();
+}
+function setCampaign(c){ campaign=c; localStorage.setItem('campaign', c); load(); }
+
+function applyJob(j){
+  $('#jobPill').classList.toggle('on', j.running); $('#jobText').textContent = j.running ? `running: ${j.name}` : 'idle';
+  $('#jobSub').textContent = j.running ? `started ${when(j.startedAt)}` : (j.history.length ? `last: ${j.history[j.history.length-1].name} ${when(j.history[j.history.length-1].endedAt)}` : '');
+  for (const id of ['btnLogin','btnSearch','btnOnce','btnRun']) $('#'+id).disabled = j.running || (id!=='btnLogin' && !(S&&S.campaign));
+  $('#btnStop').disabled = !j.running;
+}
+function render(){
+  const draft = openComposer ? { t: $('#t-'+key(openComposer.url))?.value, n: $('#n-'+key(openComposer.url))?.value, d: $('#d-'+key(openComposer.url))?.value } : null;
+  const sel=$('#campaign'); sel.innerHTML = S.campaigns.map(c=>`<option ${c===S.campaign?'selected':''}>${esc(c)}</option>`).join('') || '<option>(no campaign yet)</option>';
+  $('#exportLink').href = '/export.csv?c=' + encodeURIComponent(S.campaign||'');
+  applyJob(S.job);
+
+  const al=[];
+  if (S.lastStop && Date.now()-new Date(S.lastStop.at).getTime() < 12*3600e3) al.push(`<div class="alert bad"><b>Stopped:</b> ${esc(S.lastStop.reason)}</div>`);
+  if (S.weeklyLimit) al.push(`<div class="alert"><b>LinkedIn weekly invitation limit hit.</b> Connection requests pause for 7 days. Messages still go.</div>`);
+  if (S.cfgError) al.push(`<div class="alert bad"><b>Campaign settings problem:</b> ${esc(S.cfgError)}</div>`);
+  $('#alerts').innerHTML = al.join('');
+
+  const c=S.counts||{}, approved = S.leads.filter(l=>l.approved && l.status==='new').length;
+  const steps=[
+    [!!S.loggedInAt, 'Log in to LinkedIn', S.loggedInAt ? `done ${when(S.loggedInAt)}` : 'Press the button top right. Log in by hand in the window that opens.'],
+    [S.leads.length>0, 'Find people', S.leads.length ? `${S.leads.length} people in this campaign` : 'Paste a search URL in settings and press Search, or paste profile links under Add people.'],
+    [approved>0 || (c.invited+c.accepted+c.messaged+c.replied)>0, 'Approve who to contact', approved ? `${approved} approved and waiting` : 'Tick the approved box next to each person, or send the CSV to Claude to shortlist.'],
+    [(c.invited+c.accepted+c.messaged+c.replied)>0, 'Run', 'Run one pass to watch it work, then Run all day. Keep this window and your Mac awake.'],
+  ];
+  $('#setup').style.display = steps.every(s=>s[0]) ? 'none' : '';
+  $('#steps').innerHTML = steps.map((s,i)=>`<div class="step ${s[0]?'done':''}"><b>${i+1}. ${s[1]}</b><span class="sub">${esc(s[2])}</span></div>`).join('');
+
+  const cap=k=>S.caps?`${S.today[k]||0} / ${S.caps[k]}`:String(S.today[k]||0);
+  $('#stats').innerHTML = [[cap('connects'),'connects today'],[cap('messages'),'messages today'],[cap('profileViews'),'profile views today'],[c.invited||0,'invites pending'],[(c.accepted||0)+(c.messaged||0),'connected'],[c.replied||0,'replied']].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+
+  $('#shots').innerHTML = (S.screenshots||[]).map(f=>`<a href="/screenshots/${encodeURIComponent(f)}" target="_blank" title="${esc(f)}"><img src="/screenshots/${encodeURIComponent(f)}" alt=""></a>`).join('');
+
+  const replied = S.leads.filter(l=>l.status==='replied').sort((a,b)=>(b.repliedAt||'').localeCompare(a.repliedAt||''));
+  $('#replies').innerHTML = replied.length ? `<div class="card"><h2>Replies</h2>${replied.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)} · ${when(l.repliedAt)}</span><q>${esc(l.lastReply)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}', true)">Queue a reply</button><button class="small" onclick="copyThread('${esc(l.url)}')">Copy for Claude</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
+
+  const waiting = S.leads.filter(l=>l.status==='accepted' && !l.queued);
+  $('#waiting').innerHTML = waiting.length ? `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Accepted, waiting for a first message (${waiting.length})</h2><button class="small" onclick="copyWaiting()">Copy list for Claude</button></div><div class="sub" style="margin:4px 0 8px">Research each one, pick the route, write the message. Or copy the list, give it to Claude, paste the JSON back below.</div>${waiting.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)}${l.preexisting?' · already a contact':''}</span><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}')">Write message</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
+
+  const counts=S.counts||{};
+  $('#filters').innerHTML = [['','all',S.leads.length],...S.statuses.map(s=>[s,s,counts[s]||0])].map(([f,l,n])=>`<button class="${f===filter?'on':''}" onclick="filter='${f}';render()">${l} ${n}</button>`).join('');
+  const rows = S.leads.filter(l=>!filter||l.status===filter).sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+  $('#leadCount').textContent = `(${rows.length})`;
+  $('#rows').innerHTML = rows.map(l=>`<tr>
+    <td><a href="${esc(l.url)}" target="_blank">${esc(l.name||l.url.replace('https://www.linkedin.com/in/',''))}</a><div class="sub">${esc(l.headline)}</div></td>
+    <td><span class="chip chip-${l.status}">${l.status}</span>${l.queued?`<div class="sub">${l.queued} queued</div>`:''}</td>
+    <td><input type="checkbox" ${l.approved?'checked':''} ${l.status!=='new'?'disabled':''} onchange="approve('${esc(l.url)}', this.checked)"></td>
+    <td class="sub">${l.sent} sent${l.invitedAt?`<br>invited ${when(l.invitedAt)}`:''}${l.acceptedAt?`<br>accepted ${when(l.acceptedAt)}`:''}</td>
+    <td class="sub">${esc(l.error||l.notes||'')}</td>
+    <td class="row">${['accepted','messaged','replied'].includes(l.status)?`<button class="small" onclick="compose('${esc(l.url)}')">Message</button>`:''}${l.status==='new'||l.status==='invited'?`<button class="small" onclick="setStatus('${esc(l.url)}','skipped')">Skip</button>`:''}${l.status==='skipped'||l.status==='error'?`<button class="small" onclick="setStatus('${esc(l.url)}','new')">Reset</button>`:''}</td>
+  </tr>`).join('') || '<tr><td colspan="6" class="sub">Nobody here yet.</td></tr>';
+
+  if (!settingsDirty) fillSettings();
+  $('#home').textContent = S.home;
+  if (openComposer) { compose(openComposer.url, openComposer.reply, true); const k=key(openComposer.url); if (draft && $('#t-'+k)) { $('#t-'+k).value=draft.t||''; $('#n-'+k).value=draft.n||''; $('#d-'+k).value=draft.d||''; } }
+}
+const key = u => u.replace(/[^a-z0-9]/gi,'');
+
+// ---- actions ----
+async function job(action){
+  if (action==='stop') { await api('/api/job',{action:'stop'}); return load(); }
+  if (action==='run' && !confirm('Run all day inside working hours? Chrome will open and work through approved people. Keep this window open.')) return;
+  const url = action==='search' ? (settingsDirty ? $('#cfgSearchUrl').value.trim() : '') : undefined;
+  if (action==='search' && !(url || (S.cfg && S.cfg.searchUrl))) return toast('Put a LinkedIn search URL in the settings first', true);
+  await api('/api/job',{action, campaign:S.campaign, url: url||undefined});
+  lastLog = 0; $('#log').textContent='';
+  load(); pollLog();
+}
+async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
+async function approveVisible(on){ const urls = S.leads.filter(l=>(!filter||l.status===filter)&&l.status==='new').map(l=>l.url); if(!urls.length) return toast('No new people shown'); if(!confirm(`${on?'Approve':'Un-approve'} ${urls.length} people?`)) return; await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
+async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
+async function doImport(){ const text=$('#importText').value.trim(); if(!text) return; const r=await api('/api/import',{campaign:S.campaign,text,approve:$('#importApprove').checked}); toast(`${r.added} added, ${r.skipped} skipped`); $('#importText').value=''; load(); }
+async function queueJson(){ let items; try{ items=JSON.parse($('#queueJson').value); }catch{ return toast('That is not valid JSON', true);} const r=await api('/api/queue',{campaign:S.campaign, items:[].concat(items)}); toast(`${r.n} queued`); $('#queueJson').value=''; load(); }
+function compose(url, reply, keep){
+  const l=S.leads.find(x=>x.url===url); if(!l) return;
+  if (!keep) { if (openComposer && openComposer.url!==url) { const o=document.getElementById('c-'+key(openComposer.url)); if(o) o.innerHTML=''; } openComposer={url, reply}; }
+  let box=document.getElementById('c-'+key(url));
+  if(!box){ // person not in replies/waiting: put it under the table
+    box=document.createElement('div'); box.id='c-'+key(url); $('#rows').parentElement.parentElement.appendChild(box); }
+  if (box.querySelector('textarea')) return;
+  box.innerHTML=`<div class="composer"><b>${esc(l.name)}</b> <span class="sub">${esc(l.headline)}</span>${l.lastMessage?`<div class="sub" style="margin-top:4px">last sent: ${esc(l.lastMessage)}</div>`:''}${l.lastReply?`<div class="sub">they said: ${esc(l.lastReply)}</div>`:''}
+    <textarea id="t-${key(url)}" placeholder="Short. No dashes. Easy to reply to. Never ask for anything in the first message."></textarea>
+    <div class="row"><input type="text" id="n-${key(url)}" placeholder="note for next time (what they build, route used)" style="flex:1;min-width:200px"><input type="date" id="d-${key(url)}" title="not before" style="width:150px"></div>
+    <div class="row"><button class="primary small" onclick="queueOne('${esc(url)}', ${!!reply})">Queue message</button><button class="small" onclick="openComposer=null;document.getElementById('c-${key(url)}').innerHTML=''">Cancel</button>${l.queued?`<button class="small" onclick="unqueue('${esc(url)}')">Remove queued (${l.queued})</button>`:''}<span class="sub" id="cnt-${key(url)}"></span></div></div>`;
+  const ta=$('#t-'+key(url)); ta.oninput=()=>{ $('#cnt-'+key(url)).textContent = `${ta.value.length} chars${/[—–]/.test(ta.value)?' · contains a dash, remove it':''}`; }; ta.focus();
+}
+async function queueOne(url, resume){ const k=key(url); const text=$('#t-'+k).value.trim(); if(!text) return; const d=$('#d-'+k).value; await api('/api/queue',{campaign:S.campaign, items:[{url,text,note:$('#n-'+k).value.trim(),notBefore:d?new Date(d+'T06:00:00Z').toISOString():null, resume}]}); openComposer=null; toast('Queued. Goes on the next pass.'); load(); }
+async function unqueue(url){ await api('/api/unqueue',{url,index:0}); openComposer=null; load(); }
+function copyWaiting(){ const w=S.leads.filter(l=>l.status==='accepted'&&!l.queued); const txt='These people accepted my connection request. Research each one, pick Route A / B / pulse per the playbook, write the first message, and give me the queue JSON.\n\n'+w.map(l=>`- ${l.name} | ${l.headline} | ${l.url}${l.notes?' | note: '+l.notes:''}`).join('\n'); navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); }
+function copyThread(url){ const l=S.leads.find(x=>x.url===url); const txt=`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message per the playbook. Keep it short.`; navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); }
+
+// ---- settings ----
+let settingsDirty=false;
+document.querySelectorAll('#settings input, #settings select, #settings textarea').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
+$('#cfgMode').addEventListener('change', ()=>{ $('#followUpsField').style.display = $('#cfgMode').value==='candidates' ? '' : 'none'; });
+function fillSettings(){
+  const c=S.cfg; if(!c){ return; }
+  $('#cfgMode').value=c.mode||'newbusiness'; $('#followUpsField').style.display = $('#cfgMode').value==='candidates' ? '' : 'none';
+  $('#cfgSearchUrl').value=c.searchUrl||''; $('#cfgNotes').value=(c.connectionNotes||[]).join('\n');
+  $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays} | ${f.text}`).join('\n');
+  const caps=c.dailyCaps||{}; $('#capConnects').value=caps.connects??12; $('#capMessages').value=caps.messages??20; $('#capViews').value=caps.profileViews??50;
+  const h=c.workingHours||{}; $('#hStart').value=h.start||'09:30'; $('#hEnd').value=h.end||'18:00';
+  const days=h.days||[1,2,3,4,5]; $('#days').innerHTML=DAYS.map((d,i)=>`<label class="sub"><input type="checkbox" class="day" value="${i}" ${days.includes(i)?'checked':''}> ${d}</label>`).join('');
+  document.querySelectorAll('.day').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
+  const p=c.pauseBetweenActionsSec||[60,240]; $('#pauseMin').value=p[0]; $('#pauseMax').value=p[1];
+  $('#cfgPages').value=c.maxSearchPages||5; $('#cfgAuto').checked=!!c.autoApprove;
+}
+async function saveSettings(){
+  const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+)\s*\|\s*(.+)$/); return m?{afterDays:+m[1],text:m[2].trim()}:{afterDays:0,text:line}; });
+  const config={ mode:$('#cfgMode').value, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, autoApprove:$('#cfgAuto').checked,
+    connectionNotes:$('#cfgNotes').value.split('\n').map(s=>s.trim()).filter(Boolean), followUps,
+    dailyCaps:{connects:+$('#capConnects').value, messages:+$('#capMessages').value, profileViews:+$('#capViews').value},
+    workingHours:{start:$('#hStart').value, end:$('#hEnd').value, days:[...document.querySelectorAll('.day:checked')].map(e=>+e.value), timezone:'Asia/Dubai'},
+    pauseBetweenActionsSec:[+$('#pauseMin').value, +$('#pauseMax').value] };
+  await api('/api/campaign',{name:S.campaign, config}); settingsDirty=false; toast('Saved'); load();
+}
+async function createCampaign(){ const name=$('#newCampName').value.trim(); if(!name) return; const base = S.cfg && S.cfg.mode ? { connectionNotes:S.cfg.connectionNotes, dailyCaps:S.cfg.dailyCaps, workingHours:S.cfg.workingHours, mode:'newbusiness' } : { mode:'newbusiness', connectionNotes:['Hey {firstName}, would be great to connect, I work in the digital asset recruitment space too.','Hi {firstName}, came across your profile, would be good to connect given we\'re both in the crypto/Web3 world.','Hey {firstName}, noticed we\'re both plugged into the digital asset space, would love to connect.'], dailyCaps:{connects:12,messages:20,profileViews:50}, workingHours:{start:'09:30',end:'18:00',days:[1,2,3,4,5],timezone:'Asia/Dubai'} }; await api('/api/campaign',{name, config:base}); $('#newCamp').style.display='none'; $('#newCampName').value=''; setCampaign(name); }
+
+// ---- log ----
+async function pollLog(){
+  const r = await api('/api/log?since='+lastLog);
+  if (S) { const was=S.job.running; S.job=r.job; applyJob(r.job); if (was && !r.job.running) load().catch(()=>{}); }
+  if (r.lines.length){ const el=$('#log'); if(lastLog===0) el.textContent=''; for(const l of r.lines){ const d=document.createElement('div'); d.textContent=l.text.replace(/^\d{4}-\d\d-\d\d /,''); if(/WARN|Error|error/.test(l.text)) d.className='w'; else if(/REPLY|accepted:|invited |messaged /.test(l.text)) d.className='r'; else if(/^[<>]{3}/.test(l.text)) d.className='s'; el.appendChild(d); lastLog=l.n; } el.scrollTop=el.scrollHeight; }
+}
+load().catch(()=>toast('Could not reach Sourcer. Is the window still open?', true));
+setInterval(()=>{ if(!settingsDirty && !openComposer) load().catch(()=>{}); }, 8000);
+setInterval(()=>pollLog().catch(()=>{}), 2500);
+pollLog().catch(()=>{});
+</script>
+</body>
+</html>

@@ -12,5 +12,5 @@ if [ ! -d node_modules ]; then
 fi
 # idempotent: only downloads when the matching browser build is missing
 npx playwright install chromium >/dev/null 2>&1 || { echo "browser install failed, check your internet connection"; read -n 1 -s -r; exit 1; }
-node src/cli.js menu
-echo; read -n 1 -s -r -p "Done. Press any key to close."
+echo "Sourcer is running. Keep this window open. Close it to stop everything."
+node src/cli.js app

@@ -6,18 +6,20 @@ LinkedIn sourcing and outreach that runs as you, in a real browser on your Mac, 
 
 ## First run
 
-1. Double-click `Sourcer.command`. It installs what it needs and opens a menu. If macOS says it can't open it, right-click the file, choose Open, then Open again. Once is enough.
-2. Pick **1 Log in**. A browser opens. Log in to LinkedIn by hand. The window closes on its own.
-3. Copy `campaigns/example.json` to `campaigns/<name>.json` and edit it. Paste in a LinkedIn people search URL.
-4. Pick **2 Search** to collect people into the campaign.
-5. Open the dashboard (**3**) and tick **approved** on the people you want to contact. Or send the CSV to Claude for scoring and approve from that.
-6. Pick **4 Run campaign**. It works through the day inside the hours in the campaign file. Leave the window open.
+1. Double-click `Sourcer.command`. It installs what it needs, then opens the app in your browser at http://localhost:4747. Keep the terminal window it opens; closing it stops everything. If macOS says it can't open the file, right-click it, choose Open, then Open again. Once is enough.
+2. Press **Log in to LinkedIn**. Chrome opens. Log in by hand. The window closes on its own.
+3. In **Campaign settings**, paste a LinkedIn people search URL and save. Or paste profile links under **Add people**.
+4. Press **Search**. Watch the activity log. People appear in the table as `new`.
+5. Tick **approved** next to the people you want to contact, or use **Approve all shown** on a filter. Or export the CSV, have Claude shortlist it, and paste the approved links back into Add people with "approve them straight away" ticked.
+6. Press **Run one pass** to watch it work once, then **Run all day**. It works inside the hours in settings. Keep the window open and the Mac awake. **Stop** ends it.
+
+Everything the app does is also available from the terminal (`npm run ...`, below), and `npm run menu` gives the old text menu.
 
 ## How a new business campaign flows
 
 - Connection request goes out with a note picked at random from `connectionNotes`.
 - When they accept, nothing is sent. They show up on the dashboard under **Accepted, waiting for a first message**.
-- Research them, pick the route (credibility, candidate tease, or market pulse), write the message, and queue it:
+- Research them, pick the route (credibility, candidate tease, or market pulse), write the message, and press **Write message** next to their name in the app. Or press **Copy list for Claude**, paste it to Claude, and paste the JSON Claude returns into **Messages from Claude**. The JSON looks like this:
 
 ```json
 [
@@ -25,7 +27,7 @@ LinkedIn sourcing and outreach that runs as you, in a real browser on your Mac, 
 ]
 ```
 
-`npm run queue <campaign> messages.json`
+(From the terminal the same file goes in with `npm run queue <campaign> messages.json`.)
 
 - Queued messages go out on the next pass. Any reply stops everything for that person and shows on the dashboard.
 - Ongoing nurture is the same: queue the next message when there is a reason to send one. `notBefore` (ISO date) holds a message until a date.
@@ -47,7 +49,8 @@ npm run queue <campaign> <messages.json>
 npm run connect <campaign> [--max 5]
 npm run followup <campaign>
 npm run run <campaign> [--once]
-npm run dashboard            http://localhost:4747
+npm run app                  the web app, http://localhost:4747
+npm run dashboard            read-only view of the same data
 npm run status
 ```
 

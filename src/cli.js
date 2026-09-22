@@ -13,6 +13,7 @@ import { runConnect } from './actions/connect.js';
 import { runMessages, sweepAcceptances, sweepReplies } from './actions/followup.js';
 import { runCampaign } from './run.js';
 import { startDashboard, summarise } from './dashboard.js';
+import { startApp } from './app.js';
 import { CAMPAIGN_DIR, HOME } from './paths.js';
 import { log } from './log.js';
 
@@ -34,7 +35,8 @@ Sourcer. LinkedIn sourcing and outreach that runs as you.
   npm run connect <campaign>          send connection requests to approved leads (up to the daily cap)
   npm run followup <campaign>         check acceptances, send due messages, look for replies
   npm run run <campaign> [--once]     the whole loop, all day, inside working hours
-  npm run dashboard                   http://localhost:4747
+  npm run app                         the web app at http://localhost:4747 (what the launcher opens)
+  npm run dashboard                   read-only dashboard at http://localhost:4747
   npm run status [campaign]           quick counts in the terminal
   npm run menu                        simple menu (what the double-click launcher opens)
 
@@ -103,6 +105,12 @@ async function main() {
       const cfg = campaignArg();
       return runCampaign(cfg, { once: flag('once'), headless: flag('headless') });
     }
+    case 'app': {
+      const port = +(opt('port') || 4747);
+      startApp({ port });
+      if (!flag('no-open')) exec(`open http://localhost:${port}`);
+      return new Promise(() => {});
+    }
     case 'dashboard': {
       const port = +(opt('port') || 4747);
       startDashboard({ port });
@@ -165,6 +173,7 @@ async function login() {
       const url = page.url();
       if (/\/feed|\/mynetwork|\/in\//.test(url) || (!/\/login|\/checkpoint|\/uas\/|\/signup/.test(url) && await isLoggedIn(page))) {
         log('logged in, session saved');
+        const st = new Store(); st.data.meta.loggedInAt = new Date().toISOString(); st.save();
         return;
       }
     }

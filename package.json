@@ -6,6 +6,7 @@
   "description": "LinkedIn sourcing and outreach runner for Austin Werner. Runs as you, in a real browser, with daily caps.",
   "engines": { "node": ">=20" },
   "scripts": {
+    "app": "node src/cli.js app",
     "menu": "node src/cli.js menu",
     "login": "node src/cli.js login",
     "search": "node src/cli.js search",
