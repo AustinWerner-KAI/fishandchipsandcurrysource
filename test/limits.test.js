@@ -42,3 +42,14 @@ test('human pause stays inside its range', () => {
   assert.equal(pick([]), undefined);
   assert.equal(pick(['a']), 'a');
 });
+
+test('nextWorkingStart finds the next window in the role timezone', async () => {
+  const { nextWorkingStart, withinWorkingHours } = await import('../src/limits.js');
+  const hours = { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5], timezone: 'America/New_York' };
+  const sat = new Date('2026-09-26T12:00:00Z');            // Saturday
+  const next = nextWorkingStart(hours, sat);
+  assert.ok(next > sat);
+  assert.equal(withinWorkingHours(hours, next), true);
+  assert.equal(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(next).replace(',', ''), 'Mon 09:30');
+  assert.equal(nextWorkingStart(hours, new Date('2026-09-22T15:00:00Z')), null);   // Tuesday 11:00 New York: open
+});

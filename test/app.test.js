@@ -95,14 +95,15 @@ test('role wizard: draft, boolean, save creates a candidates campaign, search ur
   r = await post('/api/role/draft', { file: { name: 'spec.txt', base64: Buffer.from('Senior Rust Engineer\nFully remote, Europe.').toString('base64') } });
   assert.equal(r.body.draft.workType, 'remote');
   r = await post('/api/role/boolean', { title: 'Head of Compliance', domain: ['crypto'], skills: ['aml'], exclude: ['recruiter'] });
-  assert.match(r.body.boolean, /^\("Head of Compliance" OR .*\) AND crypto AND aml NOT recruiter$/);
+  assert.match(r.body.boolean, /^aml AND \("Head of Compliance" OR .*\) AND crypto NOT recruiter$/);
   const role = { title: 'Head of Compliance', location: 'Dubai, UAE', workType: 'hybrid', candidateLocations: ['Dubai, UAE'], titles: ['Head of Compliance'], domain: ['crypto'], skills: [], exclude: ['recruiter'], boolean: '"Head of Compliance" AND crypto NOT recruiter' };
   r = await post('/api/role/save', { role });
   assert.equal(r.status, 200);
   assert.equal(r.body.campaign, 'head-of-compliance-dubai-uae');
   assert.equal(r.body.cfg.mode, 'candidates');
   assert.equal(r.body.cfg.searchUrl, '');
-  assert.match(r.body.cfg.followUps[0].text, /Head of Compliance role in Dubai, UAE/);
+  assert.match(r.body.cfg.followUps[0].text, /The \{role\} role is in \{location\}/);
+  assert.match(r.body.cfg.connectionNotes[0], /new role, \{role\}, you might like/);
   assert.deepEqual(r.body.preview.locations, [{ name: 'Dubai, UAE', known: false }]);
   assert.equal(new URL(r.body.preview.url).searchParams.get('keywords'), role.boolean);
   // remote: candidate locations drive the search, known countries resolve without the browser
@@ -127,4 +128,41 @@ test('search url for a role without a browser: known ids, country fallback, reme
   await post('/api/role/save', { campaign: 'head-of-compliance-dubai-uae', role: { title: 'Head of Compliance', location: 'UAE', workType: 'onsite', candidateLocations: ['UAE'], boolean: 'x' } });
   await urlForRole(null, loadCampaign('head-of-compliance-dubai-uae'));
   assert.deepEqual(loadCampaign('head-of-compliance-dubai-uae').role.geo, { 'uae': '104305776' });
+});
+
+test('role save: timezone follows the office, message 1 waits 3 hours, InMail lane lists non-accepts after 7 days', async () => {
+  const { inmailList } = await import('../src/app.js');
+  const { loadCampaign } = await import('../src/config.js');
+  const { dueMessage } = await import('../src/actions/followup.js');
+  let r = await post('/api/role/save', { role: { title: 'Head of Sales', location: 'London, UK', workType: 'onsite', candidateLocations: ['London, UK'], boolean: '"Head of Sales"' } });
+  assert.equal(r.body.cfg.workingHours.timezone, 'Europe/London');
+  assert.equal(r.body.cfg.followUps[0].afterHours, 3);
+  assert.equal(r.body.cfg.inmail.afterDays, 7);
+  const cfg = loadCampaign(r.body.campaign);
+  // message 1: not due 1 hour after accept, due after 4 hours
+  const lead = { status: 'accepted', acceptedAt: new Date(Date.now() - 3600e3).toISOString(), messages: [], queue: [], firstName: 'Sam' };
+  assert.equal(dueMessage(lead, cfg), null);
+  lead.acceptedAt = new Date(Date.now() - 4 * 3600e3).toISOString();
+  assert.match(dueMessage(lead, cfg).text, /^Thanks for connecting Sam\. The Head of Sales role is in London, UK, On site\./);
+  // InMail lane
+  await post('/api/import', { campaign: r.body.campaign, text: 'https://www.linkedin.com/in/old-invite/\nhttps://www.linkedin.com/in/fresh-invite/' });
+  const store = new Store();
+  store.setStatus('https://www.linkedin.com/in/old-invite/', 'invited', { invitedAt: new Date(Date.now() - 8 * 86400e3).toISOString() });
+  store.setStatus('https://www.linkedin.com/in/fresh-invite/', 'invited', { invitedAt: new Date().toISOString() });
+  store.get('https://www.linkedin.com/in/old-invite/').firstName = 'Ola';
+  store.save();
+  let list = inmailList(new Store(), cfg);
+  assert.deepEqual(list.map(x => [x.url, x.kind]), [['https://www.linkedin.com/in/old-invite/', 'inmail']]);
+  assert.equal(list[0].subject, 'Head of Sales, London, UK');
+  assert.match(list[0].text, /^Hi Ola,\n\nI'm running a search for a Head of Sales/);
+  r = await post('/api/inmail-sent', { url: 'https://www.linkedin.com/in/old-invite/', kind: 'inmail' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(inmailList(new Store(), cfg), []);                        // follow-up not due yet
+  const s2 = new Store(); s2.get('https://www.linkedin.com/in/old-invite/').inmail.sentAt = new Date(Date.now() - 5 * 86400e3).toISOString(); s2.save();
+  list = inmailList(new Store(), cfg);
+  assert.equal(list[0].kind, 'followUp');
+  await post('/api/inmail-sent', { url: 'https://www.linkedin.com/in/old-invite/', kind: 'followUp' });
+  assert.deepEqual(inmailList(new Store(), cfg), []);                        // lane over
+  const st = await get(`/api/state?c=${r.body.campaign || 'head-of-sales-london-uk'}`);
+  assert.ok('open' in st.hours);
 });

@@ -84,6 +84,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
       <div><b id="rsTitle"></b> <span class="sub" id="rsWhere"></span></div>
       <div class="sub" style="margin:6px 0;word-break:break-word"><code id="rsBoolean"></code></div>
       <div class="row"><button class="small" onclick="editRole()">Edit role</button><a class="sub" id="rsLink" href="#" target="_blank">Open this search on LinkedIn</a><span class="sub" id="rsGeo"></span></div>
+      <div class="sub" id="rsHours" style="margin-top:4px"></div>
     </div>
 
     <div id="w1">
@@ -119,7 +120,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
           <div class="field"><label>Industry words (any of these), comma separated</label><input type="text" id="rDomain"></div>
         </div>
         <div>
-          <div class="field"><label>Must-have skills (all of these), comma separated. Leave empty for a wider search.</label><input type="text" id="rSkills"><div class="sub" id="rSkillHints" style="margin-top:4px"></div></div>
+          <div class="field"><label>Must also mention (all of these), comma separated. The modifier from the title goes here, e.g. Cloud. Empty means wider.</label><input type="text" id="rSkills"><div class="sub" id="rSkillHints" style="margin-top:4px"></div></div>
           <div class="field"><label>Leave out anyone with these words</label><input type="text" id="rExclude"></div>
         </div>
       </div>
@@ -142,6 +143,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
   </div>
 
   <div id="replies"></div>
+  <div id="inmail"></div>
   <div id="waiting"></div>
 
   <div class="card">
@@ -154,7 +156,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
       </div>
     </div>
     <div class="filters" id="filters"></div>
-    <table><thead><tr><th>Person</th><th>Status</th><th>Approved</th><th>Activity</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+    <div style="max-height:520px;overflow:auto"><table><thead><tr><th>Person</th><th>Status</th><th>Approved</th><th>Activity</th><th>Note</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
   </div>
 
   <div class="grid2">
@@ -172,7 +174,7 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
   </div>
 
   <div class="card" id="settings">
-    <h2>Campaign settings</h2>
+    <h2>Role settings</h2>
     <div id="cfgError"></div>
     <div class="grid2">
       <div>
@@ -180,7 +182,10 @@ details summary{cursor:pointer;color:var(--muted);font-size:12px}
           <select id="cfgMode"><option value="newbusiness">New business (handshake note, then messages you or Claude write per person)</option><option value="candidates">Candidates (timed template follow-ups)</option></select></div>
         <div class="field"><label>LinkedIn search URL. Normally empty: the role above builds it. Paste one here only to override it.</label><input type="text" id="cfgSearchUrl" placeholder="https://www.linkedin.com/search/results/people/?keywords=..."></div>
         <div class="field"><label>Connection request notes, one per line. Picked at random. {firstName} is filled in. Max 300 characters.</label><textarea id="cfgNotes"></textarea></div>
-        <div class="field" id="followUpsField"><label>Follow-ups after they accept. One per line: <code>days | message</code>, days counted from the previous message.</label><textarea id="cfgFollowUps" placeholder="0 | Thanks for connecting {firstName}. Open to a quick chat this week?&#10;4 | Hey {firstName}, just checking this didn't get buried."></textarea></div>
+        <div class="field" id="followUpsField"><label>Messages after they accept. One per line: <code>days | message</code>, counted from the previous message. Add hours with <code>0 +3h |</code>.</label><textarea id="cfgFollowUps" placeholder="0 +3h | Thanks for connecting {firstName}. Worth a look?&#10;4 | Hey {firstName}, just checking this didn't get buried."></textarea></div>
+        <div class="field"><label>Recruiter Lite InMail, for people who have not accepted after <input type="number" id="imAfter" min="1" max="30" style="width:60px"> days. You send it by hand; the app writes it and lists who is due.</label>
+          <input type="text" id="imSubject" placeholder="subject" style="margin-bottom:6px"><textarea id="imBody" style="min-height:120px" placeholder="InMail body"></textarea></div>
+        <div class="field"><label>The one InMail follow-up, <input type="number" id="imFollowAfter" min="1" max="30" style="width:60px"> days later if no reply.</label><textarea id="imFollow" placeholder="follow-up"></textarea></div>
       </div>
       <div>
         <div class="field"><label>Daily caps</label>
@@ -210,6 +215,7 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function toast(m, bad){ const t=$('#toast'); t.textContent=m; t.style.background=bad?'var(--bad)':'var(--ink)'; t.style.color='#fff'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2600); }
 function toggle(id){ const e=document.getElementById(id); e.style.display = e.style.display==='none' ? '' : 'none'; }
 async function api(path, body){ const r = await fetch(path, body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {}); const j = await r.json().catch(()=>({})); if(!r.ok){ toast(j.error||'failed', true); throw new Error(j.error||'failed'); } return j; }
+function whenIn(iso, tz){ const d=new Date(iso); const a=d.toLocaleString('en-GB',{timeZone:tz,weekday:'short',hour:'2-digit',minute:'2-digit'}); const b=d.toLocaleString('en-GB',{hour:'2-digit',minute:'2-digit'}); return `${a} ${tz.split('/').pop().replace('_',' ')} (${b} here)`; }
 function when(iso){ const tz=(S&&S.cfg&&S.cfg.workingHours&&S.cfg.workingHours.timezone)||'Asia/Dubai'; return iso ? new Date(iso).toLocaleString('en-GB',{timeZone:tz,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
 
 async function load(){
@@ -220,14 +226,16 @@ async function load(){
 function setCampaign(c){ campaign=c; localStorage.setItem('campaign', c); load(); }
 
 function applyJob(j){
-  $('#jobPill').classList.toggle('on', j.running); $('#jobText').textContent = j.running ? `running: ${j.name}` : 'idle';
+  $('#jobPill').classList.toggle('on', j.running);
+  const h=S&&S.hours; const waiting = j.running && j.name==='run' && h && !h.open && h.nextStart;
+  $('#jobText').textContent = j.running ? (waiting ? `running, waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}`) : 'idle';
   $('#jobSub').textContent = j.running ? `started ${when(j.startedAt)}` : (j.history.length ? `last: ${j.history[j.history.length-1].name} ${when(j.history[j.history.length-1].endedAt)}` : '');
   for (const id of ['btnLogin','btnSearch','btnOnce','btnRun']) $('#'+id).disabled = j.running || (id!=='btnLogin' && !(S&&S.campaign));
   $('#btnStop').disabled = !j.running;
 }
 function render(){
   const draft = openComposer ? { t: $('#t-'+key(openComposer.url))?.value, n: $('#n-'+key(openComposer.url))?.value, d: $('#d-'+key(openComposer.url))?.value } : null;
-  const sel=$('#campaign'); sel.innerHTML = S.campaigns.map(c=>`<option ${c===S.campaign?'selected':''}>${esc(c)}</option>`).join('') || '<option>(no campaign yet)</option>';
+  const sel=$('#campaign'); sel.innerHTML = S.campaigns.map(c=>`<option ${c===S.campaign?'selected':''}>${esc(c)}</option>`).join('') || '<option>(no role yet)</option>';
   $('#exportLink').href = '/export.csv?c=' + encodeURIComponent(S.campaign||'');
   applyJob(S.job);
 
@@ -249,12 +257,15 @@ function render(){
   $('#steps').innerHTML = steps.map((s,i)=>`<div class="step ${s[0]?'done':''}"><b>${i+1}. ${s[1]}</b><span class="sub">${esc(s[2])}</span></div>`).join('');
 
   const cap=k=>S.caps?`${S.today[k]||0} / ${S.caps[k]}`:String(S.today[k]||0);
-  $('#stats').innerHTML = [[cap('connects'),'connects today'],[cap('messages'),'messages today'],[cap('profileViews'),'profile views today'],[c.invited||0,'invites pending'],[(c.accepted||0)+(c.messaged||0),'connected'],[c.replied||0,'replied']].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
+  $('#stats').innerHTML = [[approved,'approved, waiting'],[cap('connects'),'connects today'],[cap('messages'),'messages today'],[cap('profileViews'),'profile views today'],[c.invited||0,'invites pending'],[(c.accepted||0)+(c.messaged||0),'connected'],[c.replied||0,'replied']].map(([b,s])=>`<div class="stat"><b>${b}</b><span>${s}</span></div>`).join('');
 
   $('#shots').innerHTML = (S.screenshots||[]).map(f=>`<a href="/screenshots/${encodeURIComponent(f)}" target="_blank" title="${esc(f)}"><img src="/screenshots/${encodeURIComponent(f)}" alt=""></a>`).join('');
 
   const replied = S.leads.filter(l=>l.status==='replied').sort((a,b)=>(b.repliedAt||'').localeCompare(a.repliedAt||''));
-  $('#replies').innerHTML = replied.length ? `<div class="card"><h2>Replies</h2>${replied.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)} · ${when(l.repliedAt)}</span><q>${esc(l.lastReply)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}', true)">Queue a reply</button><button class="small" onclick="copyThread('${esc(l.url)}')">Copy for Claude</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
+  $('#replies').innerHTML = replied.length ? `<div class="card"><h2>Replies</h2>${replied.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)} · ${when(l.repliedAt)}</span><q>${esc(l.lastReply)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}', true)">Reply (goes on the next pass)</button><button class="small" onclick="copyThread('${esc(l.url)}')">Copy for Claude</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
+
+  const im=S.inmail||[];
+  $('#inmail').innerHTML = im.length ? `<div class="card"><h2>Ready for InMail (${im.length})</h2><div class="sub" style="margin-bottom:8px">Did not accept the connection. Copy, paste into Recruiter Lite, press Sent. One InMail, one follow-up, then nothing more.</div>${im.map((p,i)=>`<div class="person"><a href="${esc(p.url)}" target="_blank"><b>${esc(p.name)}</b></a> <span class="sub">${esc(p.headline)} · ${p.kind==='followUp'?'follow-up due':'InMail due'}</span><div class="sub" style="margin-top:4px"><b>Subject:</b> ${esc(p.subject)}</div><q style="white-space:pre-wrap">${esc(p.text)}</q><div class="row" style="margin-top:6px"><button class="small" onclick="copyText(${i})">Copy</button><button class="small primary" onclick="inmailSent('${esc(p.url)}','${p.kind}')">Sent</button></div></div>`).join('')}</div>` : '';
 
   const waiting = (S.cfg&&S.cfg.mode==='candidates') ? [] : S.leads.filter(l=>l.status==='accepted' && !l.queued);
   $('#waiting').innerHTML = waiting.length ? `<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Accepted, waiting for a first message (${waiting.length})</h2><button class="small" onclick="copyWaiting()">Copy list for Claude</button></div><div class="sub" style="margin:4px 0 8px">Research each one, pick the route, write the message. Or copy the list, give it to Claude, paste the JSON back below.</div>${waiting.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)}${l.preexisting?' · already a contact':''}</span><div class="row" style="margin-top:6px"><button class="small" onclick="compose('${esc(l.url)}')">Write message</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
@@ -269,7 +280,7 @@ function render(){
     <td><input type="checkbox" ${l.approved?'checked':''} ${l.status!=='new'?'disabled':''} onchange="approve('${esc(l.url)}', this.checked)"></td>
     <td class="sub">${l.sent} sent${l.invitedAt?`<br>invited ${when(l.invitedAt)}`:''}${l.acceptedAt?`<br>accepted ${when(l.acceptedAt)}`:''}</td>
     <td class="sub">${esc(l.error||l.notes||'')}</td>
-    <td class="row">${['accepted','messaged','replied'].includes(l.status)?`<button class="small" onclick="compose('${esc(l.url)}')">Message</button>`:''}${l.status==='new'||l.status==='invited'?`<button class="small" onclick="setStatus('${esc(l.url)}','skipped')">Skip</button>`:''}${l.status==='skipped'||l.status==='error'?`<button class="small" onclick="setStatus('${esc(l.url)}','new')">Reset</button>`:''}</td>
+    <td class="row">${['accepted','messaged','replied'].includes(l.status)?`<button class="small" onclick="compose('${esc(l.url)}')">Message</button>`:''}${l.status==='new'||l.status==='invited'?`<button class="small" onclick="setStatus('${esc(l.url)}','skipped')" title="Leave this person out. You can put them back.">Exclude</button>`:''}${l.status==='skipped'||l.status==='error'?`<button class="small" onclick="setStatus('${esc(l.url)}','new')">Put back</button>`:''}</td>
   </tr>`).join('') || '<tr><td colspan="6" class="sub">Nobody here yet.</td></tr>';
 
   if (!settingsDirty) fillSettings();
@@ -308,6 +319,8 @@ function compose(url, reply, keep){
   const ta=$('#t-'+key(url)); ta.oninput=()=>{ $('#cnt-'+key(url)).textContent = `${ta.value.length} chars${/[—–]/.test(ta.value)?' · contains a dash, remove it':''}`; }; ta.focus();
 }
 async function queueOne(url, resume){ const k=key(url); const text=$('#t-'+k).value.trim(); if(!text) return; const d=$('#d-'+k).value; await api('/api/queue',{campaign:S.campaign, items:[{url,text,note:$('#n-'+k).value.trim(),notBefore:d?new Date(d+'T06:00:00Z').toISOString():null, resume}]}); openComposer=null; toast('Queued. Goes on the next pass.'); load(); }
+function copyText(i){ const p=S.inmail[i]; navigator.clipboard.writeText(`${p.subject}\n\n${p.text}`); toast('Copied. Paste it into Recruiter Lite.'); }
+async function inmailSent(url, kind){ await api('/api/inmail-sent',{url, kind}); toast(kind==='followUp' ? 'Recorded. Nothing more goes to them.' : 'Recorded. Follow-up shows here when due.'); load(); }
 async function unqueue(url){ await api('/api/unqueue',{url,index:0}); openComposer=null; load(); }
 function copyWaiting(){ const w=S.leads.filter(l=>l.status==='accepted'&&!l.queued); const txt='These people accepted my connection request. Research each one, pick Route A / B / pulse per the playbook, write the first message, and give me the queue JSON.\n\n'+w.map(l=>`- ${l.name} | ${l.headline} | ${l.url}${l.notes?' | note: '+l.notes:''}`).join('\n'); navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); }
 function copyThread(url){ const l=S.leads.find(x=>x.url===url); const txt=`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message per the playbook. Keep it short.`; navigator.clipboard.writeText(txt); toast('Copied. Paste it to Claude.'); }
@@ -320,7 +333,8 @@ function fillSettings(){
   const c=S.cfg; if(!c){ return; }
   $('#cfgMode').value=c.mode||'newbusiness'; $('#followUpsField').style.display = $('#cfgMode').value==='candidates' ? '' : 'none';
   $('#cfgSearchUrl').value=c.searchUrl||''; $('#cfgNotes').value=(c.connectionNotes||[]).join('\n');
-  $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays} | ${f.text}`).join('\n');
+  $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays}${f.afterHours?` +${f.afterHours}h`:''} | ${f.text}`).join('\n');
+  const im=c.inmail||{}; $('#imAfter').value=im.afterDays??7; $('#imSubject').value=im.subject||''; $('#imBody').value=im.body||''; $('#imFollowAfter').value=im.followUpAfterDays??4; $('#imFollow').value=im.followUp||'';
   const caps=c.dailyCaps||{}; $('#capConnects').value=caps.connects??12; $('#capMessages').value=caps.messages??20; $('#capViews').value=caps.profileViews??50;
   const h=c.workingHours||{}; $('#hStart').value=h.start||'09:30'; $('#hEnd').value=h.end||'18:00';
   currentTz=h.timezone||'Asia/Dubai'; $('#tzLabel').textContent=currentTz;
@@ -330,8 +344,9 @@ function fillSettings(){
   $('#cfgPages').value=c.maxSearchPages||5; $('#cfgAuto').checked=!!c.autoApprove;
 }
 async function saveSettings(){
-  const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+)\s*\|\s*(.+)$/); return m?{afterDays:+m[1],text:m[2].trim()}:{afterDays:0,text:line}; });
-  const config={ mode:'candidates', searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, autoApprove:$('#cfgAuto').checked,
+  const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+(?:\.\d+)?)\s*d?\s*(?:\+\s*(\d+)\s*h)?\s*\|\s*(.+)$/i); return m?{afterDays:+m[1],...(m[2]?{afterHours:+m[2]}:{}),text:m[3].trim()}:{afterDays:0,text:line}; });
+  const inmail = $('#imBody').value.trim() ? { afterDays:+$('#imAfter').value||7, subject:$('#imSubject').value.trim(), body:$('#imBody').value.trim(), followUpAfterDays:+$('#imFollowAfter').value||4, followUp:$('#imFollow').value.trim() } : null;
+  const config={ mode:'candidates', inmail, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, autoApprove:$('#cfgAuto').checked,
     connectionNotes:$('#cfgNotes').value.split('\n').map(s=>s.trim()).filter(Boolean), followUps,
     dailyCaps:{connects:+$('#capConnects').value, messages:+$('#capMessages').value, profileViews:+$('#capViews').value},
     workingHours:{start:$('#hStart').value, end:$('#hEnd').value, days:[...document.querySelectorAll('.day:checked')].map(e=>+e.value), timezone:currentTz},
@@ -354,6 +369,8 @@ function renderRole(){
   const p=S.rolePreview; $('#rsLink').href=p?p.url:'#';
   const unknown=p?p.locations.filter(l=>!l.known).map(l=>l.name):[];
   $('#rsGeo').textContent = unknown.length ? `Location id for ${unknown.join(', ')} is looked up on LinkedIn when you press Search.` : '';
+  const h=S.hours, wh=S.cfg.workingHours;
+  $('#rsHours').textContent = wh ? (h.open ? `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Open now.` : `Working hours ${wh.start} to ${wh.end} ${wh.timezone}. Nothing sends until ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'the next working day'}.`) : '';
 }
 function newRole(){ R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); window.scrollTo({top:0,behavior:'smooth'}); }
 function editRole(){ const role=S.cfg.role; R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[]}; R.editing=S.campaign; fillStep2(); showStep(2); }
@@ -364,7 +381,7 @@ async function readSpec(){
   if(f){ const b64=await new Promise((res,rej)=>{const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f);}); body={file:{name:f.name, base64:b64}}; }
   const r=await api('/api/role/draft', body);
   if (f) { $('#specText').value=r.text; $('#specFile').value=''; }
-  R=r.draft; R.editing=null; R.suggested=R.skills||[]; R.skillsChosen=[]; fillStep2(); showStep(2);
+  R=r.draft; R.editing=null; R.suggested=R.skills||[]; R.skillsChosen=R.required||[]; fillStep2(); showStep(2);
 }
 function fillStep2(){
   $('#rTitle').value=R.title||''; $('#rLocation').value=R.location||'';
