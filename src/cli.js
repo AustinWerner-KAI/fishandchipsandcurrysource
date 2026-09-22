@@ -6,7 +6,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { exec } from 'node:child_process';
 import { Store } from './store.js';
 import { loadCampaign, listCampaigns } from './config.js';
-import { openBrowser, isLoggedIn } from './browser.js';
+import { openBrowser, closeBrowser, isLoggedIn, hasLoginCookie, saveSession } from './browser.js';
 import { runSearch } from './actions/search.js';
 import { importLeads, exportCsv, approveLeads, queueMessages } from './actions/import.js';
 import { runConnect } from './actions/connect.js';
@@ -50,7 +50,7 @@ async function withBrowser(fn, { requireLogin = true } = {}) {
     if (requireLogin && !(await isLoggedIn(page))) throw new Error('Not logged in. Run: npm run login');
     return await fn(page, store);
   } finally {
-    await context.close().catch(() => {});
+    await closeBrowser(context);
   }
 }
 
@@ -126,6 +126,24 @@ async function main() {
       }
       return;
     }
+    case 'probe': {
+      // Opens a LinkedIn page in the logged-in browser and saves a screenshot, the page HTML and the
+      // list of links to ~/.sourcer/probe/, so page structure can be studied without touching anything.
+      const target = positional[0];
+      if (!target) throw new Error('probe needs a URL');
+      return withBrowser(async page => {
+        const dir = path.join(HOME, 'probe'); fs.mkdirSync(dir, { recursive: true });
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        await page.goto(target, { waitUntil: 'domcontentloaded' });
+        await new Promise(r => setTimeout(r, +(opt('wait') || 8000)));
+        for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, 600); await new Promise(r => setTimeout(r, 700)); }
+        await page.screenshot({ path: path.join(dir, `${stamp}.png`), fullPage: true });
+        fs.writeFileSync(path.join(dir, `${stamp}.html`), await page.content());
+        const links = await page.evaluate(() => [...document.querySelectorAll('a[href]')].map(a => ({ href: a.getAttribute('href'), text: (a.innerText || '').trim().slice(0, 80) })));
+        fs.writeFileSync(path.join(dir, `${stamp}.links.json`), JSON.stringify({ url: page.url(), title: await page.title(), links }, null, 1));
+        log('probe saved', path.join(dir, stamp + '.{png,html,links.json}'), 'final url', page.url());
+      });
+    }
     case 'menu':
       return menu();
     default:
@@ -168,11 +186,16 @@ async function login() {
   console.log('\nLog in to LinkedIn in the browser window. It closes on its own once you are in.\n');
   const deadline = Date.now() + 10 * 60 * 1000;
   try {
+    // Wait for LinkedIn's login cookie and a page that is not the login flow. Never navigate the
+    // window ourselves while the person is typing in it.
     while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, 2000));
       const url = page.url();
-      if (/\/feed|\/mynetwork|\/in\//.test(url) || (!/\/login|\/checkpoint|\/uas\/|\/signup/.test(url) && await isLoggedIn(page))) {
-        log('logged in, session saved');
+      const inFlow = /\/login|\/checkpoint|\/uas\/|\/signup|\/authwall/.test(url);
+      if (!inFlow && (await hasLoginCookie(context))) {
+        await new Promise(r => setTimeout(r, 4000));       // let LinkedIn finish setting cookies
+        const saved = await saveSession(context);
+        log(saved ? 'logged in, session saved' : 'logged in, but the session could not be saved');
         const st = new Store(); st.data.meta.loggedInAt = new Date().toISOString(); st.save();
         return;
       }

@@ -1,7 +1,7 @@
 import { collectSearchResults, resolveGeo } from '../linkedin.js';
 import { log, warn } from '../log.js';
 import { sleep, humanPauseMs } from '../limits.js';
-import { buildSearchUrl, lookupGeo } from '../role.js';
+import { buildSearchUrl, lookupGeo, widenBoolean } from '../role.js';
 import { patchCampaign } from '../config.js';
 
 // Where to look for people: for a remote role, wherever the recruiter said candidates may sit;
@@ -43,7 +43,17 @@ export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
   const pages = maxPages || cfg.maxSearchPages || 5;
   let added = 0;
   for (let p = 1; p <= pages; p++) {
-    const rows = await collectSearchResults(page, searchUrl, p);
+    let rows = await collectSearchResults(page, searchUrl, p);
+    if (!rows.length && p === 1 && !url && cfg.role?.boolean) {
+      // nothing at all: loosen the boolean step by step and keep the first version that returns people
+      for (const w of widenBoolean(new URL(searchUrl).searchParams.get('keywords') || cfg.role.boolean)) {
+        const u = new URL(searchUrl); u.searchParams.set('keywords', w.boolean);
+        log(`no results. Trying ${w.step}: ${w.boolean}`);
+        await sleep(humanPauseMs([4, 9]));
+        rows = await collectSearchResults(page, u.toString(), 1);
+        if (rows.length) { searchUrl = u.toString(); warn(`the role's boolean found nobody; using "${w.boolean}" for this search. Edit the role to make it permanent.`); break; }
+      }
+    }
     log(`search page ${p}: ${rows.length} results`);
     if (!rows.length) break;
     let fresh = 0;

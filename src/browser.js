@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
+import fs from 'node:fs';
 import path from 'node:path';
-import { PROFILE_DIR, SCREENSHOT_DIR, ensureDirs } from './paths.js';
+import { HOME, PROFILE_DIR, SCREENSHOT_DIR, ensureDirs } from './paths.js';
 import { SEL, firstVisible, anyPresent } from './selectors.js';
 import { log, warn } from './log.js';
 import { sleep, randomBetween } from './limits.js';
@@ -19,9 +20,56 @@ export async function openBrowser({ headless = false } = {}) {
     args: ['--disable-blink-features=AutomationControlled', '--window-size=1360,900'],
     ignoreDefaultArgs: ['--enable-automation'],
   });
+  await restoreSession(context);
   const page = context.pages()[0] || (await context.newPage());
   page.setDefaultTimeout(20000);
   return { context, page };
+}
+
+// LinkedIn's login cookie is li_at. Chromium writes cookies to its profile on a timer, so a browser
+// closed right after login can forget it. We keep our own copy in ~/.sourcer/session.json and put
+// it back into the browser on every start.
+export const SESSION_FILE = path.join(HOME, 'session.json');
+
+export async function hasLoginCookie(context) {
+  const cookies = await context.cookies('https://www.linkedin.com').catch(() => []);
+  return cookies.some(c => c.name === 'li_at' && c.value);
+}
+
+export async function saveSession(context) {
+  try {
+    const { cookies } = await context.storageState();
+    const li = cookies.filter(c => /linkedin\.com$/.test(c.domain));
+    if (!li.some(c => c.name === 'li_at')) return false;
+    fs.writeFileSync(SESSION_FILE, JSON.stringify({ savedAt: new Date().toISOString(), cookies: li }), { mode: 0o600 });
+    return true;
+  } catch (e) {
+    warn('could not save the LinkedIn session', e.message);
+    return false;
+  }
+}
+
+export async function restoreSession(context) {
+  try {
+    if (!fs.existsSync(SESSION_FILE)) return false;
+    if (await hasLoginCookie(context)) return true;        // the profile kept it; nothing to do
+    const { cookies } = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+    const now = Date.now() / 1000;
+    const live = cookies.filter(c => !c.expires || c.expires < 0 || c.expires > now);
+    if (!live.some(c => c.name === 'li_at')) return false;
+    await context.addCookies(live);
+    log('LinkedIn session restored from session.json');
+    return true;
+  } catch (e) {
+    warn('could not restore the LinkedIn session', e.message);
+    return false;
+  }
+}
+
+// Save the session (cookies get refreshed while browsing) and close.
+export async function closeBrowser(context) {
+  await saveSession(context).catch(() => {});
+  await context.close().catch(() => {});
 }
 
 export async function goto(page, url, { waitFor = 'domcontentloaded' } = {}) {
@@ -48,7 +96,11 @@ export async function isLoggedIn(page) {
     await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
     await sleep(1500);
     if (/\/login|\/authwall|\/checkpoint/i.test(page.url())) return false;
-    return await anyPresent(page, SEL.loggedInMarker, 4000);
+    if (await anyPresent(page, SEL.loggedInMarker, 4000)) return true;
+    // LinkedIn changes its nav markup now and then; the login cookie plus not being bounced to /login is enough
+    if (await hasLoginCookie(page.context())) { log('logged in (nav selector not found, cookie present)'); return true; }
+    await snap(page, 'not-logged-in');
+    return false;
   } catch {
     return false;
   }

@@ -1,4 +1,4 @@
-import { openBrowser, isLoggedIn, CheckpointError, NotLoggedInError } from './browser.js';
+import { openBrowser, closeBrowser, isLoggedIn, CheckpointError, NotLoggedInError } from './browser.js';
 import { Store } from './store.js';
 import { withinWorkingHours, sleep, randomBetween } from './limits.js';
 import { runConnect } from './actions/connect.js';
@@ -45,6 +45,6 @@ export async function runCampaign(cfg, { once = false, headless = false } = {}) 
       throw e;
     }
   } finally {
-    await context.close().catch(() => {});
+    await closeBrowser(context);
   }
 }
