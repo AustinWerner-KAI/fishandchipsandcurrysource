@@ -13,6 +13,7 @@ import { Jobs } from './jobs.js';
 import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
 import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
+import { tenureLabel, tenureOk, sizeWord, MIN_TENURE_MONTHS } from './company.js';
 import { scoreLead } from './rank.js';
 import { render, renderChecked, nameFor } from './template.js';
 import { rankLeads, cleanLead } from './rank.js';
@@ -23,7 +24,7 @@ import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
 
-const EDITABLE = ['mode', 'role', 'firstDegree', 'inmail', 'searchUrl', 'maxSearchPages', 'autoApprove', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
+const EDITABLE = ['mode', 'role', 'firstDegree', 'inmail', 'searchUrl', 'maxSearchPages', 'autoApprove', 'minTenureMonths', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
 
 // Recruiter Lite lane: for people who have not accepted the connection. Sent by hand; the app writes the text.
 export const DEFAULT_INMAIL = {
@@ -125,6 +126,7 @@ export function state(jobs, campaignName) {
     catch { return { name, title: name, location: '' }; }
   });
   const model = cfg?.role ? learn(s.leads, cfg.role, Date.now(), clients) : null;
+  const minTenure = cfg?.minTenureMonths ?? MIN_TENURE_MONTHS;
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
@@ -142,7 +144,24 @@ export function state(jobs, campaignName) {
     learning: model ? { active: model.active, hardNo: model.hardNo, picks: model.picks, accepted: model.accepted, replied: model.replied, favours: model.favours, marksDown: model.marksDown } : null,
     noteStats: cfg?.connectionNotes ? noteStats(cfg.connectionNotes, store, c) : [],
     uiVersion: (() => { try { return fs.statSync(UI).mtimeMs; } catch { return 0; } })(),
-    leads: rankLearned(s.leads, cfg?.role, model).map(l => ({ ...l, offLimits: l.offLimits || offLimits(l, clients)?.name || null, queued: l.queue.length, sent: l.messages.length, lastMessage: l.messages[l.messages.length - 1]?.text || '' })),
+    leads: rankLearned(s.leads, cfg?.role, model).map(l => {
+      const co = store.companyFor(l);
+      const months = l.tenureMonths ?? null;
+      return {
+        ...l,
+        offLimits: l.offLimits || offLimits(l, clients)?.name || null,
+        queued: l.queue.length, sent: l.messages.length,
+        lastMessage: l.messages[l.messages.length - 1]?.text || '',
+        // what the company page said wins over what the search card said
+        sector: co?.sector || l.sector || '',
+        sizeText: co?.sizeText || '',
+        sizeWord: sizeWord(co?.size),
+        tenure: tenureLabel(months),
+        tenureMonths: months,
+        tenureOk: tenureOk(months, minTenure),
+      };
+    }),
+    minTenureMonths: minTenure,
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
     weeklyLimit: weeklyLimitActive(store),
     ownName: store.data.meta.ownName || null,

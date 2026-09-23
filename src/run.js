@@ -8,14 +8,16 @@ import { takeRequests, pending } from './requests.js';
 import { runConnect } from './actions/connect.js';
 import { sweepAcceptances, runMessages, sweepReplies } from './actions/followup.js';
 import { runInMails } from './actions/inmail.js';
+import { runCompanyLookups } from './actions/company.js';
 import { log, warn } from './log.js';
 import { notify } from './notify.js';
 
-// One cycle: check acceptances, send due messages, look for replies, then send new connection requests.
+// One cycle: check acceptances, send due messages, look for replies, learn about new employers,
+// then send new connection requests and InMails.
 // A slow page or a busy file skips that step for this cycle; only a security check or being
 // logged out stops the run.
 export async function cycle(page, store, cfg) {
-  const steps = [['acceptances', sweepAcceptances], ['messages', runMessages], ['replies', sweepReplies], ['connect', runConnect], ['inmail', runInMails]];
+  const steps = [['acceptances', sweepAcceptances], ['messages', runMessages], ['replies', sweepReplies], ['companies', runCompanyLookups], ['connect', runConnect], ['inmail', runInMails]];
   for (const [what, fn] of steps) {
     if (stopRequested()) return;
     try { await fn(page, store, cfg); }
