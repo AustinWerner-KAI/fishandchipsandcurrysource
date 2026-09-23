@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { normalizeUrl } from '../store.js';
+import { tenureLabel } from '../company.js';
 import { log, warn } from '../log.js';
 
 // Accepts a .txt (one URL per line) or a .csv with a header row containing url (and optionally name, headline, company).
@@ -52,9 +53,13 @@ function splitCsvLine(line) {
 
 export function exportCsv(store, cfg, { status } = {}) {
   const leads = store.leads({ campaign: cfg.name, status });
-  const cols = ['url', 'name', 'headline', 'company', 'location', 'status', 'approved', 'score', 'notes', 'invitedAt', 'acceptedAt', 'repliedAt', 'lastReply'];
+  const cols = ['url', 'name', 'headline', 'company', 'sector', 'size', 'tenure', 'location', 'status', 'approved', 'score', 'notes', 'invitedAt', 'acceptedAt', 'repliedAt', 'lastReply'];
   const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  return [cols.join(','), ...leads.map(l => cols.map(c => esc(l[c])).join(','))].join('\n') + '\n';
+  const row = l => {
+    const co = store.companyFor(l);
+    return { ...l, sector: co?.sector || l.sector || '', size: co?.sizeText || '', tenure: tenureLabel(l.tenureMonths ?? null) };
+  };
+  return [cols.join(','), ...leads.map(row).map(l => cols.map(c => esc(l[c])).join(','))].join('\n') + '\n';
 }
 
 // approve: a file with one URL per line, or '--all'

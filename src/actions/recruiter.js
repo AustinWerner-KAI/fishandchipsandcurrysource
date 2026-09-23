@@ -3,6 +3,7 @@
 // /in/ address is looked up later, only for people Kai approves (see publicUrlFor).
 import { goto, snap, saveDom, guard, typeLikeHuman } from '../browser.js';
 import { SEL, firstVisible } from '../selectors.js';
+import { tenureMonths } from '../company.js';
 import { log, warn } from '../log.js';
 import { sleep, randomBetween, humanPauseMs } from '../limits.js';
 import { searchLocations } from './search.js';
@@ -47,6 +48,17 @@ export async function readRecruiterResults(page) {
         industry: t('[data-test-current-employer-industry]').replace(/^·\s*/, ''),
         // first experience line is the current job: "Senior Security Engineer at Kraken · 2 yrs"
         company: ((t('[data-test-description-description]').split('·')[0] || '').match(/\sat\s(.+)$/i)?.[1] || '').trim(),
+        // How long at that employer. Recruiter groups roles by company, so the first group's
+        // header carries the total; if it does not, the group's own entries are read instead.
+        tenureText: (() => {
+          const group = li.querySelector('[data-test-history-group]') || li.querySelector('[data-test-history]');
+          if (!group) return t('[data-test-description-entry-date-duration]');
+          const header = (group.querySelector('[data-test-history-group-header]')?.innerText || '').replace(/\s+/g, ' ').trim();
+          if (/\d+\s*(yrs?|years?|mos?|months?)/i.test(header)) return header;
+          return [...group.querySelectorAll('[data-test-description-entry-date-duration]')]
+            .map(e => e.innerText.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' | ');
+        })(),
+        companyUrl: (li.querySelector('a[href*="/company/"]')?.href || '').split('?')[0],
         degree,
       });
     }
@@ -176,7 +188,7 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
     let fresh = 0;
     for (const r of rows) {
       if (!r.recruiterUrl || store.findByRecruiterUrl(r.recruiterUrl)) continue;
-      const lead = store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
+      const lead = store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', companyUrl: r.companyUrl || '', sector: r.industry || '', tenureText: r.tenureText || '', tenureMonths: tenureMonths(r.tenureText), campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
       if (outsideArea(r.location, locs)) store.setStatus(lead.url, 'skipped', { error: `outside ${locs.join(' / ')} (${r.location})` });
       fresh++;
     }
