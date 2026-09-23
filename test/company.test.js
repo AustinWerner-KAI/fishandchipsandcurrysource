@@ -178,3 +178,108 @@ test('someone under a year at their employer is not invited or InMailed', async 
   assert.equal(r.sent, 0);
   assert.deepEqual(sentTo, []);
 });
+
+const { isJunior, experienceMonths, tooJunior, DEFAULT_MIN_EXPERIENCE_MONTHS } = await import('../src/company.js');
+
+test('intern and trainee titles are spotted, real senior titles are not', () => {
+  for (const t of ['Security Intern', 'Summer Intern at Kraken', 'Graduate Programme', 'Cyber Trainee',
+                   'Apprentice Engineer', 'Student at Imperial College', 'Industrial Placement']) {
+    assert.equal(isJunior(t), true, t);
+  }
+  // real senior jobs that happen to contain one of those words
+  for (const t of ['Principal Security Engineer', 'Internal Audit Lead', 'International Sales Director',
+                   'Head of Student Services', 'Director of Undergraduate Admissions',
+                   'Senior Cloud Security Engineer', '']) {
+    assert.equal(isJunior(t), false, t);
+  }
+});
+
+test('years of work are counted from the whole history, internships left out', () => {
+  const now = new Date('2026-09-23T00:00:00Z');
+  const h = [
+    { term: 'Senior Security Engineer', duration: 'Jan 2022 - Present · 4 yrs 8 mos' },
+    { term: 'Security Engineer', duration: 'Jun 2019 – Dec 2021 · 2 yrs 7 mos' },
+    { term: 'Security Intern', duration: 'Jun 2018 – Sep 2018 · 4 mos' },
+  ];
+  // Jun 2019 to now, not 4y8m + 2y7m + the internship
+  assert.equal(experienceMonths(h, now), 87);
+  // only an internship on file: nothing commercial to count
+  assert.equal(experienceMonths([{ term: 'Security Intern', duration: '4 mos' }], now), null);
+  assert.equal(experienceMonths([], now), null);
+});
+
+test('only a clear case rules someone out as too junior', () => {
+  assert.equal(tooJunior({ experienceMonths: 20 }), true);
+  assert.equal(tooJunior({ experienceMonths: 40 }), false);
+  assert.equal(tooJunior({ headline: 'Cyber Security Intern at Deloitte' }), true);
+  assert.equal(tooJunior({ currentTitle: 'Graduate Scheme', experienceMonths: 99 }), true);
+  // a card that hid older roles is not proof of anything
+  assert.equal(tooJunior({ experienceMonths: 20, historyTruncated: true }), false);
+  // nothing known is never a reason to drop someone
+  assert.equal(tooJunior({}), false);
+  // the bar is settable, and 0 turns it off
+  assert.equal(tooJunior({ experienceMonths: 20 }, 12), false);
+  assert.equal(tooJunior({ experienceMonths: 1 }, 0), false);
+  assert.equal(DEFAULT_MIN_EXPERIENCE_MONTHS, 36);
+});
+
+test('an intern is not invited or InMailed', async () => {
+  const { runConnect } = await import('../src/actions/connect.js');
+  const s = new Store(path.join(home, `db-jr-${Math.random()}.json`));
+  s.data.meta.ownName = 'Kai Crayford';
+  s.upsertLead({ url: 'linkedin.com/in/sen', name: 'Senior Person', campaign: 'c1', approved: true, degree: '2nd', tenureMonths: 30, experienceMonths: 120 });
+  s.upsertLead({ url: 'linkedin.com/in/jr', name: 'Junior Person', campaign: 'c1', approved: true, degree: '2nd', tenureMonths: 30, experienceMonths: 18 });
+  s.upsertLead({ url: 'linkedin.com/in/int', name: 'Intern Person', campaign: 'c1', approved: true, degree: '2nd', tenureMonths: 30, experienceMonths: 120, currentTitle: 'Security Intern' });
+  s.upsertLead({ url: 'linkedin.com/in/cut', name: 'Cut Short', campaign: 'c1', approved: true, degree: '2nd', tenureMonths: 30, experienceMonths: 18, historyTruncated: true });
+  s.save();
+  const cfg = {
+    name: 'c1', mode: 'candidates', autoApprove: false, noteMaxLength: 300,
+    connectionNotes: ['Hey {firstName}, would be great to connect.'],
+    followUps: [], dailyCaps: { connects: 10, messages: 5, profileViews: 30 },
+    workingHours: null, pauseBetweenActionsSec: [0, 0],
+  };
+  const invited = [];
+  await runConnect(null, s, cfg, { ops: { sendConnectionRequest: async (p, url) => { invited.push(url); return { result: 'sent', info: {} }; } }, pause: false });
+  assert.ok(invited.some(u => u.includes('/sen')), 'the senior person is invited');
+  assert.ok(invited.some(u => u.includes('/cut')), 'a truncated history is not a reason to drop someone');
+  assert.ok(!invited.some(u => u.includes('/jr')), 'under 3 years is left alone');
+  assert.ok(!invited.some(u => u.includes('/int')), 'an intern is left alone');
+});
+
+const { SENIORITY, levelFromTitle, minExperienceFor, overLevelled } = await import('../src/company.js');
+
+test('the level comes off the role title, and sets the years bar', () => {
+  assert.equal(levelFromTitle('Head of Compliance'), 'lead');
+  assert.equal(levelFromTitle('Lead Security Engineer'), 'lead');
+  assert.equal(levelFromTitle('Principal Engineer'), 'lead');
+  assert.equal(levelFromTitle('VP Engineering'), 'lead');
+  assert.equal(levelFromTitle('Senior Cloud Security Engineer'), 'senior');
+  assert.equal(levelFromTitle('Junior Analyst'), 'junior');
+  assert.equal(levelFromTitle('Graduate Developer'), 'junior');
+  assert.equal(levelFromTitle('Security Engineer'), 'mid');
+
+  assert.equal(SENIORITY.junior.minYears, 1);
+  assert.equal(SENIORITY.junior.maxYears, 2);
+  assert.equal(SENIORITY.lead.minYears, 6);
+
+  assert.equal(minExperienceFor({ role: { title: 'Lead Security Engineer' } }), 72);
+  assert.equal(minExperienceFor({ role: { title: 'Senior Cloud Security Engineer' } }), 36);
+  assert.equal(minExperienceFor({ seniority: 'junior', role: { title: 'Lead X' } }), 12);
+  // a bar set by hand wins over the level
+  assert.equal(minExperienceFor({ minExperienceMonths: 24, seniority: 'lead' }), 24);
+  assert.equal(minExperienceFor({ minExperienceMonths: 0, seniority: 'lead' }), 0);
+});
+
+test('a lead role turns away five years, a senior role does not', () => {
+  const five = { experienceMonths: 60 };
+  assert.equal(tooJunior(five, minExperienceFor({ role: { title: 'Lead Security Engineer' } })), true);
+  assert.equal(tooJunior(five, minExperienceFor({ role: { title: 'Senior Security Engineer' } })), false);
+});
+
+test('being past the level is a note, never a reason to drop someone', () => {
+  const veteran = { experienceMonths: 120 };
+  assert.equal(overLevelled(veteran, { seniority: 'junior' }), true);
+  assert.equal(overLevelled(veteran, { seniority: 'lead' }), false);       // no top end on a lead role
+  assert.equal(overLevelled({}, { seniority: 'junior' }), false);          // nothing known
+  assert.equal(tooJunior(veteran, minExperienceFor({ seniority: 'junior' })), false);
+});
