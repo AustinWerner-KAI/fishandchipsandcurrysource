@@ -13,7 +13,7 @@ import { Jobs } from './jobs.js';
 import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
 import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
-import { tenureLabel, tenureOk, sizeWord, tooJunior, isJunior, minExperienceFor, overLevelled, levelFromTitle, SENIORITY, MIN_TENURE_MONTHS } from './company.js';
+import { tenureLabel, tenureOk, sizeWord, tooJunior, juniorTitle, minExperienceFor, overLevelled, levelFromTitle, SENIORITY, MIN_TENURE_MONTHS } from './company.js';
 import { scoreLead } from './rank.js';
 import { render, renderChecked, nameFor } from './template.js';
 import { rankLeads, cleanLead } from './rank.js';
@@ -163,7 +163,7 @@ export function state(jobs, campaignName) {
         tenureOk: tenureOk(months, minTenure),
         experience: tenureLabel(l.experienceMonths ?? null),
         tooJunior: tooJunior(l, minExperience),
-        juniorTitle: isJunior(l.currentTitle) || isJunior(l.headline),
+        juniorTitle: juniorTitle(l),
         overLevelled: cfg ? overLevelled(l, cfg) : false,
       };
     }),
@@ -254,6 +254,23 @@ export function createApp({ jobs = new Jobs() } = {}) {
         }
         return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
       }
+      // "Contact them anyway": Kai has looked at someone the tenure or seniority rule held back
+      // and decided they are worth approaching. Nobody at a client can ever be let through.
+      if (u.pathname === '/api/hold-override') {
+        const store = new Store();
+        const clients = allClients();
+        let n = 0;
+        for (const url of [].concat(b.urls || b.url || [])) {
+          const l = store.get(url);
+          if (!l || offLimits(l, clients)) continue;
+          if (b.on === false) { l.holdOverride = undefined; l.approved = false; }
+          else { l.holdOverride = true; l.approved = true; }
+          n++;
+        }
+        store.save();
+        return json(200, { ok: true, n });
+      }
+
       if (u.pathname === '/api/approve') {
         const store = new Store();
         const clients = allClients();

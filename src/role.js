@@ -38,6 +38,9 @@ export function timezoneFor(location) {
 }
 
 // Words that mean "this person is a recruiter, not a candidate".
+// Only other recruiters are excluded in the search itself. Interns and juniors are held back
+// locally instead: LinkedIn's NOT matches anywhere on a profile, so excluding "intern" here
+// would also lose a senior person who still lists the internship they did ten years ago.
 export const DEFAULT_EXCLUDE = ['recruiter', 'talent acquisition', 'headhunter'];
 
 // Domain words we look for in a spec. First match wins the domain group of the boolean.
