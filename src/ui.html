@@ -253,7 +253,7 @@ const GROUPS = { approved: ['new'], todo: ['new'], first: ['new'], short: ['new'
 const GROUP_LABEL = { approved: 'Approved', todo: 'To approve', first: '1st connections', short: 'Under a year', junior: 'Too junior', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
 const isFirst = l => l.degree === '1st';
 // Under a year at their employer: kept out of the approve list and never contacted, but still here to look at.
-const isShort = l => l.tenureOk === false;
+const isShort = l => l.tenureOk === false && !l.holdOverride;
 // An intern or trainee, or not enough commercial years behind them. Worked out on the server.
 const isJunior = l => l.tooJunior === true;
 // "To approve" is people to invite; 1st connections are already connected and get a free message instead
@@ -373,6 +373,7 @@ document.addEventListener('click', e => {
   if (act === 'exclude') return setStatus(url, 'skipped');
   if (act === 'putBack') return setStatus(url, 'new');
   if (act === 'setName') return setName(url);
+  if (act === 'holdOverride') return holdOverride(url);
 });
 document.addEventListener('change', e => {
   const c = e.target.closest('input[data-act="approve"]'); if (c) approve(c.dataset.url, c.checked);
@@ -443,6 +444,15 @@ function firmLine(l){
   return bits.length ? `<div class="firm">${bits.join(' · ')}</div>` : '';
 }
 
+async function holdOverride(url){
+  const l = S.leads.find(x=>x.url===url); if (!l) return;
+  const why = isJunior(l) ? (l.juniorTitle ? 'their title reads intern or trainee' : `the card shows ${l.experience||'too little'} of commercial work`) : `they have only been at ${l.company||'their employer'} ${l.tenure}`;
+  if (!confirm(`Contact ${l.name} anyway?\n\nSourcer held them back because ${why}. This approves them and the next run will invite them.`)) return;
+  await api('/api/hold-override',{url, on:true});
+  toast(`${l.name} approved. Invite on the next run.`);
+  load();
+}
+
 const LEVEL_YEARS = { junior:1, mid:3, senior:3, lead:6 };
 function levelPicked(){ $('#cfgExp').value = LEVEL_YEARS[$('#cfgLevel').value] ?? 3; settingsDirty=true; }
 
@@ -454,6 +464,7 @@ async function inmailSent(url, kind){ if (kind!=='followUp' && !confirm('Sent it
 const sc = l => l.rank && l.rank.score != null ? l.rank.score : -1;
 function nextStep(l){
   if (l.offLimits) return `Works at your client ${esc(l.offLimits)}. Never contacted.`;
+  if (l.holdOverride && l.status==='new') return 'You said contact them anyway. Invite on the next run.';
   if (isJunior(l) && l.status==='new') return l.juniorTitle ? 'Their title reads intern or trainee. Not contacted.' : `Only ${esc(l.experience||'a short time')} of commercial work. Not contacted.`;
   if (isShort(l) && l.status==='new') return `Only ${esc(l.tenure)} at ${esc(l.company||'their employer')}. Not contacted.`;
   if (l.status==='new') return isFirst(l) ? 'Connected: message from the 1st connections card' : l.approved ? 'Invite on the next run' : 'Tick to approve';
@@ -482,7 +493,7 @@ function renderPeople(){
     <td>${l.offLimits?`<span class="chip chip-error">client</span>`:`<span class="chip chip-${l.status}">${l.status==='skipped'?'excluded':l.status}</span>`}</td>
     <td><input type="checkbox" aria-label="Approve ${esc(l.name)}" ${l.approved?'checked':''} ${l.status!=='new'||isFirst(l)||l.offLimits||isShort(l)||isJunior(l)?'disabled':''} data-act="approve" data-url="${esc(l.url)}"></td>
     <td class="sub">${nextStep(l)}</td>
-    <td>${l.offLimits?'':l.status==='new'?`<button class="small" data-act="exclude" data-url="${esc(l.url)}">Exclude</button>`:''}${/first name/.test(l.error||'')?`<button class="small primary" data-act="setName" data-url="${esc(l.url)}">Set first name</button>`:(l.status==='skipped'&&l.skippedByHand)||(l.status==='error'&&!l.invitedAt)?`<button class="small" data-act="putBack" data-url="${esc(l.url)}">Put back</button>`:''}</td>
+    <td>${l.offLimits?'':l.status==='new'&&(isShort(l)||isJunior(l))?`<button class="small primary" data-act="holdOverride" data-url="${esc(l.url)}">Contact anyway</button>`:l.status==='new'?`<button class="small" data-act="exclude" data-url="${esc(l.url)}">Exclude</button>`:''}${/first name/.test(l.error||'')?`<button class="small primary" data-act="setName" data-url="${esc(l.url)}">Set first name</button>`:(l.status==='skipped'&&l.skippedByHand)||(l.status==='error'&&!l.invitedAt)?`<button class="small" data-act="putBack" data-url="${esc(l.url)}">Put back</button>`:''}</td>
   </tr>`).join('') || `<tr><td colspan="6" class="sub">${S.leads.length ? 'Nobody in this group.' : 'Nobody yet. Press Search.'}</td></tr>`;
 }
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
@@ -588,7 +599,7 @@ function fillSettings(){
   document.querySelectorAll('.day').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
   const p=c.pauseBetweenActionsSec||[60,240]; $('#pauseMin').value=p[0]; $('#pauseMax').value=p[1];
   fillPreviewPeople();
-  $('#cfgPages').value=c.maxSearchPages||5; $('#cfgSearchUrl').value=c.searchUrl||''; $('#cfgTenure').value=c.minTenureMonths==null?12:c.minTenureMonths; $('#cfgLevel').value=S.seniority||'senior'; $('#cfgExp').value=Math.round((S.minExperienceMonths||36)/12);
+  $('#cfgPages').value=c.maxSearchPages||5; $('#cfgSearchUrl').value=c.searchUrl||''; $('#cfgTenure').value=c.minTenureMonths==null?12:c.minTenureMonths; $('#cfgLevel').value=c.seniority||S.seniority||'senior'; $('#cfgExp').value=Math.round((c.minExperienceMonths==null?(S.minExperienceMonths??36):c.minExperienceMonths)/12);
 }
 function fillPreviewPeople(){
   const sel=$('#pvPerson'); const keep=sel.value;
