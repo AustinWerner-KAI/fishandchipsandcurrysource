@@ -288,7 +288,12 @@ function applyJob(j){
   const h=S&&S.hours, waiting = j.running && mine && j.name==='run' && h && !h.open && h.nextStart;
   const other = j.running && j.campaign && !mine ? ` (${((S&&S.roles)||[]).find(r=>r.name===j.campaign)?.title || j.campaign})` : '';
   $('#jobText').textContent = j.running ? (j.stopping ? 'stopping' : waiting ? `waiting for ${whenIn(h.nextStart, h.timezone)}` : `running: ${j.name}${other}`) : 'idle';
-  for (const id of ['btnLogin','btnLoginR','btnSearch','btnRun','btnOnce','btnRecord','btnRecord2']) { const b=$('#'+id); if(b) b.disabled = j.running || (!id.startsWith('btnLogin') && !(S&&S.campaign)); }
+  const runGoing = j.running && ['run','once'].includes(j.name);
+  for (const id of ['btnLogin','btnLoginR','btnSearch','btnRun','btnOnce','btnRecord','btnRecord2']) {
+    const b=$('#'+id); if(!b) continue;
+    // Search still works during a run: it is lined up for the same browser
+    b.disabled = (id==='btnSearch' ? (j.running && !runGoing) : j.running) || (!id.startsWith('btnLogin') && !(S&&S.campaign));
+  }
   $('#btnStop').disabled = !j.running;
   $('#btnStop').textContent = j.stopping ? 'Force stop' : 'Stop';
   if (j.running) $('#activity').open = true;
@@ -473,6 +478,8 @@ function renderStart(){
       ? `<b>Outreach on.</b> Waiting for ${h.nextStart?whenIn(h.nextStart, wh.timezone):'working hours'}. ${approved} to invite.`
       : `<b>Outreach running.</b> Invited ${invited} of ${cap} today. ${approved} still to invite.${last}`,
       `<button class="small" onclick="job('stop')">Stop</button>`);
+  } else if (j.running && (S.queued||[]).includes('search')) {
+    html += bar('', `<b>Search starting</b> for this role, in a second tab of the same Chrome. Outreach keeps going in the first tab.`);
   } else if (j.running) {
     html += bar('', `<b>Busy:</b> ${esc(j.name)}${j.campaign&&j.campaign!==S.campaign?` for ${esc(((S.roles||[]).find(r=>r.name===j.campaign)||{}).title||j.campaign)}`:''}. Outreach can start when it finishes.`);
   } else if (approved || lined) {
@@ -507,6 +514,12 @@ async function startOutreach(){
 }
 async function job(action, confirmed){
   if (action==='stop') { await api('/api/job',{action:'stop'}); return load(); }
+  // one Chrome for everything: a search asked for mid-run happens on the next pass
+  if (action==='search' && S.job.running && ['run','once'].includes(S.job.name)) {
+    await api('/api/job',{action:'search', campaign:S.campaign});
+    toast('Searching in a second tab of the same Chrome. Watch Activity.');
+    return load();
+  }
   if (action==='run' && !confirmed && !confirm('Run all day inside working hours? A Chrome window opens and works through approved people. Keep this window open and the Mac awake.')) return;
   await api('/api/job',{action, campaign:S.campaign});
   lastLog = 0; $('#log').textContent=''; $('#activity').open = true;
