@@ -104,3 +104,90 @@ export function parseCompanyAbout(text) {
 export function tooNewInRole(lead, min = MIN_TENURE_MONTHS) {
   return tenureOk(lead?.tenureMonths, min) === false;
 }
+
+// ---- seniority ----
+
+// Titles that are not commercial senior work. Matched on whole words so "internal" and
+// "Principal" are never caught by "intern".
+const JUNIOR_WORDS = [
+  'intern', 'interns', 'internship', 'internships', 'trainee', 'traineeship', 'apprentice',
+  'apprenticeship', 'placement', 'work experience', 'graduate scheme', 'graduate programme',
+  'graduate program', 'grad scheme', 'student at', 'summer analyst', 'co-op',
+];
+// "student" and "undergraduate" on their own are left out on purpose: "Head of Student Services"
+// and "Director of Undergraduate Admissions" are real senior jobs. Anyone still studying has no
+// commercial history to speak of, so the years rule catches them instead.
+
+export function isJunior(text) {
+  const s = String(text || '').toLowerCase();
+  return JUNIOR_WORDS.some(w => new RegExp(`(^|[^a-z])${w.replace(/[-\s]/g, '[-\\s]')}([^a-z]|$)`, 'i').test(s));
+}
+
+// Total commercial months from a Recruiter card's work history. Internships and student roles
+// do not count. Overlapping roles are not double counted: the span from the earliest start is
+// used when dates are there, and the durations are added up when they are not.
+export function experienceMonths(history, now = new Date()) {
+  const real = (history || []).filter(h => !isJunior(h.term) && !isJunior(h.duration));
+  if (!real.length) return null;
+  const spans = real.map(h => tenureMonths(h.duration, now)).filter(m => m != null);
+  if (!spans.length) return null;
+  const starts = real.map(h => startOf(h.duration)).filter(Boolean);
+  if (starts.length) {
+    const earliest = starts.sort((a, b) => a - b)[0];
+    const months = (now.getUTCFullYear() - earliest.getUTCFullYear()) * 12 + (now.getUTCMonth() - earliest.getUTCMonth());
+    if (months >= 0) return Math.max(months, ...spans);
+  }
+  return spans.reduce((a, b) => a + b, 0);
+}
+
+// The first date in "Jan 2023 - Present", as a Date, or null.
+function startOf(text) {
+  const m = String(text || '').match(/([A-Za-z]{3,9})?\s*(\d{4})\s*[-–—]/);
+  if (!m) return null;
+  const i = MONTHS.indexOf(String(m[1] || '').slice(0, 3).toLowerCase());
+  return new Date(Date.UTC(+m[2], i < 0 ? 0 : i, 1));
+}
+
+// How many years of commercial work each level means. The minimum is what holds people back;
+// the maximum only labels someone as over-levelled, it never drops them.
+export const SENIORITY = {
+  junior: { label: 'Junior', minYears: 1, maxYears: 2 },
+  mid:    { label: 'Mid',    minYears: 3, maxYears: 5 },
+  senior: { label: 'Senior', minYears: 3, maxYears: null },
+  lead:   { label: 'Lead',   minYears: 6, maxYears: null },
+};
+
+// Reads the level off the role's own title, so a new role starts with the right bar.
+export function levelFromTitle(title) {
+  const t = String(title || '').toLowerCase();
+  if (/\b(head of|chief|vp|vice president|director|principal|lead|staff|architect)\b/.test(t)) return 'lead';
+  if (/\b(senior|snr|sr\.?)\b/.test(t)) return 'senior';
+  if (/\b(junior|jnr|jr\.?|graduate|entry level|associate)\b/.test(t)) return 'junior';
+  return 'mid';
+}
+
+// The bar for a role: whatever was set on it, else its level, else senior.
+export function minExperienceFor(cfg) {
+  if (cfg?.minExperienceMonths != null) return cfg.minExperienceMonths;
+  const level = SENIORITY[cfg?.seniority] || SENIORITY[levelFromTitle(cfg?.role?.title)] || SENIORITY.senior;
+  return level.minYears * 12;
+}
+
+// More years behind them than the level asks for. Shown as a note, never a reason to drop anyone.
+export function overLevelled(lead, cfg) {
+  const level = SENIORITY[cfg?.seniority] || SENIORITY[levelFromTitle(cfg?.role?.title)];
+  if (!level?.maxYears || lead?.experienceMonths == null) return false;
+  return lead.experienceMonths > level.maxYears * 12;
+}
+
+export const DEFAULT_MIN_EXPERIENCE_MONTHS = 36;
+
+// True only when we are sure: their title says junior, or their full history adds up to less
+// than the minimum. A history the card cut short is never enough to rule someone out.
+export function tooJunior(lead, minMonths = DEFAULT_MIN_EXPERIENCE_MONTHS) {
+  if (!minMonths) return false;
+  if (isJunior(lead?.currentTitle) || isJunior(lead?.headline)) return true;
+  if (lead?.historyTruncated) return false;
+  const months = lead?.experienceMonths;
+  return months != null && months < minMonths;
+}

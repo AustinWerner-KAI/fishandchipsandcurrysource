@@ -173,13 +173,15 @@ export class Store {
     const now = new Date().toISOString();
     if (existing) {
       // keep status and history, refresh descriptive fields only when we have better ones
-      for (const k of ['name', 'headline', 'company', 'location', 'companyUrl', 'sector']) {
+      for (const k of ['name', 'headline', 'company', 'location', 'companyUrl', 'sector', 'currentTitle']) {
         if (partial[k] && !existing[k]) existing[k] = partial[k];
       }
       // Tenure only ever grows, and a stale reading would hold a good person back for months,
       // so a fresh one always wins.
       if (partial.tenureMonths != null) existing.tenureMonths = partial.tenureMonths;
       if (partial.tenureText) existing.tenureText = partial.tenureText;
+      if (partial.experienceMonths != null) existing.experienceMonths = partial.experienceMonths;
+      if (partial.historyTruncated != null) existing.historyTruncated = partial.historyTruncated;
       if (partial.name && !existing.firstName) existing.firstName = firstNameOf(partial.name);
       existing.updatedAt = now;
       return existing;
@@ -195,6 +197,9 @@ export class Store {
       sector: partial.sector || '',                 // what Recruiter said, until the company page is read
       tenureText: partial.tenureText || '',         // "2 yrs 4 mos" as LinkedIn wrote it
       tenureMonths: partial.tenureMonths ?? null,   // the same in months, null when we could not read it
+      currentTitle: partial.currentTitle || '',
+      experienceMonths: partial.experienceMonths ?? null,   // commercial months, internships not counted
+      historyTruncated: !!partial.historyTruncated,         // the card hid older roles, so the total is a floor
       location: partial.location || '',
       campaign: partial.campaign || 'default',
       status: 'new',
