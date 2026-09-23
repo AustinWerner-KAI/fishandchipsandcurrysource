@@ -19,8 +19,12 @@ export function creditsFromText(text) {
 }
 
 export async function readComposerCredits(page) {
-  const t = await page.locator(SEL.recruiterCreditText[0]).first().innerText().catch(() => '');
-  return creditsFromText(t);
+  for (const sel of SEL.recruiterCreditText) {
+    const t = await page.locator(sel).first().innerText().catch(() => '');
+    const c = creditsFromText(t);
+    if (c) return c;
+  }
+  return null;
 }
 
 // Returns { sent, rehearsed, credits, reason? }
@@ -51,7 +55,8 @@ export async function sendRecruiterInMail(page, url, { subject, body, rehearse =
   await sleep(randomBetween(800, 1500));
   const credits = await readComposerCredits(page);
 
-  const send = await firstVisible(composer, SEL.recruiterComposerSend, 4000);
+  // Send lives outside the message box itself, so look in the panel and then on the page
+  const send = await firstVisible(composer, SEL.recruiterComposerSend, 2000) || await firstVisible(page, SEL.recruiterComposerSend, 4000);
   if (!send) { await snap(page, 'recruiter-no-send'); await saveDom(page, 'recruiter-no-send'); return { sent: false, credits, reason: 'no Send button' }; }
 
   if (rehearse) {
@@ -138,8 +143,12 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
       return { sent: 0, rehearsed: true };
     }
     if (!r.sent) {
+      // try again on a later pass; only a third failure becomes a problem Kai has to look at
       warn(`inmail not sent to ${lead.name || url}: ${r.reason}`);
-      store.setStatus(lead.url, 'error', { error: `InMail not sent: ${r.reason}` });
+      const cur = store.get(lead.url) || lead;
+      cur.inmailFails = (cur.inmailFails || 0) + 1;
+      cur.lastTryError = `InMail: ${r.reason}`;
+      if (cur.inmailFails >= 3) store.setStatus(lead.url, 'error', { error: `InMail not sent after 3 tries (${r.reason})` });
       store.save();
       if (pause) await pauseFor(humanPauseMs([20, 60]));
       continue;
@@ -148,6 +157,7 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
     store.recordAction('inmail', lead.url, { campaign: cfg.name });
     store.save();
     sent++; budget--;
+    delete lead.inmailFails; delete lead.lastTryError;
     log(`InMail sent to ${lead.name || url}`);
     if (pause) await pauseFor(humanPauseMs(cfg.pauseBetweenActionsSec));
   }
