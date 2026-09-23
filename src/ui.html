@@ -39,6 +39,11 @@ button:disabled{opacity:.45;cursor:default}
 .tab .sub{margin-left:6px}
 .role-title{font-size:18px;font-weight:600}
 code.bool{display:block;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0;white-space:pre-wrap;word-break:break-word}
+.firm{font-size:12px;color:var(--muted);margin-top:2px}
+.firm b{color:var(--ink);font-weight:600}
+.ten-ok{color:var(--ok)}
+.ten-short{color:var(--bad)}
+.ten-unknown{opacity:.6}
 .filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .filters button{font-size:12px;padding:4px 10px;border-radius:999px}
 .filters button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -208,6 +213,7 @@ details.card[open]>summary{margin-bottom:10px}
             <div class="row"><input type="time" id="hStart" aria-label="Start"><span class="sub">to</span><input type="time" id="hEnd" aria-label="End"></div>
             <div class="row" style="margin-top:6px" id="days"></div></div>
           <div class="field"><label>Pause between actions, seconds</label><div class="row"><input type="number" id="pauseMin" min="20" aria-label="Minimum pause"><span class="sub">to</span><input type="number" id="pauseMax" min="30" aria-label="Maximum pause"></div></div>
+          <div class="field"><label for="cfgTenure">Least time at their employer, months</label><input type="number" id="cfgTenure" min="0" max="120"><div class="sub">Anyone below this sits under "Under a year" and is never contacted. 0 turns the rule off.</div></div>
           <div class="field"><label for="cfgPages">Pages of results per search</label><input type="number" id="cfgPages" min="1" max="20"></div>
           <div class="field"><label for="cfgSearchUrl">Override search URL (normally empty)</label><input type="text" id="cfgSearchUrl"></div>
           <button class="primary" onclick="saveSettings()">Save settings</button>
@@ -241,15 +247,19 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = u => { let h=5381; for (const c of String(u)) h=((h*33)^c.codePointAt(0))>>>0; return 'k'+h.toString(36); };   // unique per URL, safe as an id
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const GROUPS = { approved: ['new'], todo: ['new'], first: ['new'], contacted: ['invited','accepted','messaged'], replied: ['replied'], closed: ['done','skipped','error'] };
-const GROUP_LABEL = { approved: 'Approved', todo: 'To approve', first: '1st connections', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
+const GROUPS = { approved: ['new'], todo: ['new'], first: ['new'], short: ['new'], contacted: ['invited','accepted','messaged'], replied: ['replied'], closed: ['done','skipped','error'] };
+const GROUP_LABEL = { approved: 'Approved', todo: 'To approve', first: '1st connections', short: 'Under a year', contacted: 'Contacted', replied: 'Replied', closed: 'Closed' };
 const isFirst = l => l.degree === '1st';
+// Under a year at their employer: kept out of the approve list and never contacted, but still here to look at.
+const isShort = l => l.tenureOk === false;
 // "To approve" is people to invite; 1st connections are already connected and get a free message instead
 // anyone at a client sits in Closed, whatever their status
 // Approved = the people the next run invites. To approve = everyone still waiting for a decision.
-const isApproved = l => l.status === 'new' && l.approved && !isFirst(l) && !l.offLimits;
-const inGroup = (l, g) => g === 'all' || (l.offLimits ? g === 'closed' : GROUPS[g].includes(l.status) && (
-  g === 'approved' ? isApproved(l) : g === 'todo' ? !isFirst(l) && !l.approved : g === 'first' ? isFirst(l) : true));
+const isApproved = l => l.status === 'new' && l.approved && !isFirst(l) && !l.offLimits && !isShort(l);
+const inGroup = (l, g) => g === 'all' || (l.offLimits ? g === 'closed'
+  : l.status === 'new' && isShort(l) ? g === 'short'
+  : GROUPS[g].includes(l.status) && (
+      g === 'approved' ? isApproved(l) : g === 'todo' ? !isFirst(l) && !l.approved : g === 'first' ? isFirst(l) : g === 'short' ? false : true));
 let firstOff = new Set();
 let S = null, campaign = '', filter = 'todo', sortBy = 'match', lastLog = 0, openComposer = null, settingsDirty = false, currentTz = 'Asia/Dubai', mode = 'role', boolOpen = false, R = null;
 try { campaign = localStorage.getItem('campaign') || ''; } catch {}
@@ -414,6 +424,18 @@ function compose(url, reply, keep){
   if (!keep) ta.focus();
 }
 async function queueOne(url, resume){ const text=$('#t-'+key(url)).value.trim(); if(!text) return; await api('/api/queue',{campaign:S.campaign, items:[{url,text,resume}]}); openComposer=null; toast('Queued. Goes on the next pass.'); load(); }
+// Company, sector, size and how long they have been there. Anything we do not know is left out
+// rather than shown as blank, and an unknown tenure says so instead of pretending it is fine.
+function firmLine(l){
+  const bits = [];
+  if (l.company) bits.push(`<b>${esc(l.company)}</b>`);
+  if (l.sector) bits.push(esc(l.sector));
+  if (l.sizeText) bits.push(`${esc(l.sizeText)}${l.sizeWord?` · ${esc(l.sizeWord)}`:''}`);
+  if (l.tenure) bits.push(`<span class="${l.tenureOk===false?'ten-short':'ten-ok'}">${esc(l.tenure)} there</span>`);
+  else if (l.status==='new') bits.push('<span class="ten-unknown">tenure unknown</span>');
+  return bits.length ? `<div class="firm">${bits.join(' · ')}</div>` : '';
+}
+
 function copyThread(url){ const l=S.leads.find(x=>x.url===url); navigator.clipboard.writeText(`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message. Keep it short.`); toast('Copied. Paste it to Claude.'); }
 function copyText(i){ const p=S.inmail[i]; navigator.clipboard.writeText(`${p.subject}\n\n${p.text}`); toast('Copied. Paste it into Recruiter Lite.'); }
 async function inmailReplied(url){ const text = prompt('Paste their reply (optional). It moves them to Replies and gives the InMail credit back.', ''); if (text===null) return; await api('/api/inmail-replied',{url, text}); toast('Moved to Replies. Credit back.'); load(); }
@@ -422,6 +444,7 @@ async function inmailSent(url, kind){ if (kind!=='followUp' && !confirm('Sent it
 const sc = l => l.rank && l.rank.score != null ? l.rank.score : -1;
 function nextStep(l){
   if (l.offLimits) return `Works at your client ${esc(l.offLimits)}. Never contacted.`;
+  if (isShort(l) && l.status==='new') return `Only ${esc(l.tenure)} at ${esc(l.company||'their employer')}. Not contacted.`;
   if (l.status==='new') return isFirst(l) ? 'Connected: message from the 1st connections card' : l.approved ? 'Invite on the next run' : 'Tick to approve';
   if (l.direct && l.status==='accepted') return 'Message goes on the next run';
   if (l.status==='invited') return `Invited ${when(l.invitedAt)}`;
@@ -444,16 +467,16 @@ function renderPeople(){
   $('#today').textContent = `${approved} approved and waiting · today ${cap('connects')} invites, ${cap('messages')} messages, ${cap('profileViews')} profile views${wk}${crd}`;
   $('#rows').innerHTML = rows.map(l=>`<tr>
     <td><span class="match ${sc(l)>=70?'hi':sc(l)>=45?'mid':'lo'}">${sc(l)<0?'':sc(l)}</span></td>
-    <td><a href="${esc(l.recruiterUrl||l.url)}" target="_blank">${esc(l.name||'(no name)')}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''}<div class="sub">${esc(l.headline)}${l.location?` · ${esc(l.location)}`:''}</div>${l.rank&&l.rank.reasons.length?`<div class="sub">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
+    <td><a href="${esc(l.recruiterUrl||l.url)}" target="_blank">${esc(l.name||'(no name)')}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''}<div class="sub">${esc(l.headline)}${l.location?` · ${esc(l.location)}`:''}</div>${firmLine(l)}${l.rank&&l.rank.reasons.length?`<div class="sub">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
     <td>${l.offLimits?`<span class="chip chip-error">client</span>`:`<span class="chip chip-${l.status}">${l.status==='skipped'?'excluded':l.status}</span>`}</td>
-    <td><input type="checkbox" aria-label="Approve ${esc(l.name)}" ${l.approved?'checked':''} ${l.status!=='new'||isFirst(l)||l.offLimits?'disabled':''} data-act="approve" data-url="${esc(l.url)}"></td>
+    <td><input type="checkbox" aria-label="Approve ${esc(l.name)}" ${l.approved?'checked':''} ${l.status!=='new'||isFirst(l)||l.offLimits||isShort(l)?'disabled':''} data-act="approve" data-url="${esc(l.url)}"></td>
     <td class="sub">${nextStep(l)}</td>
     <td>${l.offLimits?'':l.status==='new'?`<button class="small" data-act="exclude" data-url="${esc(l.url)}">Exclude</button>`:''}${/first name/.test(l.error||'')?`<button class="small primary" data-act="setName" data-url="${esc(l.url)}">Set first name</button>`:(l.status==='skipped'&&l.skippedByHand)||(l.status==='error'&&!l.invitedAt)?`<button class="small" data-act="putBack" data-url="${esc(l.url)}">Put back</button>`:''}</td>
   </tr>`).join('') || `<tr><td colspan="6" class="sub">${S.leads.length ? 'Nobody in this group.' : 'Nobody yet. Press Search.'}</td></tr>`;
 }
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
-async function approveVisible(on){ const urls = S.leads.filter(l=>inGroup(l,filter)&&l.status==='new'&&!isFirst(l)&&!l.offLimits&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
-async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!isFirst(l)&&!l.offLimits&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
+async function approveVisible(on){ const urls = S.leads.filter(l=>inGroup(l,filter)&&l.status==='new'&&!isFirst(l)&&!l.offLimits&&!isShort(l)&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
+async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!isFirst(l)&&!l.offLimits&&!isShort(l)&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
 async function clearList(){ const {n}=await api('/api/clear',{campaign:S.campaign, dryRun:true}); if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted? Anyone already contacted stays.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
 async function setName(url){ const l=S.leads.find(x=>x.url===url); const fn=prompt(`First name for ${l?l.name||l.url:'this person'}? It goes into every message to them.`, (l&&l.firstName)||''); if(fn===null||!fn.trim()) return; await api('/api/firstname',{url, firstName:fn.trim()}); toast('Name saved'); load(); }
 async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
@@ -554,7 +577,7 @@ function fillSettings(){
   document.querySelectorAll('.day').forEach(e=>e.addEventListener('input',()=>{settingsDirty=true;}));
   const p=c.pauseBetweenActionsSec||[60,240]; $('#pauseMin').value=p[0]; $('#pauseMax').value=p[1];
   fillPreviewPeople();
-  $('#cfgPages').value=c.maxSearchPages||5; $('#cfgSearchUrl').value=c.searchUrl||'';
+  $('#cfgPages').value=c.maxSearchPages||5; $('#cfgSearchUrl').value=c.searchUrl||''; $('#cfgTenure').value=c.minTenureMonths==null?12:c.minTenureMonths;
 }
 function fillPreviewPeople(){
   const sel=$('#pvPerson'); const keep=sel.value;
@@ -572,7 +595,7 @@ async function saveSettings(){
   const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+(?:\.\d+)?)\s*d?\s*(?:\+\s*(\d+)\s*h)?\s*\|\s*(.+)$/i); return m?{afterDays:+m[1],...(m[2]?{afterHours:+m[2]}:{}),text:m[3].trim()}:{afterDays:0,text:line}; });
   const inmail = $('#imBody').value.trim() ? { afterDays:+$('#imAfter').value||7, monthlyCredits:+$('#imCredits').value||0, subject:$('#imSubject').value.trim(), body:$('#imBody').value.trim(), followUpAfterDays:+$('#imFollowAfter').value||4, followUp:$('#imFollow').value.trim(), perDay:+$('#imPerDay').value||10, viaRecruiter:true } : null;
   const firstDegree = { message:$('#fdMessage').value.trim(), followUpAfterDays:+$('#fdFollowAfter').value||4, followUp:$('#fdFollow').value.trim() };
-  const config={ inmail, firstDegree, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5,
+  const config={ inmail, firstDegree, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, minTenureMonths:Math.max(0,+$('#cfgTenure').value||0),
     connectionNotes:$('#cfgNotes').value.split('\n').map(s=>s.trim()).filter(Boolean), followUps,
     dailyCaps:{connects:+$('#capConnects').value, messages:+$('#capMessages').value, profileViews:+$('#capViews').value, weeklyConnects:+$('#capWeek').value},
     workingHours:{start:$('#hStart').value, end:$('#hEnd').value, days:[...document.querySelectorAll('.day:checked')].map(e=>+e.value), timezone:currentTz},
