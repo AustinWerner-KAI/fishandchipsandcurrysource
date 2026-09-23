@@ -77,9 +77,17 @@ test('jobs: unknown action rejected, one at a time, stop works', async () => {
   assert.equal(r.status, 400);
   r = await post('/api/job', { action: 'run', campaign: 'example' });   // runs cli.js run example: fails fast (not logged in) but exercises the plumbing
   assert.equal(r.body.running, true);
+  // Search during a run is lined up for the same browser, not refused and not a second Chrome
   const dup = await post('/api/job', { action: 'search', campaign: 'example' });
-  assert.equal(dup.status, 400);
-  assert.match(dup.body.error, /already running/);
+  assert.equal(dup.status, 200);
+  assert.equal(dup.body.queued, 'search');
+  const { pending, takeRequests } = await import('../src/requests.js');
+  assert.deepEqual(pending('example'), ['search']);
+  assert.deepEqual(takeRequests('example'), ['search']);
+  assert.deepEqual(pending('example'), []);
+  const dup2 = await post('/api/job', { action: 'connect', campaign: 'example' });
+  assert.equal(dup2.status, 400);
+  assert.match(dup2.body.error, /already running/);
   await post('/api/job', { action: 'stop' });
   for (let i = 0; i < 40 && jobs.status().running; i++) await new Promise(res => setTimeout(res, 250));
   assert.equal(jobs.status().running, false);
