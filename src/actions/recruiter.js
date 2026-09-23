@@ -3,7 +3,7 @@
 // /in/ address is looked up later, only for people Kai approves (see publicUrlFor).
 import { goto, snap, saveDom, guard, typeLikeHuman } from '../browser.js';
 import { SEL, firstVisible } from '../selectors.js';
-import { tenureMonths } from '../company.js';
+import { tenureMonths, experienceMonths } from '../company.js';
 import { log, warn } from '../log.js';
 import { sleep, randomBetween, humanPauseMs } from '../limits.js';
 import { searchLocations } from './search.js';
@@ -59,6 +59,17 @@ export async function readRecruiterResults(page) {
             .map(e => e.innerText.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' | ');
         })(),
         companyUrl: (li.querySelector('a[href*="/company/"]')?.href || '').split('?')[0],
+        // Every role on the card, so how long they have actually worked can be worked out.
+        history: [...li.querySelectorAll('[data-test-description-entry-term], li:has([data-test-description-entry-date-duration])')]
+          .map(e => ({
+            term: (e.querySelector('[data-test-description-entry-term]')?.innerText || e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+            duration: (e.querySelector('[data-test-description-entry-date-duration]')?.innerText || '').replace(/\s+/g, ' ').trim(),
+          }))
+          .filter(h => h.duration),
+        // Recruiter hides older roles behind a "show more". If one is there, we have not seen it all.
+        historyTruncated: !!li.querySelector('[data-test-expandable-list] button[aria-expanded="false"], [data-test-expandable-list] [aria-expanded="false"]')
+          || /show \d+ more|see more|\+\d+ more/i.test(li.querySelector('[data-test-expandable-list]')?.innerText || ''),
+        currentTitle: (li.querySelector('[data-test-description-entry-term]')?.innerText || '').replace(/\s+/g, ' ').trim(),
         degree,
       });
     }
@@ -188,7 +199,7 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
     let fresh = 0;
     for (const r of rows) {
       if (!r.recruiterUrl || store.findByRecruiterUrl(r.recruiterUrl)) continue;
-      const lead = store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', companyUrl: r.companyUrl || '', sector: r.industry || '', tenureText: r.tenureText || '', tenureMonths: tenureMonths(r.tenureText), campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
+      const lead = store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', companyUrl: r.companyUrl || '', sector: r.industry || '', tenureText: r.tenureText || '', tenureMonths: tenureMonths(r.tenureText), currentTitle: r.currentTitle || '', experienceMonths: experienceMonths(r.history), historyTruncated: !!r.historyTruncated, campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
       if (outsideArea(r.location, locs)) store.setStatus(lead.url, 'skipped', { error: `outside ${locs.join(' / ')} (${r.location})` });
       fresh++;
     }

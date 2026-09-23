@@ -8,7 +8,7 @@ import { isRecruiterUrl } from '../store.js';
 import { cleanLead } from '../rank.js';
 import { learn, rankLearned, noteStats, chooseNote } from '../learn.js';
 import { allClients, offLimits } from '../offlimits.js';
-import { tooNewInRole, MIN_TENURE_MONTHS } from '../company.js';
+import { tooNewInRole, tooJunior, minExperienceFor, MIN_TENURE_MONTHS } from '../company.js';
 
 const WEEK = 7 * 86400000;
 
@@ -59,11 +59,13 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   if (h?.at && Date.now() - new Date(h.at) < 60 * 60000) { log('connect: paused after earlier failures, trying again later'); return { sent: 0, paused: true }; }
   const clients = allClients();
   const minTenure = cfg.minTenureMonths ?? MIN_TENURE_MONTHS;
+  const minExperience = minExperienceFor(cfg);
   const candidates = store.leads({ campaign: cfg.name, status: 'new' })
     .filter(l => cfg.autoApprove || l.approved)
     .filter(l => cleanLead(l).degree !== '1st')          // already connected: they go in the 1st connections list
     .filter(l => !offLimits(l, clients))                 // works at a client: never contacted
-    .filter(l => !tooNewInRole(l, minTenure));           // under a year at their employer: left alone
+    .filter(l => !tooNewInRole(l, minTenure))            // under a year at their employer: left alone
+    .filter(l => !tooJunior(l, minExperience));          // an intern, or not enough years behind them
   // best match first, including what has been learned for this role
   const model = learn(store.leads({ campaign: cfg.name }), cfg.role, Date.now(), clients);
   const order = new Map(rankLearned(candidates, cfg.role, model).map(l => [l.url, l.rank.score ?? 0]));

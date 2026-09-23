@@ -86,7 +86,7 @@ export async function closeComposer(page, composer) {
 import { ACCOUNT_TZ, remaining, humanPauseMs, pauseFor, inmailCredits } from '../limits.js';
 import { renderChecked } from '../template.js';
 import { allClients, offLimits } from '../offlimits.js';
-import { tooNewInRole, MIN_TENURE_MONTHS } from '../company.js';
+import { tooNewInRole, tooJunior, minExperienceFor, MIN_TENURE_MONTHS } from '../company.js';
 import { learn, rankLearned } from '../learn.js';
 import { cleanLead } from '../rank.js';
 import { stopRequested } from '../stop.js';
@@ -110,6 +110,7 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
   const people = rankLearned(store.leads({ campaign: cfg.name, status: 'new' }), cfg.role, model)
     .filter(l => (cfg.autoApprove || l.approved) && cleanLead(l).degree !== '1st' && !offLimits(l, clients) && !l.inmail?.sentAt)
     .filter(l => !tooNewInRole(l, cfg.minTenureMonths ?? MIN_TENURE_MONTHS))
+    .filter(l => !tooJunior(l, minExperienceFor(cfg)))
     .filter(l => isRecruiterUrl(l.url) || l.recruiterUrl)
     .sort((a, b) => (b.rank.score ?? 0) - (a.rank.score ?? 0));
   if (!people.length) { log('inmail: nobody waiting that Recruiter can reach'); return { sent: 0 }; }
