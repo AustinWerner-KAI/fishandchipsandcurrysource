@@ -1,8 +1,12 @@
 import fs from 'node:fs';
 import { DB_FILE, ensureDirs } from './paths.js';
+import { companyKey } from './company.js';
 
 // A small JSON store. One person's outreach never needs more than this.
-// Shape: { meta: { ownName }, leads: { [url]: Lead }, actions: Action[] }
+// Shape: { meta: { ownName }, leads: { [url]: Lead }, companies: { [key]: Company }, actions: Action[] }
+//
+// A Company is a cache of what a company's LinkedIn page says: sector and headcount.
+// Many candidates share one employer, so it is read once and reused.
 //
 // Lead statuses:
 //   new       found by search or import, nothing sent
@@ -16,10 +20,11 @@ import { DB_FILE, ensureDirs } from './paths.js';
 
 export const STATUSES = ['new', 'invited', 'accepted', 'messaged', 'replied', 'done', 'skipped', 'error'];
 
-const EMPTY = () => ({ meta: {}, leads: {}, actions: [] });
+const EMPTY = () => ({ meta: {}, leads: {}, companies: {}, actions: [] });
 
 function parseDb(raw) {
   const data = { ...EMPTY(), ...JSON.parse(raw) };
+  data.companies ||= {};
   for (const l of Object.values(data.leads)) { l.queue ||= []; l.messages ||= []; }
   return data;
 }
@@ -75,6 +80,7 @@ export class Store {
   snapshot() {
     this.base = Object.fromEntries(Object.entries(this.data.leads).map(([k, l]) => [k, JSON.stringify(l)]));
     this.baseMeta = JSON.stringify(this.data.meta || {});
+    this.baseCompanies = Object.fromEntries(Object.entries(this.data.companies || {}).map(([k, c]) => [k, JSON.stringify(c)]));
     this.newActions = 0;
   }
 
@@ -104,6 +110,13 @@ export class Store {
         if (JSON.stringify(was[k]) === JSON.stringify(now[k])) continue;
         if (now[k] === undefined) delete out.meta[k]; else out.meta[k] = now[k];
       }
+    }
+    // Companies are a cache: whatever we looked up this pass is written over disk's copy,
+    // and a row is never removed by a merge.
+    out.companies = { ...(disk.companies || {}) };
+    for (const [k, c] of Object.entries(this.data.companies || {})) {
+      if (this.baseCompanies[k] !== JSON.stringify(c)) out.companies[k] = c;
+      else if (!out.companies[k]) out.companies[k] = c;
     }
     const mine = this.newActions ? this.data.actions.slice(-this.newActions) : [];
     out.actions = [...(disk.actions || []), ...mine];
@@ -160,9 +173,13 @@ export class Store {
     const now = new Date().toISOString();
     if (existing) {
       // keep status and history, refresh descriptive fields only when we have better ones
-      for (const k of ['name', 'headline', 'company', 'location']) {
+      for (const k of ['name', 'headline', 'company', 'location', 'companyUrl', 'sector']) {
         if (partial[k] && !existing[k]) existing[k] = partial[k];
       }
+      // Tenure only ever grows, and a stale reading would hold a good person back for months,
+      // so a fresh one always wins.
+      if (partial.tenureMonths != null) existing.tenureMonths = partial.tenureMonths;
+      if (partial.tenureText) existing.tenureText = partial.tenureText;
       if (partial.name && !existing.firstName) existing.firstName = firstNameOf(partial.name);
       existing.updatedAt = now;
       return existing;
@@ -174,6 +191,10 @@ export class Store {
       headline: partial.headline || '',
       degree: partial.degree || '',
       company: partial.company || '',
+      companyUrl: partial.companyUrl || '',
+      sector: partial.sector || '',                 // what Recruiter said, until the company page is read
+      tenureText: partial.tenureText || '',         // "2 yrs 4 mos" as LinkedIn wrote it
+      tenureMonths: partial.tenureMonths ?? null,   // the same in months, null when we could not read it
       location: partial.location || '',
       campaign: partial.campaign || 'default',
       status: 'new',
@@ -244,6 +265,45 @@ export class Store {
       if (filter.status && ![].concat(filter.status).includes(l.status)) return false;
       return true;
     });
+  }
+
+  // ---- companies (sector and headcount, read once per employer) ----
+
+  // What we know about this person's employer, or null. Never triggers a lookup.
+  companyFor(lead) {
+    const key = companyKey(lead?.companyUrl) || companyKey(lead?.company);
+    return key ? this.data.companies[key] || null : null;
+  }
+
+  // Remembers a company's page. `at` is when it was read, so it can be refreshed later.
+  setCompany(nameOrUrl, fields = {}) {
+    const key = companyKey(nameOrUrl);
+    if (!key) return null;
+    const cur = this.data.companies[key] || { key, name: '', sector: '', size: null, sizeText: '', url: '', misses: 0 };
+    this.data.companies[key] = { ...cur, ...fields, key, at: new Date().toISOString() };
+    return this.data.companies[key];
+  }
+
+  // Employers we have a name for but have not looked up yet (or looked up long ago),
+  // most common first so one pass covers the most people.
+  companiesToLookUp({ campaign, staleDays = 180, maxMisses = 3, now = new Date() } = {}) {
+    const counts = new Map();
+    for (const l of this.leads(campaign ? { campaign } : {})) {
+      const key = companyKey(l.companyUrl) || companyKey(l.company);
+      if (!key) continue;
+      const c = this.data.companies[key];
+      if (c && (c.misses || 0) >= maxMisses) continue;
+      // Only a company we actually read is left alone for a while. One we failed to read
+      // is offered again next pass, until it has used up its tries.
+      const known = c && (c.sector || c.size);
+      if (known && now - new Date(c.at) < staleDays * 86400000) continue;
+      const seen = counts.get(key) || { key, name: l.company || '', url: l.companyUrl || '', people: 0 };
+      seen.people++;
+      if (!seen.url && l.companyUrl) seen.url = l.companyUrl;
+      if (!seen.name && l.company) seen.name = l.company;
+      counts.set(key, seen);
+    }
+    return [...counts.values()].sort((a, b) => b.people - a.people);
   }
 
   // ---- actions (what we did, when; drives the daily caps) ----
