@@ -87,15 +87,16 @@ const recruiterProfile = () => `<!doctype html><html><head><title>Nathan Test | 
 <script>
 const $=s=>document.querySelector(s);
 $('button[data-test-component="message-icon-btn"]').onclick=()=>{
-  $('#slot').innerHTML = \`<section class="multi-message-composer">
+  $('#slot').innerHTML = \`<div class="messaging-composer"><div class="multi-message-composer">
     <div class="ts-common-typeahead"><input class="artdeco-typeahead__input ts-common-typeahead__input" type="text" aria-label="Search template"></div>
-    <input type="text" name="subject" placeholder="Subject">
+    <input type="text" class="compose-subject__input" data-test-compose-subject-input aria-label="Message subject" placeholder="Add a subject">
     <div class="rich-text-editor__editor-elem ql-container"><div class="ql-editor" contenteditable="true" role="textbox" style="min-height:120px;display:block"><p><br></p></div></div>
-    <div class="compose-actions"><span>Preview | 1/84 InMail Credits</span>
+    </div>
+    <div class="compose-actions"><span data-test-inmail-credits-text>1/84 InMail Credits</span>
       <button class="artdeco-button--primary" data-test-messaging-submit-btn><span>Send this message</span> Send</button>
-      <button aria-label="Dismiss">x</button></div></section>\`;
+      <button aria-label="Dismiss">x</button></div></div>\`;
   $('button[data-test-messaging-submit-btn]').onclick=()=>{
-    window.__inmail={subject:$('input[name=subject]').value, body:$('.ql-editor').innerText, template:$('.ts-common-typeahead__input').value};
+    window.__inmail={subject:$('.compose-subject__input').value, body:$('.ql-editor').innerText, template:$('.ts-common-typeahead__input').value};
     $('#slot').innerHTML='<div>Message sent</div>';
   };
 };
