@@ -245,6 +245,54 @@ test('recruiter: reads people from a real Recruiter results page', async () => {
   } finally { await b.close(); }
 });
 
+test('recruiter: reads how long someone has been at their employer', async () => {
+  const { chromium } = await import('playwright');
+  const exe = process.env.SOURCER_CHROME;
+  const b = await chromium.launch(exe ? { executablePath: exe } : {}).catch(() => null);
+  if (!b) return;   // no browser available on this machine
+  try {
+    const { readRecruiterResults } = await import('../src/actions/recruiter.js');
+    const p = await b.newPage();
+    // The same shape Recruiter uses: roles grouped by employer, the group header carrying the total.
+    await p.setContent(`
+      <ol>
+        <li data-test-paginated-profile-list-item-container>
+          <div data-test-row-lockup-full-name><a data-test-link-to-profile-link href="https://www.linkedin.com/talent/profile/AEMAAA1?x=1">Person One</a></div>
+          <div data-test-lockup-degree><span class="artdeco-entity-lockup__degree">· 2nd</span></div>
+          <div data-test-row-lockup-headline>Senior Security Engineer</div>
+          <div data-test-row-lockup-location>Dubai, United Arab Emirates</div>
+          <div data-test-current-employer-industry>· Computer and Network Security</div>
+          <div data-test-history>
+            <div data-test-history-group>
+              <div data-test-history-group-header><a href="https://www.linkedin.com/company/help-ag/">Help AG</a> · 4 yrs 1 mo</div>
+              <ol><li><span data-test-description-description>Senior Security Engineer at Help AG · 2 yrs</span>
+                  <span data-test-description-entry-date-duration>Sep 2024 - Present · 2 yrs</span></li></ol>
+            </div>
+          </div>
+        </li>
+        <li data-test-paginated-profile-list-item-container>
+          <div data-test-row-lockup-full-name><a data-test-link-to-profile-link href="https://www.linkedin.com/talent/profile/AEMAAA2">Person Two</a></div>
+          <div data-test-row-lockup-headline>Cloud Engineer</div>
+          <div data-test-history><div data-test-history-group>
+            <div data-test-history-group-header>Rain</div>
+            <ol><li><span data-test-description-entry-date-duration>Jun 2026 - Present · 4 mos</span></li></ol>
+          </div></div>
+        </li>
+        <li data-test-paginated-profile-list-item-container>
+          <div data-test-row-lockup-full-name><a data-test-link-to-profile-link href="https://www.linkedin.com/talent/profile/AEMAAA3">Person Three</a></div>
+          <div data-test-row-lockup-headline>Security Architect</div>
+        </li>
+      </ol>`);
+    const rows = await readRecruiterResults(p);
+    const { tenureMonths } = await import('../src/company.js');
+    assert.equal(rows[0].tenureText, 'Help AG · 4 yrs 1 mo');
+    assert.equal(tenureMonths(rows[0].tenureText), 49);          // the employer total, not the current role
+    assert.equal(rows[0].companyUrl, 'https://www.linkedin.com/company/help-ag/');
+    assert.equal(tenureMonths(rows[1].tenureText), 4);           // no total on the header: read from the role
+    assert.equal(tenureMonths(rows[2].tenureText), null);        // no history at all: unknown, not zero
+  } finally { await b.close(); }
+});
+
 test('server refuses requests from other websites', async () => {
   const { allowedRequest } = await import('../src/app.js');
   const req = (h, method = 'POST') => ({ method, headers: { host: '127.0.0.1:4747', 'content-type': 'application/json', ...h } });
