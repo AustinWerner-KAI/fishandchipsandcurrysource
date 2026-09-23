@@ -62,7 +62,11 @@ export async function readRecruiterResults(page) {
         // Every role on the card, so how long they have actually worked can be worked out.
         history: [...li.querySelectorAll('[data-test-description-entry-term], li:has([data-test-description-entry-date-duration])')]
           .map(e => ({
-            term: (e.querySelector('[data-test-description-entry-term]')?.innerText || e.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+            // Only the job title, never the whole row: the employer's name landing in here once
+            // made "Head of Data at Co-op" read as an internship.
+            term: (e.querySelector('[data-test-description-entry-term]')?.innerText
+              || (e.querySelector('[data-test-description-description]')?.innerText || '').split('·')[0]
+              || '').replace(/\s+/g, ' ').trim().slice(0, 160),
             duration: (e.querySelector('[data-test-description-entry-date-duration]')?.innerText || '').replace(/\s+/g, ' ').trim(),
           }))
           .filter(h => h.duration),

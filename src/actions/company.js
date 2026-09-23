@@ -52,8 +52,7 @@ export async function runCompanyLookups(page, store, cfg, { max = 8, ops = { fin
       if (!url) url = await ops.findCompanyPage(page, c.name);
       if (!url) {
         store.refresh();
-        const cur = store.data.companies[c.key];
-        store.setCompany(c.url || c.name, { name: c.name, misses: (cur?.misses || 0) + 1 });
+        for (const k of (c.keys || [c.key])) store.countMiss(k, c.name);
         store.save();
         warn(`companies: could not find a page for "${c.name}"`);
         if (pause) await pauseFor(humanPauseMs([10, 30]));
@@ -62,16 +61,16 @@ export async function runCompanyLookups(page, store, cfg, { max = 8, ops = { fin
       const about = await ops.readCompanyAbout(page, url);
       store.refresh();
       if (!about) {
-        const cur = store.data.companies[c.key];
-        store.setCompany(url, { name: c.name, url, misses: (cur?.misses || 0) + 1 });
+        // counted against the key the queue uses, not the page we happened to land on,
+        // or the miss never sticks and the company is fetched again every single pass
+        for (const k of (c.keys || [c.key])) store.countMiss(k, c.name);
         store.save();
         warn(`companies: the page for "${c.name}" did not read as a company page`);
       } else {
         // Keyed on the page URL when we have one, and on the name too, so both spellings find it.
-        store.setCompany(url, { name: c.name, url, sector: about.sector, size: about.size, sizeText: about.sizeText, misses: 0 });
-        if (companyKey(c.name) !== companyKey(url)) {
-          store.setCompany(c.name, { name: c.name, url, sector: about.sector, size: about.size, sizeText: about.sizeText, misses: 0 });
-        }
+        const facts = { name: c.name, url, sector: about.sector, size: about.size, sizeText: about.sizeText, misses: 0 };
+        // written under every name this employer is known by, so neither spelling is fetched again
+        for (const k of new Set([...(c.keys || [c.key]), companyKey(url), companyKey(c.name)].filter(Boolean))) store.setCompanyAt(k, facts);
         store.save();
         read++;
         log(`companies: ${c.name} — ${about.sector || 'sector unknown'}, ${about.sizeText || 'size unknown'} (${c.people} ${c.people === 1 ? 'person' : 'people'})`);

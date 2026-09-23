@@ -158,9 +158,12 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
     }
     store.setStatus(lead.url, 'messaged', { channel: 'inmail', inmail: { ...(lead.inmail || {}), sentAt: new Date().toISOString(), subject: subject.text } });
     store.recordAction('inmail', lead.url, { campaign: cfg.name });
+    // on the store's own copy: `lead` was detached by the refresh above, so clearing it there
+    // left the old failure sitting on the record for ever
+    const saved = store.get(lead.url);
+    if (saved) { saved.inmailFails = undefined; saved.lastTryError = undefined; }
     store.save();
     sent++; budget--;
-    delete lead.inmailFails; delete lead.lastTryError;
     log(`InMail sent to ${lead.name || url}`);
     if (pause) await pauseFor(humanPauseMs(cfg.pauseBetweenActionsSec));
   }

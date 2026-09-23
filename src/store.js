@@ -181,6 +181,7 @@ export class Store {
       if (partial.tenureMonths != null) existing.tenureMonths = partial.tenureMonths;
       if (partial.tenureText) existing.tenureText = partial.tenureText;
       if (partial.experienceMonths != null) existing.experienceMonths = partial.experienceMonths;
+      if (partial.holdOverride != null) existing.holdOverride = partial.holdOverride;
       if (partial.historyTruncated != null) existing.historyTruncated = partial.historyTruncated;
       if (partial.name && !existing.firstName) existing.firstName = firstNameOf(partial.name);
       existing.updatedAt = now;
@@ -200,6 +201,7 @@ export class Store {
       currentTitle: partial.currentTitle || '',
       experienceMonths: partial.experienceMonths ?? null,   // commercial months, internships not counted
       historyTruncated: !!partial.historyTruncated,         // the card hid older roles, so the total is a floor
+      holdOverride: !!partial.holdOverride,                 // Kai overruled a tenure or seniority hold
       location: partial.location || '',
       campaign: partial.campaign || 'default',
       status: 'new',
@@ -283,32 +285,53 @@ export class Store {
   // Remembers a company's page. `at` is when it was read, so it can be refreshed later.
   setCompany(nameOrUrl, fields = {}) {
     const key = companyKey(nameOrUrl);
+    return key ? this.setCompanyAt(key, fields) : null;
+  }
+
+  // The same, for a key worked out already.
+  setCompanyAt(key, fields = {}) {
     if (!key) return null;
     const cur = this.data.companies[key] || { key, name: '', sector: '', size: null, sizeText: '', url: '', misses: 0 };
     this.data.companies[key] = { ...cur, ...fields, key, at: new Date().toISOString() };
     return this.data.companies[key];
   }
 
+  // One more failed try for this employer. Counted against the key the queue uses, so three
+  // misses really do stop it being fetched again.
+  countMiss(key, name = '') {
+    if (!key) return null;
+    const cur = this.data.companies[key];
+    return this.setCompanyAt(key, { name: cur?.name || name, misses: (cur?.misses || 0) + 1 });
+  }
+
   // Employers we have a name for but have not looked up yet (or looked up long ago),
   // most common first so one pass covers the most people.
   companiesToLookUp({ campaign, staleDays = 180, maxMisses = 3, now = new Date() } = {}) {
     const counts = new Map();
-    for (const l of this.leads(campaign ? { campaign } : {})) {
-      const key = companyKey(l.companyUrl) || companyKey(l.company);
-      if (!key) continue;
-      const c = this.data.companies[key];
-      if (c && (c.misses || 0) >= maxMisses) continue;
+    const settled = c => {
+      if (!c) return false;
+      if ((c.misses || 0) >= maxMisses) return true;                 // given up on
       // Only a company we actually read is left alone for a while. One we failed to read
       // is offered again next pass, until it has used up its tries.
-      const known = c && (c.sector || c.size);
-      if (known && now - new Date(c.at) < staleDays * 86400000) continue;
-      const seen = counts.get(key) || { key, name: l.company || '', url: l.companyUrl || '', people: 0 };
+      return !!(c.sector || c.size) && now - new Date(c.at) < staleDays * 86400000;
+    };
+    for (const l of this.leads(campaign ? { campaign } : {})) {
+      // One employer can reach us as a page URL on one card and a bare name on another.
+      // Both spellings must land on one row, or it is looked up twice and the people count
+      // that orders this queue is split in half.
+      const keys = [companyKey(l.companyUrl), companyKey(l.company)].filter(Boolean);
+      if (!keys.length) continue;
+      if (keys.some(k => settled(this.data.companies[k]))) continue;
+      const key = keys.find(k => this.data.companies[k]) || keys[0];
+      const seen = counts.get(keys[0]) || counts.get(keys[keys.length - 1])
+        || { key, name: l.company || '', url: l.companyUrl || '', people: 0, keys: new Set() };
       seen.people++;
+      keys.forEach(k => seen.keys.add(k));
       if (!seen.url && l.companyUrl) seen.url = l.companyUrl;
       if (!seen.name && l.company) seen.name = l.company;
-      counts.set(key, seen);
+      for (const k of keys) counts.set(k, seen);
     }
-    return [...counts.values()].sort((a, b) => b.people - a.people);
+    return [...new Set(counts.values())].sort((a, b) => b.people - a.people);
   }
 
   // ---- actions (what we did, when; drives the daily caps) ----
