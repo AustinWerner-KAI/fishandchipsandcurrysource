@@ -465,3 +465,14 @@ test('InMail lane: rehearses first, then sends, stays inside the credits and nev
   assert.ok(!calls.some(c => c.url.includes('FIRST')));
   assert.match(calls[1].body, /^Hi (Ana|Ben|Cara), about the Cloud Engineer role\.$/);
 });
+
+test('a search asked for mid-run is picked up once, for the right role', async () => {
+  const { askFor, pending, takeRequests } = await import('../src/requests.js');
+  askFor('role-one', 'search');
+  askFor('role-one', 'search');            // pressing twice is still one search
+  askFor('role-two', 'search');
+  assert.deepEqual(pending('role-one'), ['search']);
+  assert.deepEqual(takeRequests('role-one'), ['search']);
+  assert.deepEqual(takeRequests('role-one'), []);
+  assert.deepEqual(pending('role-two'), ['search']);
+});
