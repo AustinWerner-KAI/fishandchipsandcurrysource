@@ -18,6 +18,7 @@ import { render, renderChecked, nameFor } from './template.js';
 import { rankLeads, cleanLead } from './rank.js';
 import { learn, rankLearned, noteStats } from './learn.js';
 import { allClients, offLimits } from './offlimits.js';
+import { askFor, pending } from './requests.js';
 import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
@@ -134,6 +135,7 @@ export function state(jobs, campaignName) {
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
     client: cfg?.role?.client || null,
     health: store.data.meta.health || null,
+    queued: c ? pending(c) : [],
     inmailRehearsal: store.data.meta.inmailApprovedAt ? null : store.data.meta.inmailRehearsal || null,
     inmailBalance: store.data.meta.inmailBalance ?? null,
     lastInvite: lastInvite(store, s.leads),
@@ -216,6 +218,12 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (b.action === 'search' && b.url) { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url)) return json(400, { error: 'search needs a linkedin.com URL' }); args.push(b.url); }
         if (b.action === 'record') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'record needs a linkedin.com URL' }); args.push(String(b.name || 'route').slice(0, 40), b.url); }
         if (b.action === 'probe') { if (!/^https:\/\/www\.linkedin\.com\//.test(b.url || '')) return json(400, { error: 'probe needs a linkedin.com URL' }); args.push(b.url); }
+        // one browser for everything: a search asked for while a run is going is done on its next pass
+        const busy = jobs.status();
+        if (busy.running && b.action === 'search' && ['run', 'once'].includes(busy.name)) {
+          askFor(b.campaign, 'search');
+          return json(200, { ...busy, queued: 'search' });
+        }
         return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
       }
       if (u.pathname === '/api/approve') {
