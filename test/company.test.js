@@ -283,3 +283,107 @@ test('being past the level is a note, never a reason to drop someone', () => {
   assert.equal(overLevelled({}, { seniority: 'junior' }), false);          // nothing known
   assert.equal(tooJunior(veteran, minExperienceFor({ seniority: 'junior' })), false);
 });
+
+// ---- what the audit on 23 Sep found. Each of these held a good person back, or hammered LinkedIn.
+
+test('an ordinary senior headline is never read as an internship', () => {
+  for (const t of [
+    'Head of Cyber Security at Co-op', 'Senior Data Engineer, Co-op Group',
+    'Security professional with 12 years of work experience', 'Apprenticeship Manager',
+    'Head of Graduate Programme, Barclays', 'Graduate Program Director', 'Placement Manager',
+    'Head of Placement', 'CISO | ex-intern turned leader', 'Director of Work Experience Programmes',
+    'Head of Student Services', 'Security Engineer at Student Beans', 'International Sales Director',
+  ]) assert.equal(isJunior(t), false, t);
+  // and the real ones still are
+  for (const t of ['Security Intern', 'Cyber Security Intern at Deloitte', 'Cyber Trainee',
+                   'Apprentice Engineer', 'Student at Imperial College', 'Summer Analyst']) {
+    assert.equal(isJunior(t), true, t);
+  }
+});
+
+test('a CISO whose headline mentions a co-op is still contacted', () => {
+  const ciso = { currentTitle: 'Chief Information Security Officer', headline: 'Head of Cyber Security at Co-op Group', experienceMonths: 240 };
+  assert.equal(tooJunior(ciso, 72), false);
+  // the title Recruiter gave us is believed before the free-text headline
+  assert.equal(tooJunior({ currentTitle: 'Head of Security', headline: 'started as an intern' }, 36), false);
+});
+
+test('an employer name in the history does not wipe out their years', () => {
+  const now = new Date('2026-09-23T00:00:00Z');
+  const h = [{ term: 'Head of Data at Co-op', duration: 'Jan 2011 - Present · 15 yrs' },
+             { term: 'Analyst', duration: 'Jan 2026 - Present · 8 mos' }];
+  assert.ok(experienceMonths(h, now) > 180, 'fifteen years must not read as eight months');
+});
+
+test('years are counted to the end of their last job, not to today', () => {
+  const now = new Date('2026-09-23T00:00:00Z');
+  assert.equal(experienceMonths([{ term: 'Engineer', duration: 'Jan 2000 - Dec 2004 · 5 yrs' }], now), 60);
+  // one role that started this month tells us nothing, so it must not hold anyone
+  assert.equal(experienceMonths([{ term: 'Head of Security', duration: 'Sep 2026 - Present' }], now), null);
+  assert.equal(tooJunior({ experienceMonths: experienceMonths([{ term: 'Head of Security', duration: 'Sep 2026 - Present' }], now) }, 36), false);
+});
+
+test('a duration is read off the current role when several are joined together', () => {
+  assert.equal(tenureMonths('Jan 2015 - Present | Jan 2014 - Aug 2014 · 8 mos', new Date('2026-09-23T00:00:00Z')), 140);
+  assert.equal(tenureMonths('2019 - 2021'), 24);
+  assert.equal(tenureMonths('Jan 2023 − Present', new Date('2026-09-23T00:00:00Z')), 44);   // unicode minus
+});
+
+test('turning the years rule off still keeps interns out', () => {
+  assert.equal(tooJunior({ currentTitle: 'Security Intern', experienceMonths: 4 }, 0), true);
+  assert.equal(tooJunior({ experienceMonths: 4 }, 0), false);
+});
+
+test('Kai can overrule a hold, and the runners honour it', async () => {
+  const { runConnect } = await import('../src/actions/connect.js');
+  assert.equal(tooJunior({ currentTitle: 'Security Intern', holdOverride: true }, 36), false);
+  assert.equal(tooNewInRole({ tenureMonths: 2, holdOverride: true }), false);
+  const s = new Store(path.join(home, `db-ovr-${Math.random()}.json`));
+  s.data.meta.ownName = 'Kai Crayford';
+  s.upsertLead({ url: 'linkedin.com/in/ovr', name: 'Worth It', campaign: 'c1', approved: true, degree: '2nd', tenureMonths: 2, experienceMonths: 10, holdOverride: true });
+  s.save();
+  const invited = [];
+  await runConnect(null, s, {
+    name: 'c1', mode: 'candidates', autoApprove: false, noteMaxLength: 300,
+    connectionNotes: ['Hey {firstName}.'], followUps: [], dailyCaps: { connects: 5, messages: 5, profileViews: 20 },
+    workingHours: null, pauseBetweenActionsSec: [0, 0],
+  }, { ops: { sendConnectionRequest: async (p, url) => { invited.push(url); return { result: 'sent', info: {} }; } }, pause: false });
+  assert.equal(invited.length, 1);
+});
+
+test('a company that will not read is dropped after three tries, whichever key it came in on', async () => {
+  const s = seed([{ name: 'A', company: 'Nowhere Ltd' }]);
+  // the page is found but does not parse: the miss must stick to the key the queue uses
+  const ops = { findCompanyPage: async () => 'https://www.linkedin.com/company/nowhere/', readCompanyAbout: async () => null };
+  for (let i = 0; i < 3; i++) { await runCompanyLookups({}, s, cfg, { ops, pause: false }); s.load(); }
+  assert.deepEqual(s.companiesToLookUp({ campaign: 'c1' }), [], 'three misses must stop the retries');
+});
+
+test('one employer is one row, however its name reached us', async () => {
+  const s = seed([
+    { name: 'A', company: 'Help AG', companyUrl: 'https://www.linkedin.com/company/help-ag/' },
+    { name: 'B', company: 'Help AG' },
+    { name: 'C', company: 'Rain' },
+  ]);
+  const queue = s.companiesToLookUp({ campaign: 'c1' });
+  assert.deepEqual(queue.map(c => c.people), [2, 1], 'the two Help AG people count as one employer');
+  const about = [];
+  await runCompanyLookups({}, s, cfg, {
+    pause: false,
+    ops: {
+      findCompanyPage: async (_p, name) => `https://www.linkedin.com/company/${name.toLowerCase().replace(/ /g, '-')}/`,
+      readCompanyAbout: async (_p, u) => { about.push(u); return { sector: 'Security', size: { min: 201, max: 500, label: '201-500' }, sizeText: '201-500 employees' }; },
+    },
+  });
+  assert.equal(about.filter(u => /help-ag/.test(u)).length, 1, 'looked up once, not twice');
+  s.load();
+  // both people can read the facts back
+  assert.equal(s.companyFor(s.get('https://www.linkedin.com/in/p0')).sector, 'Security');
+  assert.equal(s.companyFor(s.get('https://www.linkedin.com/in/p1')).sector, 'Security');
+});
+
+test('a lead from before any of this still gets contacted', () => {
+  const old = { url: 'x', name: 'Old Record', status: 'new', approved: true, degree: '2nd' };
+  assert.equal(tooNewInRole(old), false);
+  assert.equal(tooJunior(old, 72), false);
+});
