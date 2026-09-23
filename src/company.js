@@ -3,19 +3,23 @@
 
 export const MIN_TENURE_MONTHS = 12;
 
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+export const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 // "2 yrs 3 mos", "11 months", "1 yr", "Jan 2023 - Present", "Mar 2019 – Aug 2021 · 2 yrs 6 mos".
 // Returns whole months, or null when the text says nothing we can trust.
 export function tenureMonths(text, now = new Date()) {
-  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return null;
+  // Several roles can arrive joined with " | ". The first is the current one; reading a duration
+  // out of a later role once turned eleven years at an employer into eight months.
+  const s = raw.split('|')[0].trim();
   if (!s) return null;
   // A spelled-out duration is the most reliable thing on the card.
   const yr = s.match(/(\d+)\s*(?:yrs?|years?)\b/i);
   const mo = s.match(/(\d+)\s*(?:mos?|months?)\b/i);
   if (yr || mo) return (+(yr?.[1] || 0)) * 12 + (+(mo?.[1] || 0));
   // Otherwise work it out from the dates: "Jan 2023 - Present", "2019 - 2021".
-  const range = s.match(/([A-Za-z]{3,9})?\s*(\d{4})\s*[-–—]\s*(present|current|[A-Za-z]{3,9}?\s*\d{4})/i);
+  const range = s.match(/([A-Za-z]{3,9})?\s*(\d{4})\s*[-–—−]\s*(present|current|(?:[A-Za-z]{3,9}\s*)?\d{4})/i);
   if (!range) return null;
   const start = monthIndex(range[1]), startYear = +range[2];
   const end = /present|current/i.test(range[3])
@@ -102,54 +106,86 @@ export function parseCompanyAbout(text) {
 // True only when we know they have been there less than `min` months.
 // Unknown tenure is never treated as short: a parser that misses must not hide the whole list.
 export function tooNewInRole(lead, min = MIN_TENURE_MONTHS) {
+  if (lead?.holdOverride) return false;            // Kai looked and said contact them anyway
   return tenureOk(lead?.tenureMonths, min) === false;
 }
 
 // ---- seniority ----
 
-// Titles that are not commercial senior work. Matched on whole words so "internal" and
-// "Principal" are never caught by "intern".
+// Words that mark a role as not-yet-commercial. Deliberately short: anything that also turns up
+// in ordinary senior headlines ("co-op", "work experience", "placement") is left out, because a
+// wrong match here hides a good person for good and nobody would ever know.
 const JUNIOR_WORDS = [
   'intern', 'interns', 'internship', 'internships', 'trainee', 'traineeship', 'apprentice',
-  'apprenticeship', 'placement', 'work experience', 'graduate scheme', 'graduate programme',
-  'graduate program', 'grad scheme', 'student at', 'summer analyst', 'co-op',
+  'apprenticeship', 'graduate scheme', 'graduate programme', 'graduate program', 'grad scheme',
+  'student at', 'summer analyst', 'industrial placement',
 ];
-// "student" and "undergraduate" on their own are left out on purpose: "Head of Student Services"
-// and "Director of Undergraduate Admissions" are real senior jobs. Anyone still studying has no
-// commercial history to speak of, so the years rule catches them instead.
+
+// If someone runs the thing, they are not in it. "Head of Graduate Programme" and
+// "Apprenticeship Manager" are senior jobs.
+const RUNS_IT = /\b(head|director|manager|lead|leader|chief|c[teifo]o|vp|vice president|president|partner|principal|owner|founder|co-?founder|supervisor|coordinator|mentor|senior|principal)\b/i;
+
+// Only the first part of a title is read: "Security Engineer | ex-intern" is a Security Engineer.
+// The employer is left on, so "Student at Imperial" still reads as a student.
+const firstPart = text => String(text || '').split(/[|·•]|,/)[0].trim();
 
 export function isJunior(text) {
-  const s = String(text || '').toLowerCase();
-  return JUNIOR_WORDS.some(w => new RegExp(`(^|[^a-z])${w.replace(/[-\s]/g, '[-\\s]')}([^a-z]|$)`, 'i').test(s));
+  const part = firstPart(text);
+  if (!part || RUNS_IT.test(part)) return false;
+  return JUNIOR_WORDS.some(w => new RegExp(`(^|[^a-z])${w.replace(/[-\s]/g, '[-\\s]')}([^a-z]|$)`, 'i').test(part));
 }
 
-// Total commercial months from a Recruiter card's work history. Internships and student roles
-// do not count. Overlapping roles are not double counted: the span from the earliest start is
-// used when dates are there, and the durations are added up when they are not.
+// Their job title says junior. The title Recruiter gave us is believed first; the headline is
+// only read when there is no title, and only its opening words.
+export function juniorTitle(lead) {
+  if (lead?.currentTitle) return isJunior(lead.currentTitle);
+  return isJunior(lead?.headline);
+}
+
 export function experienceMonths(history, now = new Date()) {
-  const real = (history || []).filter(h => !isJunior(h.term) && !isJunior(h.duration));
+  if (!Array.isArray(history)) return null;
+  const real = history.filter(h => h && typeof h === 'object' && !isJunior(h.term));
   if (!real.length) return null;
   const spans = real.map(h => tenureMonths(h.duration, now)).filter(m => m != null);
   if (!spans.length) return null;
-  const starts = real.map(h => startOf(h.duration)).filter(Boolean);
-  if (starts.length) {
-    const earliest = starts.sort((a, b) => a - b)[0];
-    const months = (now.getUTCFullYear() - earliest.getUTCFullYear()) * 12 + (now.getUTCMonth() - earliest.getUTCMonth());
-    if (months >= 0) return Math.max(months, ...spans);
+
+  // Earliest start to latest end. A career that ended in 2004 is five years of work, not twenty.
+  const starts = real.map(h => startOf(h.duration)).filter(d => d && d <= now);
+  const ends = real.map(h => endOf(h.duration, now)).filter(Boolean);
+  let months = 0;
+  if (starts.length && ends.length) {
+    const from = starts.sort((a, b) => a - b)[0];
+    const to = ends.sort((a, b) => b - a)[0];
+    months = (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
   }
-  return spans.reduce((a, b) => a + b, 0);
+  // The spans are the floor: one long role beats a badly dated span. Adding them up is the last
+  // resort and can double count two jobs held at once, which errs towards keeping someone in.
+  months = Math.max(months, ...spans, spans.reduce((a, b) => a + b, 0) / (starts.length ? 2 : 1));
+  months = Math.round(months);
+  // Nothing worth calling experience is the same as not knowing, and must never hold anyone back.
+  return months > 0 ? months : null;
 }
 
 // The first date in "Jan 2023 - Present", as a Date, or null.
 function startOf(text) {
-  const m = String(text || '').match(/([A-Za-z]{3,9})?\s*(\d{4})\s*[-–—]/);
+  const m = String(text || '').split('|')[0].match(/([A-Za-z]{3,9})?\s*(\d{4})\s*[-–—−]/);
   if (!m) return null;
   const i = MONTHS.indexOf(String(m[1] || '').slice(0, 3).toLowerCase());
   return new Date(Date.UTC(+m[2], i < 0 ? 0 : i, 1));
 }
 
-// How many years of commercial work each level means. The minimum is what holds people back;
-// the maximum only labels someone as over-levelled, it never drops them.
+// The end date, or today when the role is still running.
+function endOf(text, now = new Date()) {
+  const s = String(text || '').split('|')[0];
+  const m = s.match(/[-–—−]\s*(present|current|(?:[A-Za-z]{3,9}\s*)?\d{4})/i);
+  if (!m) return null;
+  if (/present|current/i.test(m[1])) return now;
+  const year = +(m[1].match(/\d{4}/)?.[0] || 0);
+  if (!year) return null;
+  const i = MONTHS.indexOf(String(m[1].match(/[A-Za-z]{3,9}/)?.[0] || '').slice(0, 3).toLowerCase());
+  return new Date(Date.UTC(year, i < 0 ? 11 : i, 1));
+}
+
 export const SENIORITY = {
   junior: { label: 'Junior', minYears: 1, maxYears: 2 },
   mid:    { label: 'Mid',    minYears: 3, maxYears: 5 },
@@ -185,9 +221,10 @@ export const DEFAULT_MIN_EXPERIENCE_MONTHS = 36;
 // True only when we are sure: their title says junior, or their full history adds up to less
 // than the minimum. A history the card cut short is never enough to rule someone out.
 export function tooJunior(lead, minMonths = DEFAULT_MIN_EXPERIENCE_MONTHS) {
-  if (!minMonths) return false;
-  if (isJunior(lead?.currentTitle) || isJunior(lead?.headline)) return true;
-  if (lead?.historyTruncated) return false;
+  if (lead?.holdOverride) return false;            // Kai looked and said contact them anyway
+  if (juniorTitle(lead)) return true;              // an intern is an intern at any level
+  if (!minMonths) return false;                    // the years rule is switched off for this role
+  if (lead?.historyTruncated) return false;        // the card hid older roles: we know nothing
   const months = lead?.experienceMonths;
   return months != null && months < minMonths;
 }
