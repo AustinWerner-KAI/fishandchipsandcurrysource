@@ -13,7 +13,7 @@ import { Jobs } from './jobs.js';
 import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
 import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
-import { tenureLabel, tenureOk, sizeWord, MIN_TENURE_MONTHS } from './company.js';
+import { tenureLabel, tenureOk, sizeWord, tooJunior, isJunior, minExperienceFor, overLevelled, levelFromTitle, SENIORITY, MIN_TENURE_MONTHS } from './company.js';
 import { scoreLead } from './rank.js';
 import { render, renderChecked, nameFor } from './template.js';
 import { rankLeads, cleanLead } from './rank.js';
@@ -24,7 +24,7 @@ import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
 
-const EDITABLE = ['mode', 'role', 'firstDegree', 'inmail', 'searchUrl', 'maxSearchPages', 'autoApprove', 'minTenureMonths', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
+const EDITABLE = ['mode', 'role', 'firstDegree', 'inmail', 'searchUrl', 'maxSearchPages', 'autoApprove', 'minTenureMonths', 'minExperienceMonths', 'seniority', 'connectionNotes', 'followUps', 'dailyCaps', 'workingHours', 'pauseBetweenActionsSec', 'pauseBetweenCyclesMin'];
 
 // Recruiter Lite lane: for people who have not accepted the connection. Sent by hand; the app writes the text.
 export const DEFAULT_INMAIL = {
@@ -127,6 +127,8 @@ export function state(jobs, campaignName) {
   });
   const model = cfg?.role ? learn(s.leads, cfg.role, Date.now(), clients) : null;
   const minTenure = cfg?.minTenureMonths ?? MIN_TENURE_MONTHS;
+  const minExperience = cfg ? minExperienceFor(cfg) : 36;
+  const level = cfg?.seniority || levelFromTitle(cfg?.role?.title);
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
@@ -159,9 +161,16 @@ export function state(jobs, campaignName) {
         tenure: tenureLabel(months),
         tenureMonths: months,
         tenureOk: tenureOk(months, minTenure),
+        experience: tenureLabel(l.experienceMonths ?? null),
+        tooJunior: tooJunior(l, minExperience),
+        juniorTitle: isJunior(l.currentTitle) || isJunior(l.headline),
+        overLevelled: cfg ? overLevelled(l, cfg) : false,
       };
     }),
     minTenureMonths: minTenure,
+    minExperienceMonths: minExperience,
+    seniority: level,
+    seniorityLevels: SENIORITY,
     counts: s.counts, caps: s.caps, today: s.today, lastStop: s.lastStop,
     weeklyLimit: weeklyLimitActive(store),
     ownName: store.data.meta.ownName || null,
