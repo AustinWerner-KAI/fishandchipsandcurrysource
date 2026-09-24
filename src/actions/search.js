@@ -4,6 +4,7 @@ import { sleep, humanPauseMs } from '../limits.js';
 import { buildSearchUrl, lookupGeo, widenBoolean } from '../role.js';
 import { patchCampaign } from '../config.js';
 import { stopRequested } from '../stop.js';
+import { sweepStart, sweepStep, sweepSet, sweepEnd } from '../sweeps.js';
 
 // Where to look for people: for a remote role, wherever the recruiter said candidates may sit;
 // otherwise the office location.
@@ -36,11 +37,11 @@ export async function urlForRole(page, cfg) {
   return buildSearchUrl(role.boolean, ids);
 }
 
-export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
+export async function runSearch(page, store, cfg, { url, maxPages, report } = {}) {
   // Recruiter Lite is the default for a role; "linkedin" uses normal people search.
   if (!url && !cfg.searchUrl && cfg.role && (cfg.role.source || 'recruiter') === 'recruiter') {
     const { runRecruiterSearch } = await import('./recruiter.js');
-    return runRecruiterSearch(page, store, cfg, { maxPages });
+    return runRecruiterSearch(page, store, cfg, { maxPages, report });
   }
   let searchUrl = url || cfg.searchUrl;
   if (!searchUrl && cfg.role) searchUrl = await urlForRole(page, cfg);
@@ -84,14 +85,38 @@ export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
 // 24 Sep 2026: the sweep was wired only to the command line, so a Search pressed in the app while
 // a run was going (which is how Kai presses it) never swept, and the Finds list stayed empty.
 export async function searchAndSweep(page, store, cfg, { url, maxPages, sources = true, maxLookups, search = runSearch, sweep } = {}) {
-  const added = await search(page, store, cfg, { url, maxPages });
-  // A one-off URL search is a look at one page, not the role, so it does not sweep.
-  if (url || !sources || !cfg.role) return added;
-  // Pressing Stop during the LinkedIn half must not then start minutes of public searching.
-  if (stopRequested()) { log('sources: skipped, you pressed Stop'); return added; }
-  const runSources = sweep || (await import('./sources.js')).runSources;
-  try { await runSources(page, store, cfg, maxLookups ? { maxLookups } : undefined); }
+  // A one-off URL search is a look at one page, not the role: no sweep, and no progress shown.
+  const role = !url && cfg.role ? cfg.name : null;
+  const lane = (cfg.role?.source || 'recruiter') === 'recruiter' && !cfg.searchUrl ? 'recruiter' : 'linkedin';
+  if (role) { sweepStart(role); sweepStep(role, lane, { state: 'running' }); }
+  let added;
+  const report = role ? patch => sweepStep(role, lane, patch) : undefined;
+  try { added = await search(page, store, cfg, { url, maxPages, report }); }
   catch (e) {
+    // pressing Stop closes Chrome under the search: that is a stop, not a problem
+    if (role) {
+      const how = stopRequested() ? 'stopped' : 'failed';
+      sweepStep(role, lane, { state: how, ...(how === 'failed' ? { problem: String(e?.message || e).slice(0, 160) } : {}) });
+      sweepEnd(role, how);
+    }
+    throw e;
+  }
+  if (role) sweepStep(role, lane, { state: 'done', added: added ?? 0 });
+  if (!role || !sources) { if (role) sweepEnd(role); return added; }
+  // Pressing Stop during the LinkedIn half must not then start minutes of public searching.
+  if (stopRequested()) { log('sources: skipped, you pressed Stop'); sweepEnd(role, 'stopped'); return added; }
+  const runSources = sweep || (await import('./sources.js')).runSources;
+  const progress = {
+    step: (id, patch) => sweepStep(role, id, patch),
+    set: patch => sweepSet(role, patch),
+  };
+  try {
+    const r = await runSources(page, store, cfg, { ...(maxLookups ? { maxLookups } : {}), progress });
+    sweepEnd(role, r?.failed ? 'failed' : (r?.stopped || stopRequested()) ? 'stopped' : 'done');
+  }
+  catch (e) {
+    if (stopRequested()) sweepEnd(role, 'stopped');
+    else sweepEnd(role, 'failed', { problem: String(e?.message || e).slice(0, 160) });
     if (e?.name === 'CheckpointError' || e?.name === 'NotLoggedInError') throw e;
     warn('sources: skipped after a problem, LinkedIn results are saved:', String(e?.message || e).slice(0, 140));
   }

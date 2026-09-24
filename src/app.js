@@ -1,5 +1,6 @@
 // The local web app: everything the terminal menu did, in a browser tab at http://localhost:4747
 import http from 'node:http';
+import { readSweeps, sweepForget } from './sweeps.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -99,6 +100,51 @@ export function outreachList(store, cfg, now = new Date()) {
 }
 
 // The 1st connections message as the best-matched person on that list would get it.
+// Everyone the public sources turned up for a role, sorted into what Kai can do about them:
+//   waiting  : has a real name, not looked up yet (each Search looks up the strongest few)
+//   people   : found on LinkedIn and in People (this role's, or another role's), so decide there
+//   twonames : more than one person of that name on LinkedIn; Sourcer never guesses
+//   notfound : looked up, nobody of that name, or the look-up failed
+//   noname   : only a handle, so there is nothing to look up
+//   removed  : was found and put in People, and has since been taken out (Clear list, role deleted)
+const FIND_GROUPS = ['waiting', 'people', 'twonames', 'notfound', 'noname', 'removed'];
+const PER_GROUP = 60;
+function findGroup(f, lead) {
+  if (f.outcome === 'matched' || f.outcome === 'already-on-file') return lead ? 'people' : 'removed';
+  if (f.outcome === 'ambiguous') return 'twonames';
+  if (f.outcome === 'no-match' || f.outcome === 'lookup-failed') return 'notfound';
+  return String(f.name || '').trim().split(/\s+/).length >= 2 ? 'waiting' : 'noname';
+}
+// The strongest PER_GROUP of each group, so every tab has rows to show, and counts over all of them.
+export function findsFor(store, campaign, perGroup = PER_GROUP) {
+  const byWeight = (a, b) => (b.weight || 0) - (a.weight || 0) || String(b.lastActiveAt || '').localeCompare(String(a.lastActiveAt || ''));
+  const all = store.findRows(campaign).map(f => {
+    const lead = f.matchedUrl ? store.get(f.matchedUrl) : null;
+    return { f, lead, group: findGroup(f, lead) };
+  });
+  const findCounts = Object.fromEntries(FIND_GROUPS.map(g => [g, all.filter(x => x.group === g).length]));
+  const finds = FIND_GROUPS.flatMap(g => all.filter(x => x.group === g).sort((a, b) => byWeight(a.f, b.f)).slice(0, perGroup))
+    .map(({ f, lead, group }) => ({
+      key: f.key, name: f.name, github: f.github, company: f.company, url: f.url || '',
+      sources: f.sources || [], evidence: (f.evidence || []).slice(0, 3),
+      lastActiveAt: f.lastActiveAt, weight: f.weight ?? 0, group,
+      outcome: f.outcome || '', matchedUrl: f.matchedUrl || null, lookedUp: !!f.lookedUpAt,
+      leadStatus: lead ? (lead.approved && lead.status === 'new' ? 'approved' : lead.status) : null,
+      // in People, but under another role: the page says which, rather than "in People"
+      leadRole: lead && lead.campaign !== campaign ? lead.campaign : null,
+    }));
+  return { finds, findCounts };
+}
+
+// People matched before a lead carried foundOn only have it in their notes ("found on npm,
+// sherlock (github/x)"); read that back so they still show where they came from.
+export function legacyFoundOn(l) {
+  if (l.foundOn) return l.foundOn;
+  const m = /^found on ([a-z, ]+?)(?: \(github\/([^)]+)\))?$/i.exec(String(l.notes || '').trim());
+  if (!m) return null;
+  return { sources: m[1].split(',').map(x => x.trim()).filter(Boolean), evidence: [], github: m[2] || '', url: '' };
+}
+
 function firstPreview(store, cfg) {
   if (!cfg?.firstDegree?.message) return null;
   const clients = allClients();
@@ -173,15 +219,9 @@ export function state(jobs, campaignName) {
     outreach: cfg ? outreachList(store, cfg) : [],
     // seen on GitHub, npm, the EIPs and the rest: who they are, what they built, and whether
     // Sourcer managed to place them on LinkedIn so they can actually be approached
-    finds: c ? store.findRows(c)
-      .sort((a, b) => (b.weight || 0) - (a.weight || 0) || String(b.lastActiveAt || '').localeCompare(String(a.lastActiveAt || '')))
-      .slice(0, 60)
-      .map(f => ({
-        key: f.key, name: f.name, github: f.github, company: f.company, url: f.url || '',
-        sources: f.sources || [], evidence: (f.evidence || []).slice(0, 3),
-        lastActiveAt: f.lastActiveAt, weight: f.weight ?? 0,
-        outcome: f.outcome || '', matchedUrl: f.matchedUrl || null, lookedUp: !!f.lookedUpAt,
-      })) : [],
+    ...(c ? findsFor(store, c) : { finds: [], findCounts: {} }),
+    // what the latest Search for this role did, site by site (written by the runner as it goes)
+    sweep: c ? (readSweeps()[c] || null) : null,
 
     inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), ACCOUNT_TZ) : null,
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
@@ -207,6 +247,7 @@ export function state(jobs, campaignName) {
       return {
         ...l,
         offLimits: l.offLimits || offLimits(l, clients)?.name || null,
+        foundOn: legacyFoundOn(l),
         queued: l.queue.length, sent: l.messages.length,
         lastMessage: l.messages[l.messages.length - 1]?.text || '',
         // what the company page said wins over what the search card said
@@ -328,6 +369,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         store.recordAction('roleDeleted', '-', { campaign: name, ...counts });
         store.save();
         fs.rmSync(f, { force: true });
+        sweepForget(name);
         log(`role "${name}" deleted: ${counts.removed} people removed, ${counts.kept} kept on file`);
         return json(200, { ok: true, ...counts });
       }

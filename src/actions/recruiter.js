@@ -196,7 +196,8 @@ export async function widenIfNarrow(page) {
   return true;
 }
 
-export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
+// `report` feeds the page's search panel as the pages come in (see sweeps.js).
+export async function runRecruiterSearch(page, store, cfg, { maxPages, report = () => {} } = {}) {
   const role = cfg.role;
   if (!role?.boolean) throw new Error('The role has no boolean search yet.');
   await ensureWide(page);                          // a narrow window hides the box and the filters
@@ -246,10 +247,12 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
     added += fresh;
     store.save();
     log(`recruiter page ${p}: ${rows.length} people, ${fresh} new`);
+    report({ page: p, seen, added });
     if (p < pages && !(await nextPage(page, p + 1))) break;
     await sleep(humanPauseMs([6, 15]));
   }
   log(`recruiter search done: ${added} new people (${seen} seen) in "${cfg.name}"`);
+  report({ seen, added });
   return added;
 }
 

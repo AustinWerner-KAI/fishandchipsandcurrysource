@@ -51,7 +51,7 @@ const DEFAULT_OPS = { searchEips, searchStackExchange, searchSherlock, searchNpm
 export async function searchPublic({
   terms = [], location = '', since = null,
   sources = automated().filter(s => s.role === 'discovery').map(s => s.id),
-  enrich = true, ops = DEFAULT_OPS,
+  enrich = true, ops = DEFAULT_OPS, onProgress = () => {},
 } = {}) {
   const wanted = terms.filter(Boolean);
   if (!wanted.length) throw new Error('Give the search at least one subject, such as "solidity" or "cloud security"');
@@ -60,18 +60,28 @@ export async function searchPublic({
   for (const id of sources) {
     const run = Object.hasOwn(DISCOVERY, id) ? DISCOVERY[id] : null;
     if (!run) { problems.push({ source: id, problem: 'no adapter' }); continue; }
+    onProgress(id, { state: 'running' });
     try {
       const got = await run({ terms: wanted, location, since, ops });
       finds.push(...got);
       log(`sources: ${id} gave ${got.length}`);
+      // GitHub without a token answers, but only 10 searches an hour, so a 0 there is not "nobody"
+      const limited = id === 'github' && !process.env.GITHUB_TOKEN;
+      onProgress(id, { state: limited ? 'limited' : 'done', count: got.length, ...(limited ? { problem: 'No GitHub token, so only 10 searches an hour.' } : {}) });
     } catch (e) {
       problems.push({ source: id, problem: e.message.slice(0, 140), rateLimited: !!e.rateLimited });
       warn(`sources: ${id} failed, carrying on:`, e.message.slice(0, 140));
+      onProgress(id, { state: e.rateLimited ? 'limited' : 'failed', count: 0, problem: e.message.slice(0, 140) });
     }
   }
 
   let people = mergeFinds(finds);
-  if (enrich) people = mergeFinds([...finds, ...await enrichPeople(people, { ops, problems })]);
+  if (enrich) {
+    onProgress('names', { state: 'running' });
+    const extra = await enrichPeople(people, { ops, problems });
+    people = mergeFinds([...finds, ...extra]);
+    onProgress('names', { state: 'done', count: extra.length });
+  }
 
   // Anyone the sources only know as a handle is a dead end until we can name them; say so rather
   // than quietly dropping them, because some of the best auditors are pseudonymous on purpose.

@@ -78,21 +78,29 @@ export async function lookupOnLinkedIn(page, person, { collect = collectSearchRe
 
 // Runs the allowed public sources for this role, files everyone found, then looks up the
 // strongest few on LinkedIn so they join the normal list.
-export async function runSources(page, store, cfg, { maxLookups = 8, search = searchPublic, lookup = lookupOnLinkedIn, pause = true } = {}) {
+// `progress` feeds the page's search panel (see sweeps.js): { step(id, patch), set(patch) }.
+export async function runSources(page, store, cfg, { maxLookups = 8, search = searchPublic, lookup = lookupOnLinkedIn, pause = true, progress = null } = {}) {
+  const step = progress?.step || (() => {}), set = progress?.set || (() => {});
   const terms = termsForRole(cfg);
-  if (!terms.length) { log('sources: this role has no skills or industry words to search for, so only LinkedIn was searched'); return { found: 0, matched: 0 }; }
+  if (!terms.length) { log('sources: this role has no skills or industry words to search for, so only LinkedIn was searched'); set({ note: 'This role has no skills or industry words, so only LinkedIn was searched.' }); return { found: 0, matched: 0 }; }
   const ids = automated().filter(s => s.role === 'discovery').map(s => s.id);
   log(`sources: looking for ${terms.join(', ')} across ${ids.join(', ')}`);
+  set({ terms });
+  for (const id of ids) step(id, { state: 'waiting' });
 
   let people = [], problems = [];
   try {
     // searchPublic answers { people, problems, manual }. 24 Sep 2026: this was read as a bare list,
     // so the first live sweep found 153 people and then saved none of them.
-    const got = await search({ terms, location: cfg.role?.location || '' });
+    const got = await search({ terms, location: cfg.role?.location || '', onProgress: step });
     people = Array.isArray(got) ? got : (Array.isArray(got?.people) ? got.people : []);
     problems = Array.isArray(got?.problems) ? got.problems : [];
   }
-  catch (e) { warn('sources: the public search failed, carrying on with LinkedIn only:', e.message.slice(0, 140)); return { found: 0, matched: 0 }; }
+  catch (e) {
+    warn('sources: the public search failed, carrying on with LinkedIn only:', e.message.slice(0, 140));
+    set({ problem: `The public sites could not be searched: ${e.message.slice(0, 140)}` });
+    return { found: 0, matched: 0, failed: true };
+  }
 
   store.refresh();
   let fresh = 0;
@@ -112,15 +120,22 @@ export async function runSources(page, store, cfg, { maxLookups = 8, search = se
   }
   store.save();
   log(`sources: ${people.length} people, ${fresh} of them new`);
+  const named = people.filter(p => String(p.name || '').trim().split(/\s+/).length >= 2).length;
 
   // The strongest first, and only the ones we have not already tried to place.
   const queue = store.findRows(cfg.name)
     .filter(f => !f.lookedUpAt && f.name && f.name.split(/\s+/).length >= 2)
     .sort((a, b) => (b.weight || 0) - (a.weight || 0) || String(b.lastActiveAt || '').localeCompare(String(a.lastActiveAt || '')));
 
-  let matched = 0, looked = 0;
+  let matched = 0, looked = 0, already = 0, stopped = false;
+  // found and named are this search; waiting is every named find for the role not looked up yet,
+  // from this search and earlier ones, and the page labels it that way
+  const funnel = () => set({ funnel: { found: people.length, named, fresh, looked, matched, already, waiting: Math.max(0, queue.length - looked) } });
+  funnel();
+  if (queue.length) step('lookups', { state: 'running', looked, matched, of: Math.min(queue.length, maxLookups) });
   for (const f of queue) {
-    if (looked >= maxLookups || stopRequested()) break;
+    if (looked >= maxLookups) break;
+    if (stopRequested()) { stopped = true; break; }
     if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), ACCOUNT_TZ) <= 0) { log('sources: profile view cap reached, the rest wait for the next search'); break; }
     const r = await lookup(page, f);
     looked++;
@@ -129,21 +144,40 @@ export async function runSources(page, store, cfg, { maxLookups = 8, search = se
     const row = store.data.finds[f.key];
     if (row) { row.lookedUpAt = new Date().toISOString(); row.outcome = r.outcome; }
     if (r.outcome === 'matched') {
+      // Where this person was found and why, kept on the person so the page can say so next to them.
+      const foundOn = { key: f.key, sources: f.sources || [], evidence: (f.evidence || []).slice(0, 3), github: f.github || '', url: f.url || '', at: new Date().toISOString() };
       const existing = store.get(r.url);
-      if (existing) { if (row) row.outcome = 'already-on-file'; }
+      if (existing) {
+        if (row) row.outcome = 'already-on-file';
+        already++;
+        // only this role's person gets this role's evidence; another role's list is left as it is
+        if (existing.campaign === cfg.name) {
+          const was = existing.foundOn;
+          existing.foundOn = !was ? foundOn : {
+            ...was,
+            sources: [...new Set([...(was.sources || []), ...foundOn.sources])],
+            evidence: [...(was.evidence || []), ...foundOn.evidence].slice(0, 3),
+            github: was.github || foundOn.github, url: was.url || foundOn.url,
+          };
+        }
+      }
       else {
-        store.upsertLead({
+        const lead = store.upsertLead({
           url: r.url, name: r.row.name, headline: r.row.headline, location: r.row.location,
           degree: r.row.degree, campaign: cfg.name,
           notes: `found on ${(f.sources || []).join(', ')}${f.github ? ` (github/${f.github})` : ''}`,
         });
+        lead.foundOn = foundOn;
         matched++;
       }
       if (row) row.matchedUrl = r.url;
     }
     store.save();
+    funnel(); step('lookups', { state: 'running', looked, matched });
     if (pause) await sleep(humanPauseMs([8, 20]));
   }
+  if (queue.length) step('lookups', { state: 'done', looked, matched });
+  funnel();
   log(`sources: looked up ${looked}, added ${matched} to the list for "${cfg.name}"`);
-  return { found: people.length, fresh, matched, looked };
+  return { found: people.length, fresh, matched, looked, stopped };
 }

@@ -43,7 +43,10 @@ function watchForSearches(context, { active, onFatal }) {
     const name = Object.keys(all).find(n => (all[n] || []).includes('search'));
     if (!name) return;
     takeRequests(name);
+    // the main tab is already searching this role: a second press is the same search, so drop it
+    if (active.searching.has(name)) { log(`search for "${name}" is already running`); return; }
     active.busy = true;
+    active.searching.add(name);
     let tab = null, keepTab = false;
     try {
       const c = loadCampaign(name);
@@ -73,6 +76,7 @@ function watchForSearches(context, { active, onFatal }) {
     } finally {
       if (tab && !keepTab) await tab.close().catch(() => {});
       active.busy = false;
+      active.searching.delete(name);
     }
   }, 15000);
   timer.unref?.();
@@ -86,7 +90,7 @@ export async function runCampaign(cfg, { once = false, headless = false } = {}) 
   const { context, page } = await openBrowser({ headless, handleSIGINT: false });
   try {
     if (!(await isLoggedIn(page))) throw new NotLoggedInError('Not logged in. Run: npm run login');
-    const searchTab = { busy: false };
+    const searchTab = { busy: false, searching: new Set() };
     // Raised on the second tab, dealt with by the loop below: a security check means nothing more
     // should be sent from either tab.
     let fatal = null;
@@ -112,11 +116,14 @@ export async function runCampaign(cfg, { once = false, headless = false } = {}) 
         worked = true;
         for (const req of asked) {
           if (req !== 'search') continue;
+          if (searchTab.searching.has(name)) { log(`search for "${name}" is already running in the second tab`); continue; }
+          searchTab.searching.add(name);
           try { log(`search asked for "${name}"`); await searchAndSweep(page, store, c, { maxLookups: IN_RUN_LOOKUPS }); }
           catch (e) {
             if (e instanceof CheckpointError || e instanceof NotLoggedInError) throw e;
             warn(`search for "${name}" failed:`, e.message);
           }
+          finally { searchTab.searching.delete(name); }
         }
         if (!withinWorkingHours(c.workingHours)) continue;
         if (names.length > 1) log(`role: ${name}`);
