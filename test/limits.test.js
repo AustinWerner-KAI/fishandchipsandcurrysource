@@ -53,3 +53,13 @@ test('nextWorkingStart finds the next window in the role timezone', async () => 
   assert.equal(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(next).replace(',', ''), 'Mon 09:30');
   assert.equal(nextWorkingStart(hours, new Date('2026-09-22T15:00:00Z')), null);   // Tuesday 11:00 New York: open
 });
+
+// A security check on the second tab has to end the run's pause between cycles, not wait it out.
+test('pauseFor ends early when told to, not only on Stop', async () => {
+  const { pauseFor } = await import('../src/limits.js');
+  let flag = false;
+  setTimeout(() => { flag = true; }, 50);
+  const t = Date.now();
+  await pauseFor(20_000, () => flag);
+  assert.ok(Date.now() - t < 2500, `took ${Date.now() - t} ms`);
+});

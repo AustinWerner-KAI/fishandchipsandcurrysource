@@ -117,3 +117,111 @@ test('only the sources the licences allow are ever fetched', async () => {
   assert.ok(auto.includes('github'));
   assert.ok(!auto.includes('linkedin-bulk'), 'bulk scraping LinkedIn is what got hiQ ordered to destroy their data');
 });
+
+// 24 Sep 2026: the sweep was wired only to the command line, so a Search pressed in the app while
+// a run was going never swept and the Finds list stayed empty. Every Search path now ends here.
+const { searchAndSweep } = await import('../src/actions/search.js');
+
+test('a Search runs the LinkedIn search first, then sweeps the public sources', async () => {
+  const order = [];
+  const search = async () => { order.push('linkedin'); return 7; };
+  const sweep = async () => { order.push('sources'); };
+  const added = await searchAndSweep(null, null, cfg, { search, sweep });
+  assert.deepEqual(order, ['linkedin', 'sources'], 'LinkedIn first: the sweep is a bonus on top');
+  assert.equal(added, 7, 'the caller still gets the count of new people from LinkedIn');
+});
+
+test('a problem in the sweep never loses the LinkedIn results', async () => {
+  const search = async () => 4;
+  const sweep = async () => { throw new Error('crates.io was down'); };
+  assert.equal(await searchAndSweep(null, null, cfg, { search, sweep }), 4,
+    'the people found on LinkedIn are saved and the search counts as done');
+});
+
+test('being logged out or checkpointed during the sweep still stops everything', async () => {
+  for (const name of ['CheckpointError', 'NotLoggedInError']) {
+    const boom = new Error('security check'); boom.name = name;
+    await assert.rejects(
+      () => searchAndSweep(null, null, cfg, { search: async () => 1, sweep: async () => { throw boom; } }),
+      e => e.name === name, `${name} must not be swallowed`);
+  }
+});
+
+test('a one-off URL search looks at that page only and does not sweep', async () => {
+  let swept = false;
+  await searchAndSweep(null, null, cfg, {
+    url: 'https://www.linkedin.com/search/results/people/?keywords=x',
+    search: async () => 2, sweep: async () => { swept = true; },
+  });
+  assert.equal(swept, false);
+});
+
+test('a campaign with no role at all sweeps nothing without failing', async () => {
+  let swept = false;
+  const added = await searchAndSweep(null, null, { name: 'c1' }, { search: async () => 0, sweep: async () => { swept = true; } });
+  assert.equal(added, 0);
+  assert.equal(swept, false, 'no role means no skills or industry words, so there is nothing to look for');
+});
+
+// The bug was in the wiring, so the wiring itself has to be covered: no sweep is injected here, so
+// this only passes if searchAndSweep really does reach the runSources in src/actions/sources.js.
+// A role with no skills or industry words makes the real runSources return early and touch nothing.
+test('with nothing injected, a Search reaches the real public-source sweep', async () => {
+  const lines = [];
+  const seen = console.log;
+  console.log = (...a) => lines.push(a.join(' '));
+  try {
+    const added = await searchAndSweep(null, fresh(), { name: 'c1', role: { title: 'Head of Everything' } }, { search: async () => 3 });
+    assert.equal(added, 3);
+  } finally { console.log = seen; }
+  assert.ok(lines.some(l => /only LinkedIn was searched/.test(l)),
+    'the real runSources should have run and said it had nothing to look for; got: ' + lines.join(' | '));
+});
+
+// The bug was not in a function, it was in the wiring: run.js called the Recruiter search directly
+// and so skipped the sweep. Nothing anywhere in src/ may reach past searchAndSweep again.
+test('every way of pressing Search goes through searchAndSweep', async () => {
+  const fs = await import('node:fs');
+  const url = await import('node:url');
+  const src = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..', 'src');
+  const files = fs.readdirSync(src, { recursive: true })
+    .filter(f => f.endsWith('.js'))
+    .filter(f => !['actions/search.js', 'actions/recruiter.js'].includes(f.split(path.sep).join('/')));
+
+  let callers = 0;
+  for (const f of files) {
+    const code = fs.readFileSync(path.join(src, f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')                    // block comments
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');                 // line comments, including trailing ones
+    // An alias would hide the name, so check what is imported, not only what is called.
+    const imported = [...code.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"][^'"]*(?:actions\/search|actions\/recruiter)\.js['"]/g)]
+      .flatMap(m => m[1].split(',').map(x => x.trim()));
+    for (const name of imported) {
+      const local = name.includes(' as ') ? name.split(' as ')[1].trim() : name;
+      assert.ok(!/^(runSearch|runRecruiterSearch)$/.test(name.split(' as ')[0].trim()),
+        `src/${f} imports ${name}: starting a search there skips the public-source sweep, use searchAndSweep`);
+      if (local === 'searchAndSweep') callers++;
+    }
+  }
+  assert.ok(callers >= 2, `expected the app and the command line to start searches through searchAndSweep, found ${callers}`);
+});
+
+test('pressing Stop during the LinkedIn half means the sweep never starts', async () => {
+  const { stopFlag } = await import('../src/stop.js');
+  let swept = false;
+  stopFlag.on = true;
+  try {
+    const added = await searchAndSweep(null, null, cfg, { search: async () => 5, sweep: async () => { swept = true; } });
+    assert.equal(added, 5, 'what LinkedIn found is still kept');
+  } finally { stopFlag.on = false; }
+  assert.equal(swept, false);
+});
+
+test('Chrome closing mid-lookup is not written down as a lookup that was tried', async () => {
+  const closed = async () => { throw new Error('page.goto: Target page, context or browser has been closed'); };
+  await assert.rejects(() => lookupOnLinkedIn(null, { name: 'Sam Lee' }, { collect: closed }), /closed/,
+    'the find must stay in the queue for the next Search instead of being marked done');
+  const flaky = async () => { throw new Error('Timeout 20000ms exceeded'); };
+  assert.equal((await lookupOnLinkedIn(null, { name: 'Sam Lee' }, { collect: flaky })).outcome, 'lookup-failed',
+    'an ordinary slow page is still a failed lookup, as before');
+});

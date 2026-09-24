@@ -91,3 +91,28 @@ test('audit: a save from a stale copy keeps changes another process made meanwhi
   assert.equal(check.get('linkedin.com/in/m2').approved, true);
   assert.deepEqual(check.data.actions.map(a => a.type).sort(), ['connects', 'inmail']);
 });
+
+// 24 Sep 2026 audit: a Search in the second tab used to share the run's Store, and its reload
+// threw away a reply the run had marked but not yet saved, so the next follow-up went to someone
+// who had already answered. The second tab now has its own Store; this is that exact sequence.
+test('a second Store sweeping alongside never loses a reply the run has not saved yet', () => {
+  const file = path.join(home, `db-race-${Date.now()}.json`);
+  const run = new Store(file);
+  run.upsertLead({ url: 'https://www.linkedin.com/in/ann/', name: 'Ann Example', campaign: 'c1' });
+  run.setStatus('https://www.linkedin.com/in/ann/', 'messaged');
+  run.save();
+
+  run.setStatus('https://www.linkedin.com/in/ann/', 'replied');      // marked, not saved yet (an await follows)
+  const tab = new Store(file);                                        // the second tab's own copy
+  tab.refresh();
+  tab.data.finds['github:someone'] = { key: 'github:someone', name: 'Some One', campaign: 'c1' };
+  tab.recordAction('profileViews', 'github:someone');
+  tab.save();
+  run.save();                                                         // the run's await ends, it saves
+
+  const disk = new Store(file);
+  assert.equal(disk.get('https://www.linkedin.com/in/ann/').status, 'replied', 'the reply must survive');
+  assert.ok(disk.data.finds['github:someone'], 'and the second tab\'s find must survive too');
+  assert.equal(disk.data.actions.filter(a => a.type === 'profileViews').length, 1,
+    'the profile view the sweep spent is counted once, so the daily cap stays right');
+});

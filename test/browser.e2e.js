@@ -107,6 +107,32 @@ try {
     assert.match(got.body, /^Hi Nathan,/);
     assert.equal(got.template, '', 'the template box is never typed into');
   }
+  // 24 Sep 2026: a search tab opened 796px wide and Recruiter hid the search box and the filters.
+  {
+    const { ensureWide } = await import('../src/browser.js');
+    const { openSearchBox } = await import('../src/actions/recruiter.js');
+    const box = '#system-search-typeahead', rail = '.search-facet-wrapper.facet-locations';
+
+    // narrow, as the tab was: both the box and the filter rail are hidden
+    await page.setViewportSize({ width: 796, height: 706 });
+    await page.goto('http://127.0.0.1:4790/talent/search');
+    assert.equal(await page.locator(box).isVisible(), false, 'the fake must hide the box when narrow, or this proves nothing');
+    assert.equal(await page.locator(rail).isVisible(), false, 'and the filter rail');
+
+    // the fallback alone opens the box but cannot bring the filters back, which is why it is not the fix
+    assert.ok(await openSearchBox(page), 'the magnifier should open the box');
+    assert.equal(await page.locator(rail).isVisible(), false);
+
+    // the fix: the page is made wide again before searching, and everything is where Sourcer looks
+    await page.goto('http://127.0.0.1:4790/talent/search');
+    assert.notEqual(await ensureWide(page), 'narrow');
+    assert.ok((await page.evaluate(() => window.innerWidth)) >= 1200);
+    assert.equal(await page.locator(box).isVisible(), true, 'the search box shows when wide');
+    assert.equal(await page.locator(rail).isVisible(), true, 'and so do the filters');
+    assert.equal(await ensureWide(page), 'already', 'a wide page is left alone');
+    await page.setViewportSize({ width: 1360, height: 860 });
+  }
+
   console.log('browser e2e: all good');
 } finally {
   await context.close();
