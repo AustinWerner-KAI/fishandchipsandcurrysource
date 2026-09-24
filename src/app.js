@@ -171,6 +171,17 @@ export function state(jobs, campaignName) {
     inmail: cfg ? inmailList(store, cfg) : [],
     firstDegreePreview: firstPreview(store, cfg),
     outreach: cfg ? outreachList(store, cfg) : [],
+    // seen on GitHub, npm, the EIPs and the rest: who they are, what they built, and whether
+    // Sourcer managed to place them on LinkedIn so they can actually be approached
+    finds: c ? store.findRows(c)
+      .sort((a, b) => (b.weight || 0) - (a.weight || 0) || String(b.lastActiveAt || '').localeCompare(String(a.lastActiveAt || '')))
+      .slice(0, 60)
+      .map(f => ({
+        key: f.key, name: f.name, github: f.github, company: f.company, url: f.url || '',
+        sources: f.sources || [], evidence: (f.evidence || []).slice(0, 3),
+        lastActiveAt: f.lastActiveAt, weight: f.weight ?? 0,
+        outcome: f.outcome || '', matchedUrl: f.matchedUrl || null, lookedUp: !!f.lookedUpAt,
+      })) : [],
 
     inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), ACCOUNT_TZ) : null,
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },

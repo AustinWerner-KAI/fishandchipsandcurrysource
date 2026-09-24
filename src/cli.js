@@ -72,7 +72,19 @@ async function main() {
     case 'search': {
       const cfg = campaignArg();
       const url = positional[1];
-      return withBrowser((page, store) => runSearch(page, store, cfg, { url, maxPages: opt('pages') && +opt('pages') }));
+      return withBrowser(async (page, store) => {
+        const added = await runSearch(page, store, cfg, { url, maxPages: opt('pages') && +opt('pages') });
+        // The same press also sweeps the public sources, unless this was a one-off URL search.
+        if (!url && cfg.role && !flag('no-sources')) {
+          const { runSources } = await import('./actions/sources.js');
+          try { await runSources(page, store, cfg); }
+          catch (e) {
+            if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
+            warn('sources: skipped after a problem, LinkedIn results are saved:', e.message.slice(0, 140));
+          }
+        }
+        return added;
+      });
     }
     case 'import': {
       const cfg = campaignArg();
