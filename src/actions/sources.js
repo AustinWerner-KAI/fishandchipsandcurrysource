@@ -62,6 +62,9 @@ export async function lookupOnLinkedIn(page, person, { collect = collectSearchRe
   try { rows = await collect(page, url, 1); }
   catch (e) {
     if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
+    // Chrome closed under us (the run ended): nothing was looked at, so nothing may be written down
+    // as tried. Otherwise the find is marked done and never offered again, and a view is counted.
+    if (/(Target|page|context|browser)[^\n]*(closed|crashed)/i.test(e.message)) throw e;
     warn(`sources: could not look up ${name} on LinkedIn:`, e.message.slice(0, 90));
     return { outcome: 'lookup-failed' };
   }

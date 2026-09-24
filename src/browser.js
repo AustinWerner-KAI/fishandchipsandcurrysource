@@ -100,6 +100,30 @@ export async function passContractChooser(page) {
   }
 }
 
+// Recruiter and LinkedIn change their whole layout below about 1200px: the search box shrinks to a
+// magnifier, the filter rail to a button, the nav to a menu, and Sourcer can no longer find them.
+// 24 Sep 2026: a Search tab opened at 796px wide and failed. Every other page Sourcer has saved was
+// 1360 wide. This puts the window back to that size, and if the window will not move, lays the
+// page out at that size instead. Does nothing when the page is already wide enough.
+export const WIDE = { width: 1360, height: 900 };
+export async function ensureWide(page, { min = 1200 } = {}) {
+  const width = async () => page.evaluate(() => window.innerWidth).catch(() => 0);
+  if ((await width()) >= min) return 'already';
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    const { windowId } = await cdp.send('Browser.getWindowForTarget');
+    await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
+    await cdp.send('Browser.setWindowBounds', { windowId, bounds: { width: WIDE.width, height: WIDE.height } });
+    await cdp.detach().catch(() => {});
+    await sleep(300);
+    if ((await width()) >= min) return 'window';
+  } catch { /* a headless or locked window: fall through to laying the page out wide */ }
+  await page.setViewportSize(WIDE).catch(() => {});
+  if ((await width()) >= min) return 'viewport';
+  warn(`this tab is only ${await width()}px wide, so LinkedIn may hide what Sourcer looks for`);
+  return 'narrow';
+}
+
 // Stop hard if LinkedIn throws a security checkpoint or logs us out. Never try to click through it.
 export async function guard(page) {
   const url = page.url();

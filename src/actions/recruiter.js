@@ -1,7 +1,7 @@
 // Search in Recruiter Lite with the role's boolean and locations, and collect the people.
 // Recruiter results link only to Recruiter profiles (/talent/profile/<id>); the person's normal
 // /in/ address is looked up later, only for people Kai approves (see publicUrlFor).
-import { goto, snap, saveDom, guard, typeLikeHuman } from '../browser.js';
+import { goto, snap, saveDom, guard, typeLikeHuman, ensureWide } from '../browser.js';
 import { SEL, firstVisible } from '../selectors.js';
 import { tenureMonths, experienceMonths } from '../company.js';
 import { log, warn } from '../log.js';
@@ -166,14 +166,38 @@ async function nextPage(page, pageNo) {
   return waitForResults(page, 12000, before);                  // false if the same people are still showing
 }
 
+// Recruiter shows the search box in the top bar, but in a narrow window it is collapsed to just the
+// magnifier (24 Sep 2026: a search tab opened 796px wide and stopped before it started).
+// ensureWide() is the real fix; this is the fallback if the page still comes up collapsed.
+// Exported so the browser test can drive the collapsed case.
+export async function openSearchBox(page) {
+  const box = await firstVisible(page, SEL.recruiterSearchBox, 8000);
+  if (box) return box;
+  const opener = await firstVisible(page, SEL.recruiterSearchOpen, 2000);
+  if (!opener) return null;
+  const was = new URL(page.url()).pathname;
+  await opener.click().catch(() => {});
+  await sleep(randomBetween(400, 900));
+  // Clicking the wrong thing in the top bar navigates away; going back is better than searching
+  // from whatever page we landed on. Only a different page counts: Recruiter may add to the
+  // address when the box opens, and that is not leaving.
+  if (new URL(page.url()).pathname !== was) { warn('the search box opener moved the page; going back'); await page.goBack().catch(() => {}); return null; }
+  return firstVisible(page, SEL.recruiterSearchBox, 5000);
+}
+
 export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
   const role = cfg.role;
   if (!role?.boolean) throw new Error('The role has no boolean search yet.');
+  await ensureWide(page);                          // a narrow window hides the box and the filters
   await goto(page, SEARCH_URL);
   if (!/\/talent\//.test(page.url())) throw new Error(`Recruiter did not open (landed on ${page.url()}). Press Log in to Recruiter.`);
 
-  const box = await firstVisible(page, SEL.recruiterSearchBox, 8000);
-  if (!box) { await snap(page, 'recruiter-no-search-box'); throw new Error('Recruiter search box not found'); }
+  const box = await openSearchBox(page);
+  if (!box) {
+    // The page itself is kept as well as the picture, so the next fix is made from the real markup.
+    await snap(page, 'recruiter-no-search-box'); await saveDom(page, 'recruiter-no-search-box');
+    throw new Error('Recruiter search box not found');
+  }
   await box.click(); await sleep(randomBetween(500, 900));
   await box.fill('');
   await typeLikeHuman(box, role.boolean);

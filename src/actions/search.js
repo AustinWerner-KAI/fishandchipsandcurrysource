@@ -3,6 +3,7 @@ import { log, warn } from '../log.js';
 import { sleep, humanPauseMs } from '../limits.js';
 import { buildSearchUrl, lookupGeo, widenBoolean } from '../role.js';
 import { patchCampaign } from '../config.js';
+import { stopRequested } from '../stop.js';
 
 // Where to look for people: for a remote role, wherever the recruiter said candidates may sit;
 // otherwise the office location.
@@ -75,5 +76,24 @@ export async function runSearch(page, store, cfg, { url, maxPages } = {}) {
     if (p < pages) await sleep(humanPauseMs([8, 25]));
   }
   log(`search done: ${added} new leads in campaign "${cfg.name}"`);
+  return added;
+}
+
+// Every way a Search can be pressed ends here: the LinkedIn search first, then the public sources.
+// The sweep is a bonus on top, so a problem in it must never lose the LinkedIn results.
+// 24 Sep 2026: the sweep was wired only to the command line, so a Search pressed in the app while
+// a run was going (which is how Kai presses it) never swept, and the Finds list stayed empty.
+export async function searchAndSweep(page, store, cfg, { url, maxPages, sources = true, maxLookups, search = runSearch, sweep } = {}) {
+  const added = await search(page, store, cfg, { url, maxPages });
+  // A one-off URL search is a look at one page, not the role, so it does not sweep.
+  if (url || !sources || !cfg.role) return added;
+  // Pressing Stop during the LinkedIn half must not then start minutes of public searching.
+  if (stopRequested()) { log('sources: skipped, you pressed Stop'); return added; }
+  const runSources = sweep || (await import('./sources.js')).runSources;
+  try { await runSources(page, store, cfg, maxLookups ? { maxLookups } : undefined); }
+  catch (e) {
+    if (e?.name === 'CheckpointError' || e?.name === 'NotLoggedInError') throw e;
+    warn('sources: skipped after a problem, LinkedIn results are saved:', String(e?.message || e).slice(0, 140));
+  }
   return added;
 }

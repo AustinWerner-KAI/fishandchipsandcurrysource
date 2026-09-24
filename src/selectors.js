@@ -15,6 +15,11 @@ export const SEL = {
   recruiterLiteContract: ['button[data-live-test-contract-select^="Recruiter Lite"]', 'button[aria-label^="Select Recruiter Lite"]', 'button[data-test-contract-select]:near(:text("Recruiter Lite"))'],
   // Recruiter home search box: placeholder "Start a new search...", aria "Search by job title, ideal candidate, keyword, or boolean"
   recruiterSearchBox: ['input[aria-label^="Search by job title"]', 'input[placeholder^="Start a new search"]'],
+  // In a narrow window (seen 24 Sep 2026 at 796px) the box is collapsed to just the magnifier in
+  // the top bar; clicking it opens the box the selectors above look for.
+  // Only the magnifier itself: a wrapper would be clicked in the middle of its box, which in the
+  // top bar is another nav control, and that navigates off the search page.
+  recruiterSearchOpen: ['.system-search-typeahead__icon-container', '[data-test-system-search-typeahead] button', '[data-test-global-nav-system-search] button', 'button[aria-label^="Search by job title"]'],
 
   // Recruiter search results and profile (seen 22 Sep 2026)
   recruiterResultItem: ['li[data-test-paginated-profile-list-item-container]', '[data-test-paginated-list-item]'],
