@@ -4,6 +4,7 @@
 // Every action button is looked up inside the profile's top card AND by the person's name
 // ("Invite Jane Doe to connect"), so a suggested-people card further down the page is never clicked.
 import { SEL, firstVisible, anyPresent, withName } from './selectors.js';
+import { findOrAsk, forget } from './heal.js';
 import { goto, guard, humanScroll, snap, saveDom, typeLikeHuman } from './browser.js';
 import { sleep, randomBetween } from './limits.js';
 import { log, warn } from './log.js';
@@ -95,7 +96,7 @@ async function topCardButtons(page, name) {
 }
 
 // Returns one of: 'sent' | 'already-connected' | 'pending' | 'no-button' | 'weekly-limit' | 'email-required' | 'failed'
-export async function sendConnectionRequest(page, url, note, { clients } = {}) {
+export async function sendConnectionRequest(page, url, note, { clients, store = null } = {}) {
   const info = await openProfile(page, url);
   const client = clientOnProfile(info, clients);
   if (client) return { result: 'off-limits', info, client };
@@ -133,6 +134,11 @@ export async function sendConnectionRequest(page, url, note, { clients } = {}) {
     return { result: 'email-required', info };
   }
 
+  // Which learned controls this send actually went through. Only a step whose LEARNED selector
+  // did the finding counts: if a selector we shipped with found the button, the learned one is
+  // still unproven and must not be made permanent.
+  const usedSteps = [];
+
   let noteSent = false;
   if (note) {
     const addNote = await firstVisible(page, SEL.addNoteButton, 2000);
@@ -140,23 +146,52 @@ export async function sendConnectionRequest(page, url, note, { clients } = {}) {
       await addNote.click();
       await sleep(randomBetween(500, 1000));
     }
-    const ta = await firstVisible(page, SEL.noteTextarea, 2000);
+    const found = store
+      ? await findOrAsk(page, { page, store, step: 'noteTextarea', lane: 'connect', shipped: SEL.noteTextarea,
+          name: info.name, want: 'note', why: 'the box to type the note in is not where it was', firstVisible })
+      : { el: await firstVisible(page, SEL.noteTextarea, 2000), viaLearned: false, asked: false };
+    const ta = found.el;
+    if (ta && !(await noteLanded(ta, note))) {
+      // A learned selector can find the wrong box. Typing into it would send a bare invitation
+      // while Sourcer recorded a note that nobody got, and confirm the wrong box for good.
+      // Forgetting it matters as much as stopping: a wrong box that is still on the page is found
+      // every time, so nothing would ever be asked and the queue would sit here for ever.
+      await snap(page, 'note-did-not-land');
+      await dismissModal(page);
+      // written now, not later: the caller re-reads the file as soon as this returns
+      if (store && found.viaLearned) { store.refresh(); forget(store, 'noteTextarea'); store.save(); }
+      return { result: 'failed', info, usedSteps };
+    }
     if (ta) {
-      await typeLikeHuman(ta, note);
-      await sleep(randomBetween(500, 1200));
+      if (found.viaLearned) usedSteps.push('noteTextarea');
       noteSent = true;
+    } else if (store) {
+      // A note-less invite cannot be taken back, and the note is the point. Whether or not Sourcer
+      // managed to raise the question (it only holds one at a time), it stops rather than sending
+      // something it was told to personalise.
+      await snap(page, 'no-note-box');
+      await dismissModal(page);
+      return { result: 'needs-you', info, usedSteps };
     } else {
       await snap(page, 'no-note-box');
       warn('note box not found (monthly personalised-invite limit?), sending without a note');
     }
   }
 
-  const send = await firstVisible(page, SEL.sendInviteButton, 2500);
+  // The step that actually stops invites. When it cannot be found, Sourcer reads the window out
+  // and asks Kai which control it is, rather than failing quietly for days.
+  const sendFound = store
+    ? await findOrAsk(page, { page, store, step: 'sendInviteButton', lane: 'connect', shipped: SEL.sendInviteButton,
+        name: info.name, want: 'send', why: 'the button that sends the invitation is not where it was', firstVisible })
+    : { el: await firstVisible(page, SEL.sendInviteButton, 2500), viaLearned: false, asked: false };
+  const send = sendFound.el;
   if (!send) {
     await snap(page, 'no-send-button');
+    await saveDom(page, 'no-send-button');
     await dismissModal(page);
-    return { result: 'failed', info };
+    return { result: sendFound.asked ? 'needs-you' : 'failed', info, usedSteps };
   }
+  if (sendFound.viaLearned) usedSteps.push('sendInviteButton');
   await send.click();
   await sleep(randomBetween(1200, 2200));
   await guard(page);
@@ -172,7 +207,22 @@ export async function sendConnectionRequest(page, url, note, { clients } = {}) {
     await snap(page, 'send-unconfirmed');
     return { result: 'failed', info };
   }
-  return { result: 'sent', info, noteSent };
+  return { result: 'sent', info, noteSent, usedSteps };
+}
+
+// Types the note, then asks the box how much it is holding. The count is all that comes back:
+// the note itself is never read out of the page, here or anywhere else.
+export async function noteLanded(ta, note) {
+  await typeLikeHuman(ta, note);
+  await sleep(randomBetween(500, 1200));
+  let len = 0;
+  try {
+    len = await ta.evaluate(el => String(
+      el.value !== undefined && el.value !== null ? el.value : (el.textContent || '')
+    ).trim().length);
+  } catch { return true; }   // could not check: the old behaviour, rather than a stuck queue
+  // LinkedIn trims and can cut a long note at its own limit, so this is "most of it", not "all".
+  return len >= Math.min(note.trim().length, 20);
 }
 
 export async function dismissModal(page) {
