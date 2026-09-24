@@ -20,7 +20,7 @@ import { companyKey } from './company.js';
 
 export const STATUSES = ['new', 'invited', 'accepted', 'messaged', 'replied', 'done', 'skipped', 'error'];
 
-const EMPTY = () => ({ meta: {}, leads: {}, companies: {}, actions: [] });
+const EMPTY = () => ({ meta: {}, leads: {}, companies: {}, finds: {}, actions: [] });
 
 // Meta keys holding a map of rows (one per learned step, one per lane) rather than a single value.
 const MAP_META = new Set(['learned', 'health']);
@@ -41,6 +41,7 @@ function mergeMap(was, now, disk) {
 function parseDb(raw) {
   const data = { ...EMPTY(), ...JSON.parse(raw) };
   data.companies ||= {};
+  data.finds ||= {};
   for (const l of Object.values(data.leads)) { l.queue ||= []; l.messages ||= []; }
   return data;
 }
@@ -107,6 +108,7 @@ export class Store {
     this.base = Object.fromEntries(Object.entries(this.data.leads).map(([k, l]) => [k, JSON.stringify(l)]));
     this.baseMeta = JSON.stringify(this.data.meta || {});
     this.baseCompanies = Object.fromEntries(Object.entries(this.data.companies || {}).map(([k, c]) => [k, JSON.stringify(c)]));
+    this.baseFinds = Object.fromEntries(Object.entries(this.data.finds || {}).map(([k, f]) => [k, JSON.stringify(f)]));
     this.newActions = 0;
   }
 
@@ -148,6 +150,14 @@ export class Store {
       if (this.baseCompanies[k] !== JSON.stringify(c)) out.companies[k] = c;
       else if (!out.companies[k]) out.companies[k] = c;
     }
+    // Finds are rows of their own, merged one at a time so two passes never wipe each other.
+    out.finds = { ...(disk.finds || {}) };
+    for (const [k, f] of Object.entries(this.data.finds || {})) {
+      if (this.baseFinds[k] !== JSON.stringify(f)) out.finds[k] = f;
+      else if (!out.finds[k]) out.finds[k] = f;
+    }
+    for (const k of Object.keys(this.baseFinds || {})) if (!this.data.finds[k]) delete out.finds[k];
+
     const mine = this.newActions ? this.data.actions.slice(-this.newActions) : [];
     out.actions = [...(disk.actions || []), ...mine];
     if (out.actions.length > 20000) out.actions = out.actions.slice(-15000);
@@ -291,6 +301,40 @@ export class Store {
       else { removed++; if (!dryRun) delete this.data.leads[url]; }
     }
     return { removed, kept };
+  }
+
+  // ---- finds (people seen on the public sources, who have no LinkedIn profile yet) ----
+
+  // One row per human, whichever sites saw them. Merged on the way in, so a second pass adds
+  // evidence rather than a duplicate.
+  upsertFind(key, fields = {}) {
+    if (!key) return null;
+    const cur = this.data.finds[key];
+    const now = new Date().toISOString();
+    if (!cur) {
+      this.data.finds[key] = {
+        key, name: '', github: '', company: '', location: '', url: '',
+        sources: [], evidence: [], weight: 0, lastActiveAt: null,
+        campaign: '', foundAt: now,
+        lookedUpAt: null, matchedUrl: null, outcome: '',   // how the LinkedIn lookup went
+        ...fields, updatedAt: now,
+      };
+      return this.data.finds[key];
+    }
+    // whatever we did not know before, and the strongest weight seen
+    for (const k of ['name', 'github', 'company', 'location', 'url', 'campaign']) if (fields[k] && !cur[k]) cur[k] = fields[k];
+    if (fields.weight != null) cur.weight = Math.max(cur.weight || 0, fields.weight);
+    if (fields.lastActiveAt && (!cur.lastActiveAt || fields.lastActiveAt > cur.lastActiveAt)) cur.lastActiveAt = fields.lastActiveAt;
+    cur.sources = [...new Set([...(cur.sources || []), ...(fields.sources || [])])];
+    const seen = new Set((cur.evidence || []).map(e => `${e.label}|${e.value}`));
+    for (const e of fields.evidence || []) if (!seen.has(`${e.label}|${e.value}`)) { cur.evidence.push(e); seen.add(`${e.label}|${e.value}`); }
+    if (cur.evidence.length > 8) cur.evidence = cur.evidence.slice(0, 8);
+    cur.updatedAt = now;
+    return cur;
+  }
+
+  findRows(campaign) {
+    return Object.values(this.data.finds || {}).filter(f => !campaign || f.campaign === campaign);
   }
 
   // A person found in Recruiter keeps their Recruiter URL after they are moved to their /in/ URL.
