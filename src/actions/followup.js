@@ -97,6 +97,20 @@ export function dueMessage(lead, cfg, now = new Date()) {
   return { ...checked(step.text, lead, cfg.role), source: 'step', stepIndex };
 }
 
+// LinkedIn says there is no connection. That only means something for somebody who was one:
+// a 1st degree contact, or an invite that was accepted. Anyone reached another way (an InMail to
+// a 2nd or 3rd degree candidate) was never connected in the first place, and closing them buries
+// live outreach in the Closed list with a reason that reads like their fault.
+function closeIfWasConnected(store, lead) {
+  const wasConnected = lead.degree === '1st' || lead.direct || lead.preexisting || lead.acceptedAt;
+  if (!wasConnected) {
+    warn(`${lead.name || lead.url}: not a connection, which is expected for ${lead.channel || 'this lane'}. Left as it was.`);
+    return false;
+  }
+  store.setStatus(lead.url, 'skipped', { error: 'no longer a 1st degree connection' });
+  return true;
+}
+
 function markReplied(store, lead, thread) {
   store.setStatus(lead.url, 'replied', { repliedAt: new Date().toISOString(), lastReply: thread.lastText?.slice(0, 500) || '' });
   log(`REPLY from ${lead.name || lead.url}: ${thread.lastText?.slice(0, 120)}`);
@@ -170,7 +184,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     if (!t.opened) {
       if (t.reason === 'off-limits') markOffLimits(store, lead, t.client);
       else if (t.reason === 'not-connected') {
-        store.setStatus(lead.url, 'skipped', { error: 'no longer a 1st degree connection' });
+        closeIfWasConnected(store, lead);
       } else {
         warn(`could not open thread for ${lead.url}: ${t.reason} (screenshot saved, nothing sent)`);
       }
@@ -251,6 +265,9 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
   if (!ownName) { warn('reply sweep: own name unknown, skipping'); return 0; }
   const now = Date.now();
   const list = store.leads({ campaign: cfg.name, status: 'messaged' })
+    // Somebody reached by InMail is 2nd or 3rd degree, which is why they got an InMail. There is
+    // no LinkedIn thread to open, and their reply lands in Recruiter, not here.
+    .filter(l => l.channel !== 'inmail' && !l.inmail?.sentAt)
     .filter(l => !dueMessage(l, cfg))
     .filter(l => !l.lastCheckedAt || now - new Date(l.lastCheckedAt).getTime() > DAY)
     .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
@@ -282,7 +299,7 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
       }
       await ops.closeThread(page);
     } else if (t.reason === 'not-connected') {
-      store.setStatus(lead.url, 'skipped', { error: 'no longer a 1st degree connection' });
+      closeIfWasConnected(store, lead);
     }
     store.save();
     if (pause) await pauseFor(humanPauseMs([10, 40]));
