@@ -1,7 +1,7 @@
 // Search in Recruiter Lite with the role's boolean and locations, and collect the people.
 // Recruiter results link only to Recruiter profiles (/talent/profile/<id>); the person's normal
 // /in/ address is looked up later, only for people Kai approves (see publicUrlFor).
-import { goto, snap, saveDom, guard, typeLikeHuman, ensureWide } from '../browser.js';
+import { goto, snap, saveDom, guard, typeLikeHuman, ensureWide, loadedNarrow, WIDE } from '../browser.js';
 import { SEL, firstVisible } from '../selectors.js';
 import { tenureMonths, experienceMonths } from '../company.js';
 import { log, warn } from '../log.js';
@@ -185,11 +185,23 @@ export async function openSearchBox(page) {
   return firstVisible(page, SEL.recruiterSearchBox, 5000);
 }
 
+// The page was laid out narrow even so: lay the tab out wide and load it again. Checked after the
+// page loads because the window can report wide a moment before the page takes the new size.
+export async function widenIfNarrow(page) {
+  if (!(await loadedNarrow(page))) return false;
+  await ensureWide(page);
+  if (await loadedNarrow(page)) await page.setViewportSize(WIDE).catch(() => {});
+  log('Recruiter came up in its narrow layout; loading it again wide');
+  await goto(page, page.url());
+  return true;
+}
+
 export async function runRecruiterSearch(page, store, cfg, { maxPages } = {}) {
   const role = cfg.role;
   if (!role?.boolean) throw new Error('The role has no boolean search yet.');
   await ensureWide(page);                          // a narrow window hides the box and the filters
   await goto(page, SEARCH_URL);
+  await widenIfNarrow(page);
   if (!/\/talent\//.test(page.url())) throw new Error(`Recruiter did not open (landed on ${page.url()}). Press Log in to Recruiter.`);
 
   const box = await openSearchBox(page);

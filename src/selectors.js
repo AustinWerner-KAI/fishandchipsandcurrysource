@@ -19,7 +19,9 @@ export const SEL = {
   // the top bar; clicking it opens the box the selectors above look for.
   // Only the magnifier itself: a wrapper would be clicked in the middle of its box, which in the
   // top bar is another nav control, and that navigates off the search page.
-  recruiterSearchOpen: ['.system-search-typeahead__icon-container', '[data-test-system-search-typeahead] button', '[data-test-global-nav-system-search] button', 'button[aria-label^="Search by job title"]'],
+  // Real markup of the narrow layout, saved 24 Sep 2026: <button data-test-global-nav-search-button>
+  // with an icon labelled "Open search input". Last resort only: that layout hides the filters too.
+  recruiterSearchOpen: ['button[data-test-global-nav-search-button]', '.system-search-typeahead__icon-container', '[data-test-system-search-typeahead] button'],
 
   // Recruiter search results and profile (seen 22 Sep 2026)
   recruiterResultItem: ['li[data-test-paginated-profile-list-item-container]', '[data-test-paginated-list-item]'],

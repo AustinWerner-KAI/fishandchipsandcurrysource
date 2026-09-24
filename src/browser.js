@@ -106,22 +106,38 @@ export async function passContractChooser(page) {
 // 1360 wide. This puts the window back to that size, and if the window will not move, lays the
 // page out at that size instead. Does nothing when the page is already wide enough.
 export const WIDE = { width: 1360, height: 900 };
+const innerWidth = page => page.evaluate(() => window.innerWidth).catch(() => 0);
+async function waitForWidth(page, min, ms) {
+  const end = Date.now() + ms;
+  let w = await innerWidth(page);
+  while (w < min && Date.now() < end) { await sleep(150); w = await innerWidth(page); }
+  return w;
+}
 export async function ensureWide(page, { min = 1200 } = {}) {
-  const width = async () => page.evaluate(() => window.innerWidth).catch(() => 0);
-  if ((await width()) >= min) return 'already';
+  const before = await innerWidth(page);
+  if (before >= min) return 'already';
   try {
     const cdp = await page.context().newCDPSession(page);
     const { windowId } = await cdp.send('Browser.getWindowForTarget');
     await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
     await cdp.send('Browser.setWindowBounds', { windowId, bounds: { width: WIDE.width, height: WIDE.height } });
     await cdp.detach().catch(() => {});
-    await sleep(300);
-    if ((await width()) >= min) return 'window';
+    // a Mac animates the resize, so the page can take a moment to see its new width
+    const after = await waitForWidth(page, min, 3000);
+    if (after >= min) { log(`widened the window from ${before} to ${after}px`); return 'window'; }
   } catch { /* a headless or locked window: fall through to laying the page out wide */ }
   await page.setViewportSize(WIDE).catch(() => {});
-  if ((await width()) >= min) return 'viewport';
-  warn(`this tab is only ${await width()}px wide, so LinkedIn may hide what Sourcer looks for`);
+  const laid = await waitForWidth(page, min, 1000);
+  if (laid >= min) { log(`the window stayed ${before}px, so this tab is laid out at ${laid}px`); return 'viewport'; }
+  warn(`this tab is only ${laid}px wide, so LinkedIn may hide what Sourcer looks for`);
   return 'narrow';
+}
+
+// Recruiter picks its layout when a page loads. If it loaded narrow ("page-layout--small": search
+// box and filters folded away, seen 24 Sep 2026), widen the tab and load the page again.
+export async function loadedNarrow(page, min = 1200) {
+  if ((await innerWidth(page)) < min) return true;
+  return (await page.locator('.page-layout--small').count().catch(() => 0)) > 0;
 }
 
 // Stop hard if LinkedIn throws a security checkpoint or logs us out. Never try to click through it.

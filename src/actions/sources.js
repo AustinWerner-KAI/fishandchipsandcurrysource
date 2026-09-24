@@ -84,8 +84,14 @@ export async function runSources(page, store, cfg, { maxLookups = 8, search = se
   const ids = automated().filter(s => s.role === 'discovery').map(s => s.id);
   log(`sources: looking for ${terms.join(', ')} across ${ids.join(', ')}`);
 
-  let people = [];
-  try { people = await search({ terms, location: cfg.role?.location || '' }); }
+  let people = [], problems = [];
+  try {
+    // searchPublic answers { people, problems, manual }. 24 Sep 2026: this was read as a bare list,
+    // so the first live sweep found 153 people and then saved none of them.
+    const got = await search({ terms, location: cfg.role?.location || '' });
+    people = Array.isArray(got) ? got : (Array.isArray(got?.people) ? got.people : []);
+    problems = Array.isArray(got?.problems) ? got.problems : [];
+  }
   catch (e) { warn('sources: the public search failed, carrying on with LinkedIn only:', e.message.slice(0, 140)); return { found: 0, matched: 0 }; }
 
   store.refresh();
