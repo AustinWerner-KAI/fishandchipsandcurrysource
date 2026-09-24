@@ -30,7 +30,7 @@ export const SOURCES = [
     licence: 'silent — no terms page published, no robots restriction',
     proves: 'Paid for finding real bugs in live protocols, and Sherlock grade them senior themselves',
     gives: ['handle'], timing: 'Days active on the platform',
-    note: 'Thirty-five individuals carry Sherlock\\u2019s own senior grade. They are pseudonymous, and the board will not tell you who they are, so this says who is worth chasing rather than who to contact.',
+    note: 'Thirty-five individuals carry Sherlock’s own senior grade. They are pseudonymous, and the board will not tell you who they are, so this says who is worth chasing rather than who to contact.',
   },
   {
     id: 'npm', title: 'npm package maintainers', use: 'auto', role: 'discovery',
