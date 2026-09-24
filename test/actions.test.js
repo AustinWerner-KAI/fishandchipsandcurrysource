@@ -476,3 +476,149 @@ test('a search asked for mid-run is picked up once, for the right role', async (
   assert.deepEqual(takeRequests('role-one'), []);
   assert.deepEqual(pending('role-two'), ['search']);
 });
+
+// ---- 24 Sep: what Kai found using it for real ----
+
+test('an InMailed candidate is never closed as "no longer a 1st degree connection"', async () => {
+  const s = fresh();
+  // reached by InMail in Recruiter: 2nd degree, which is exactly why they got an InMail
+  const l = s.upsertLead({ url: 'linkedin.com/in/im1', name: 'Im One', campaign: 'c1', degree: '2nd' });
+  s.setStatus(l.url, 'messaged', { channel: 'inmail' });
+  l.inmail = { sentAt: new Date(Date.now() - 3 * 86400e3).toISOString() };
+  s.save();
+  let opened = 0;
+  const ops = { readOwnName: async () => 'Kai Crayford', closeThread: async () => {},
+    openThread: async () => { opened++; return { opened: false, reason: 'not-connected' }; } };
+  await sweepReplies(null, s, cfg, { ops, pause: false });
+  assert.equal(opened, 0, 'their reply arrives in Recruiter, so there is no thread to open');
+  assert.equal(s.get(l.url).status, 'messaged', 'and they stay in the outreach list');
+  assert.ok(!/1st degree/.test(s.get(l.url).error || ''));
+});
+
+test('only somebody who really was connected is closed when LinkedIn says not connected', async () => {
+  const s = fresh();
+  const was = s.upsertLead({ url: 'linkedin.com/in/w1', name: 'Was Connected', campaign: 'c1', degree: '1st' });
+  s.setStatus(was.url, 'messaged', { preexisting: true, direct: { at: '2026-09-20T00:00:00Z' }, acceptedAt: '2026-09-20T00:00:00Z' });
+  was.messages.push({ lane: 'direct', at: '2026-09-20T01:00:00Z', text: 'x' });
+  const never = s.upsertLead({ url: 'linkedin.com/in/n1', name: 'Never Connected', campaign: 'c1', degree: '3rd' });
+  s.setStatus(never.url, 'messaged');
+  never.messages.push({ at: '2026-09-20T01:00:00Z', text: 'x' });
+  s.save();
+  const ops = { readOwnName: async () => 'Kai Crayford', closeThread: async () => {},
+    openThread: async () => ({ opened: false, reason: 'not-connected' }) };
+  await sweepReplies(null, s, cfg, { ops, pause: false });
+  assert.equal(s.get(was.url).status, 'skipped', 'a real connection that has gone is closed');
+  assert.equal(s.get(never.url).status, 'messaged', 'somebody who was never connected is left alone');
+});
+
+test('deleting a role keeps everyone it actually contacted', async () => {
+  const s = fresh();
+  s.upsertLead({ url: 'linkedin.com/in/keep1', name: 'Invited', campaign: 'c1', approved: true });
+  s.setStatus('linkedin.com/in/keep1', 'invited', { invitedAt: new Date().toISOString() });
+  const k2 = s.upsertLead({ url: 'linkedin.com/in/keep2', name: 'InMailed', campaign: 'c1' });
+  k2.inmail = { sentAt: new Date().toISOString() };
+  s.upsertLead({ url: 'linkedin.com/in/drop1', name: 'Never Touched', campaign: 'c1', approved: true });
+  s.upsertLead({ url: 'linkedin.com/in/other', name: 'Other Role', campaign: 'c2', approved: true });
+  s.save();
+
+  const dry = s.deleteCampaign('c1', { dryRun: true });
+  assert.deepEqual(dry, { removed: 1, kept: 2 });
+  assert.ok(s.get('linkedin.com/in/drop1'), 'a dry run changes nothing');
+
+  assert.deepEqual(s.deleteCampaign('c1'), { removed: 1, kept: 2 });
+  assert.equal(s.get('linkedin.com/in/drop1'), undefined, 'nobody untouched is kept');
+  assert.ok(s.get('linkedin.com/in/keep1'), 'the person you invited stays on file');
+  assert.ok(s.get('linkedin.com/in/keep2'), 'and so does the one you InMailed');
+  assert.equal(s.get('linkedin.com/in/keep1').approved, false, 'but nothing more goes to them');
+  assert.ok(s.get('linkedin.com/in/keep1').roleDeletedAt);
+  assert.ok(s.get('linkedin.com/in/other'), 'another role is untouched');
+  // and that is what stops a later search approaching them twice
+  s.save();
+  assert.ok(new Store(s.file).get('linkedin.com/in/keep1'), 'it reached the file');
+});
+
+test('the outreach list puts answers first and never invents contact', async () => {
+  const { outreachList } = await import('../src/app.js');
+  const s = fresh();
+  const icfg = { ...cfg, inmail: { followUpAfterDays: 4 } };
+  const quiet = s.upsertLead({ url: 'linkedin.com/in/o1', name: 'Quiet One', campaign: 'c1' });
+  quiet.inmail = { sentAt: new Date(Date.now() - 1 * 86400e3).toISOString() };
+  s.setStatus(quiet.url, 'messaged', { channel: 'inmail' });
+  const answered = s.upsertLead({ url: 'linkedin.com/in/o2', name: 'Answered Two', campaign: 'c1' });
+  answered.inmail = { sentAt: new Date(Date.now() - 5 * 86400e3).toISOString(), replied: new Date().toISOString() };
+  s.setStatus(answered.url, 'replied', { repliedAt: new Date().toISOString(), lastReply: 'Yes, tell me more' });
+  s.upsertLead({ url: 'linkedin.com/in/o3', name: 'Not Contacted', campaign: 'c1', approved: true });
+  s.save();
+
+  const out = outreachList(s, { ...icfg, name: 'c1' });
+  assert.equal(out.length, 2, 'somebody never contacted is not outreach');
+  assert.equal(out[0].name, 'Answered Two', 'the answer is at the top');
+  assert.equal(out[0].replied, true);
+  assert.equal(out[0].lastReply, 'Yes, tell me more');
+  assert.equal(out[0].awaitingInmail, false, 'you are not asked whether somebody who answered replied');
+  assert.equal(out[1].name, 'Quiet One');
+  assert.equal(out[1].how, 'InMail');
+  assert.equal(out[1].awaitingInmail, true, 'the quiet one can be marked as replied by hand');
+  assert.equal(out[1].followUpDue, false, 'one day is not four');
+  assert.equal(out[0].reached, true);
+  assert.equal(out[1].reached, true);
+});
+
+test('somebody only lined up is never described as contacted', async () => {
+  const { outreachList } = await import('../src/app.js');
+  const s = fresh();
+  // queued for the 1st-connections message: nothing has gone to them yet
+  const q = s.upsertLead({ url: 'linkedin.com/in/lined', name: 'Lined Up', campaign: 'c1', degree: '1st' });
+  s.setStatus(q.url, 'accepted', { preexisting: true, acceptedAt: new Date().toISOString(), direct: { at: new Date().toISOString() } });
+  const done = s.upsertLead({ url: 'linkedin.com/in/done', name: 'Really Sent', campaign: 'c1' });
+  done.inmail = { sentAt: new Date(Date.now() - 86400e3).toISOString() };
+  s.setStatus(done.url, 'messaged', { channel: 'inmail' });
+  s.save();
+  const out = outreachList(s, { ...cfg, name: 'c1' });
+  assert.equal(out.length, 2);
+  assert.equal(out[0].name, 'Really Sent', 'what actually went ranks above what is only queued');
+  assert.equal(out[0].reached, true);
+  assert.equal(out[1].name, 'Lined Up');
+  assert.equal(out[1].reached, false, 'nothing has gone to them, so the screen must not say sent');
+});
+
+test('experience is never the sum of overlapping roles', async () => {
+  const { experienceMonths } = await import('../src/company.js');
+  // Recruiter now gives years, not months, so every role rounds up and they overlap.
+  const history = [
+    { term: 'Principal Engineer', duration: '2024 – Present' },
+    { term: 'Staff Engineer', duration: '2022 – 2024' },
+    { term: 'Consultant', duration: '2022 – 2023' },
+    { term: 'Engineer', duration: '2019 – 2022' },
+    { term: 'Engineer', duration: '2016 – 2019' },
+  ];
+  const m = experienceMonths(history, new Date('2026-09-24T00:00:00Z'));
+  // 2016 to now is about ten years. Adding the roles up would say seventeen.
+  assert.ok(m >= 110 && m <= 132, `expected about ten years, got ${m} months`);
+});
+
+test('anybody excluded by hand is never put back by a later search', async () => {
+  const s = fresh();
+  s.upsertLead({ url: 'linkedin.com/in/x1', name: 'Ex One', headline: 'old headline', campaign: 'c1', approved: true });
+  s.upsertLead({ url: 'linkedin.com/in/auto', name: 'Auto Skip', campaign: 'c1' });
+  s.upsertLead({ url: 'linkedin.com/in/fresh', name: 'Fresh One', campaign: 'c1' });
+  s.setStatus('linkedin.com/in/x1', 'skipped', { error: 'excluded by hand', skippedByHand: true });
+  s.setStatus('linkedin.com/in/auto', 'skipped', { error: 'no Connect button on profile' });
+  s.save();
+
+  // Clear list used to delete the hand-excluded, which is the same as un-excluding them
+  assert.equal(s.clearUncontacted('c1'), 2, 'the untouched and the automatically skipped go');
+  assert.ok(s.get('linkedin.com/in/x1'), 'the one you excluded stays on file');
+  assert.equal(s.get('linkedin.com/in/auto'), undefined);
+  assert.equal(s.get('linkedin.com/in/fresh'), undefined);
+
+  // a later search finds them again: the exclusion holds, and nothing re-approves them
+  s.upsertLead({ url: 'linkedin.com/in/x1', name: 'Ex One', headline: 'new headline', campaign: 'c1', approved: true });
+  assert.equal(s.get('linkedin.com/in/x1').status, 'skipped');
+  assert.equal(s.get('linkedin.com/in/x1').skippedByHand, true);
+  assert.ok(!s.leads({ campaign: 'c1', status: 'new' }).some(l => l.url.includes('/x1')));
+
+  // and deleting the whole role does not un-exclude them either
+  assert.equal(s.deleteCampaign('c1').kept, 1);
+  assert.ok(s.get('linkedin.com/in/x1'), 'still on file after the role is gone');
+});
