@@ -192,7 +192,9 @@ test('clear list removes only people never contacted', async () => {
   const after = new Store().leads({ campaign: 'example' });
   assert.equal(after.length, before - r.body.n);
   assert.ok(after.some(l => l.url.includes('/clear-b/')), 'invited person kept');
-  assert.ok(!after.some(l => l.url.includes('/clear-a/') || l.url.includes('/clear-c/')));
+  assert.ok(!after.some(l => l.url.includes('/clear-a/')), 'nobody untouched is kept');
+  assert.ok(after.some(l => l.url.includes('/clear-c/')),
+    'somebody excluded by hand stays: removing them would let the next search put them straight back');
   assert.ok(after.some(l => l.url.includes('/clear-d/')), 'someone already messaged stays even though skipped');
 });
 
