@@ -342,6 +342,39 @@ export class Store {
     return Object.values(this.data.finds || {}).filter(f => !f.hidden && (!campaign || f.campaign === campaign));
   }
 
+  // The same person already in this role under another address: Recruiter files people under their
+  // /talent/ link, LinkedIn and the public sources under their /in/ link, so one human can arrive
+  // twice. A full name must match (first and last, in order), and the company too when both have
+  // one. Used so nobody Kai excluded or already contacted comes back by another route (24 Sep 2026).
+  findTwin(campaign, name, company = '', { onlyExcluded = false } = {}) {
+    // "Dr. Jane Doe, CISSP (She/Her)" is Jane Doe: honorifics, anything after a comma, and brackets go
+    const words = n => String(n || '').toLowerCase().normalize('NFKD')
+      .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').split(',')[0]
+      .replace(/^\s*(dr|mr|mrs|ms|miss|prof|sir|eng|ir)\.?\s+/, '')
+      .replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim().split(' ')
+      .filter(w => w && !/^(phd|mba|cissp|cism|cisa|ccsp|cpa|cfa|pmp|oscp|msc|bsc|ma|jr|sr|ii|iii)$/.test(w));
+    const want = words(name);
+    // hidden profiles all show as "LinkedIn Member": that is nobody in particular
+    if (want.length < 2 || (want[0] === 'linkedin' && want[1] === 'member')) return null;
+    // "Acme", "Acme Inc." and "ACME Ltd" are one company
+    const co = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\b(inc|incorporated|ltd|limited|llc|llp|plc|gmbh|ag|sa|bv|corp|corporation|co|company|group|holdings)\b/g, ' ').replace(/\s+/g, '');
+    // exact after the suffix goes ("Meta" is not "Metaco"); a name that is only a suffix word is compared whole
+    const sameCo = (a, b) => { const x = co(a) || String(a).toLowerCase().trim(), y = co(b) || String(b).toLowerCase().trim(); return x === y; };
+    return Object.values(this.data.leads).find(l => {
+      if (l.campaign !== campaign) return false;
+      if (onlyExcluded && !l.skippedByHand) return false;
+      const have = words(l.name);
+      if (have.length < 2 || have[0] !== want[0] || have[have.length - 1] !== want[want.length - 1]) return false;
+      return onlyExcluded || !(company && l.company && !sameCo(company, l.company));
+    }) || null;
+  }
+
+  // Someone Kai excluded by hand with this name, whatever company they show now. Used so an
+  // excluded person never comes back under another address; the cost is that a different person
+  // with exactly the same name is left out too, which Kai asked for over the reverse.
+  excludedTwin(campaign, name) { return this.findTwin(campaign, name, '', { onlyExcluded: true }); }
+
   // A person found in Recruiter keeps their Recruiter URL after they are moved to their /in/ URL.
   findByRecruiterUrl(url) {
     const k = normalizeUrl(url);

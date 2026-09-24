@@ -58,7 +58,10 @@ const TECH_SKILLS = [
   'solidity', 'rust', 'golang', 'go', 'python', 'typescript', 'java', 'c++', 'kafka', 'sql', 'snowflake', 'react', 'node',
   'aml', 'kyc', 'mica', 'vara', 'fca', 'derivatives', 'options', 'perpetuals', 'market making', 'otc', 'custody', 'tokenomics',
   'smart contracts', 'smart contract', 'zk', 'evm', 'layer 2', 'defi',
+  'grpc', 'linux', 'kotlin', 'scala', 'c#', '.net', 'javascript',
 ];
+// Concepts ("distributed systems") are skills to look for, never the key skill: Recruiter's Skills
+// filter needs a concrete tool or language (24 Sep 2026: the Palantir link made "Distributed Systems" key).
 
 const SKILL_WORDS = [
   'azure', 'gcp', 'google cloud', 'terraform', 'docker', 'devsecops', 'siem', 'iam', 'zero trust', 'java', 'kafka', 'cryptography', 'mpc', 'hsm',
@@ -68,6 +71,7 @@ const SKILL_WORDS = [
   'treasury', 'risk', 'audit', 'security', 'smart contract', 'smart contracts', 'zk', 'evm', 'layer 2', 'l2',
   'sales', 'business development', 'partnerships', 'institutional', 'growth', 'marketing', 'product', 'tokenomics',
   'listings', 'ecosystem', 'devrel', 'developer relations', 'community',
+  'distributed systems', 'microservices', 'apis', 'api design', 'observability', 'infrastructure', 'containers', 'grpc', 'linux',
 ];
 
 // Two-word phrases that stay together when a title is split into modifier + core ("Smart Contract Engineer").
@@ -83,22 +87,7 @@ function clean(s) { return String(s || '').replace(/\s+/g, ' ').replace(/[–—
 function lines(text) { return String(text || '').split(/\r?\n/).map(clean).filter(Boolean); }
 
 export function guessTitle(text) {
-  const ls = lines(text);
-  // 1. an explicit label
-  for (const l of ls) {
-    const m = l.match(/^(?:job title|title|role|position)\s*[:\-]\s*(.{3,80})$/i);
-    if (m) return clean(m[1]);
-  }
-  // 2. first short line that looks like a title
-  for (const l of ls.slice(0, 12)) {
-    if (l.length <= 70 && SENIORITY.test(l) && !/[.:]$/.test(l) && l.split(' ').length <= 9) {
-      return l.replace(/\s*[\(\[].*$/, '').replace(/\s*[-|,]\s*(remote|hybrid|onsite|on-site|dubai|london|new york|singapore).*$/i, '').trim();
-    }
-  }
-  // 3. "looking for a X" / "hiring a X"
-  const m = String(text).match(/\b(?:looking for|hiring|seeking|appoint(?:ing)?)\s+(?:an?|the)\s+([A-Z][^.,\n]{3,60})/);
-  if (m) return clean(m[1]);
-  return ls[0] ? ls[0].slice(0, 70) : '';
+  return titleCandidates(text)[0]?.title || '';
 }
 
 export function guessLocation(text) {
@@ -129,15 +118,23 @@ const labelSkill = w => SKILL_LABEL[w] || w.replace(/\b[a-z]/g, c => c.toUpperCa
 // The one skill that matters most in the spec (e.g. "Azure"), for Recruiter's Skill keywords filter.
 // Only hard skills count, never words already in the title, and a skill in the title line or
 // the requirements counts double.
+// "Go" is also an English word ("go live", "on the go"): only the capitalised Go or Golang counts.
+// Another name for a skill counts for it ("K8s" is Kubernetes). 24 Sep 2026, from the Palantir link.
+const SAME_AS = { kubernetes: ['k8s'], golang: [], 'google cloud': ['gcp'] };
+function mentionsOf(lowText, rawText, w) {
+  if (w === 'go') return (String(rawText).match(/(^|[^A-Za-z0-9+])Go(?![A-Za-z0-9+])/g) || []).length;
+  return countOf(lowText, w) + (SAME_AS[w] || []).reduce((a, x) => a + countOf(lowText, x), 0);
+}
 export function keySkill(text, title = '') {
-  const t = String(text || '').toLowerCase();
+  const raw = String(text || '');
+  const t = raw.toLowerCase();
   const inTitle = String(title).toLowerCase();
-  const head = t.split('\n').slice(0, 3).join(' ');
-  const req = (t.match(/(requirements?|must have|what you.ll bring|you have|qualifications?)[\s\S]{0,1500}/) || [''])[0];
+  const rawHead = raw.split('\n').slice(0, 3).join(' ');
+  const rawReq = (raw.match(/(requirements?|must have|what you.ll bring|you have|qualifications?|what we require)[\s\S]{0,1500}/i) || [''])[0];
   let best = null;
   for (const w of TECH_SKILLS) {
     if (countOf(inTitle, w)) continue;
-    const n = countOf(t, w) + countOf(head, w) + countOf(req, w);
+    const n = mentionsOf(t, raw, w) + mentionsOf(rawHead.toLowerCase(), rawHead, w) + mentionsOf(rawReq.toLowerCase(), rawReq, w);
     const at = t.indexOf(w);                 // on a tie, the one the spec mentions first
     if (n && (!best || n > best.n || (n === best.n && at < best.at))) best = { w, n, at };
   }
@@ -149,16 +146,23 @@ export function guessDomain(text) {
   return DOMAINS.find(d => d.words.some(w => t.includes(w))) || null;
 }
 
-export function guessSkills(text, max = 4) {
+// Commercial words that are skills for a BD or community role, and noise for an engineering one
+// ("ecosystem" came out as a Palantir platform engineer's second skill, 24 Sep 2026).
+const COMMERCIAL_WORDS = new Set(['ecosystem', 'community', 'growth', 'sales', 'marketing', 'partnerships', 'listings', 'institutional', 'business development', 'product', 'devrel', 'developer relations', 'liquidity']);
+export function guessSkills(text, max = 4, { family = '', learned = [], dropped = [] } = {}) {
   const t = String(text).toLowerCase();
   const counts = [];
-  for (const w of SKILL_WORDS) {
+  const words = [...new Set([...SKILL_WORDS, ...learned.map(w => String(w).toLowerCase())])]
+    .filter(w => !dropped.includes(w) && !(family === 'engineering' && COMMERCIAL_WORDS.has(w)));
+  for (const w of words) {
     const re = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g');
     const n = (t.match(re) || []).length;
     if (n) counts.push({ w, n });
   }
-  // longer phrases first on ties so "smart contracts" beats "go"
-  counts.sort((a, b) => b.n - a.n || b.w.length - a.w.length);
+  // a skill Kai taught it comes first when the spec mentions it; then the most mentioned; longer
+  // phrases first on ties so "smart contracts" beats "go"
+  const taught = new Set(learned.map(w => String(w).toLowerCase()));
+  counts.sort((a, b) => (taught.has(b.w) - taught.has(a.w)) || b.n - a.n || b.w.length - a.w.length);
   const out = [];
   for (const { w } of counts) {
     if (out.some(o => o.includes(w) || w.includes(o))) continue;
@@ -207,8 +211,8 @@ function group(items) { const q = items.map(quote).filter(Boolean); return q.len
 
 // Keeps it simple on purpose: [must AND must] AND (titles) AND (industry) NOT (recruiters).
 // "skills" are must-haves: each one is its own AND term.
-export function buildBoolean({ titles = [], domain = [], skills = [], exclude = DEFAULT_EXCLUDE } = {}) {
-  const parts = [...skills.map(quote).filter(Boolean), group(titles), group(domain)].filter(Boolean);
+export function buildBoolean({ titles = [], domain = [], skills = [], anyOf = [], exclude = DEFAULT_EXCLUDE } = {}) {
+  const parts = [...skills.map(quote).filter(Boolean), group(titles), ...anyOf.map(group), group(domain)].filter(Boolean);
   let b = parts.join(' AND ');
   const ex = exclude.map(quote).filter(Boolean);
   if (b && ex.length) b += ' NOT ' + (ex.length > 1 ? `(${ex.join(' OR ')})` : ex[0]);
@@ -239,27 +243,223 @@ export function slugFor(title, location) {
 }
 
 // Reads a whole spec and returns the first draft of everything the wizard shows.
-export function draftRole(text) {
-  const title = guessTitle(text);
-  const location = guessLocation(text);
-  const workType = guessWorkType(text);
+// `known` is what a job link said for certain (title, location, work type, company); `vocab` is what
+// Kai's corrections taught (see rolelearn.js).
+export function draftRole(text, known = {}, vocab = {}) {
+  const found = titleCandidates(text);
+  const fromLink = known.title ? splitTeam(known.title) : null;
+  const title = fromLink ? fromLink.title : (found[0]?.title || '');
+  const team = fromLink ? fromLink.team : (found[0]?.team || '');
+  const family = familyOf(title, text);
+  const location = known.location || guessLocation(text);
+  const workType = WORK_TYPES.includes(known.workType) ? known.workType : guessWorkType(text);
   const domain = guessDomain(text);
-  const skills = guessSkills(text);
-  const titles = titleVariants(title);
+  const skills = guessSkills(text, 4, { family, learned: vocab.learned || [], dropped: vocab.dropped || [] });
+  const titles = relatedTitles(title, text, titleVariants(title));
   const required = splitTitle(title).modifiers;      // "Cloud" from "Senior Cloud Security Engineer"
   const key = keySkill(text, title);
+  // An engineering title with nothing in front of it ("Software Engineer") is far too wide on its own,
+  // so the key skill joins Search 1. Every other kind of role keeps Kai's pattern exactly.
+  const anyOf = genericTitle(title) && key ? [withAliases(key)] : [];
+  const exclude = [...DEFAULT_EXCLUDE];
+  const domainBool = domain ? domain.boolean : [];
+  const titleOptions = [...new Set([title, ...found.map(f => f.title), ...titles.filter(t => !SENIORITY_PREFIX.test(t))].filter(Boolean))].slice(0, 3);
   return {
     recruiterSkills: key ? [key] : [],
-    title, location, workType,
+    title, location, workType, team, family, titleOptions,
+    company: known.company || '',
     // remote roles: where the candidate may sit. Starts equal to the office location; the recruiter widens it.
     candidateLocations: location ? [location] : [],
     titles,
-    domain: domain ? domain.boolean : [],
+    domain: domainBool,
     required,
     skills,
-    exclude: [...DEFAULT_EXCLUDE],
-    boolean: buildBoolean({ titles, domain: domain ? domain.boolean : [], skills: required, exclude: DEFAULT_EXCLUDE }),
+    exclude,
+    boolean: buildBoolean({ titles, domain: domainBool, skills: required, anyOf, exclude }),
+    boolean2: buildSkillsBoolean({ key, required, family, domain: domainBool, text, title, exclude }),
+    specHints: specHints(text),
+    titleGuessed: !fromLink && !!found[0]?.guessed,
   };
+}
+
+// ---- reading the title (24 Sep 2026) ----------------------------------------------------------
+// The old reader took the first short line with a SENIORITY word in it, so "Software Engineer"
+// (no such word) fell through to the spec's first line: "New York, NY" became the title. Now a
+// title has to contain a job word, and lines that are plainly places, pay or work type are skipped.
+// Job words as titles use them: singular. The plural is prose ("backed by leading venture partners",
+// "founded by ex-Goldman traders and engineers"), which the first version of this took for titles.
+export const JOB_WORD = /\b(engineer|developer|programmer|architect|scientist|analyst|manager|director|head|lead|chief|officer|cto|ceo|cfo|coo|cco|cmo|ciso|cro|mlro|vp|svp|evp|vice president|president|designer|researcher|specialist|consultant|associate|executive|administrator|coordinator|recruiter|counsel|lawyer|attorney|accountant|controller|trader|strategist|partner|founder|sre|devops|intern|representative|advisor|adviser|economist|auditor|writer|editor|marketer|evangelist|advocate|owner|principal|staff)\b/i;
+// A line that is only work type, commitment, pay, a link or a section heading is not a title;
+// "Remote Operations Manager" and "Contract Manager" are.
+const NOT_A_TITLE = /^(https?:|www\.)|\$\s?\d|\b(salary|per annum|a year|per year|apply now)\b|^(about (us|the (company|role|team))|the role|responsibilities|requirements|benefits|what we (value|require|offer)|who you are)\s*:?$|^((full|part)[- ]time|contract|permanent|remote|hybrid|on[- ]?site)(\s*[\/|,·-]\s*((full|part)[- ]time|contract|permanent|remote|hybrid|on[- ]?site))*$/i;
+// A sentence, not a title: company blurbs sit at the top of many specs.
+const PROSE = /\b(by|with|from|our|we|you|your|is|are|was|were|backed|founded|leading|world'?s?|join|help|build(ing)?|who|that|which|will|we're|you'll)\b/i;
+// A rank on its own is not a job ("VP, Engineering" is not "VP"): such a title is kept whole.
+const RANK_ONLY = /^((senior|junior|group|associate|assistant|deputy)\s+)?(vp|svp|evp|vice president|director|head|manager|lead|principal|chief|officer|partner|associate|analyst|president|managing director|md|staff)$/i;
+// Places with no LinkedIn id listed above, so they are only recognised, never searched by id.
+const MORE_PLACES = ['dubai', 'abu dhabi', 'zug', 'zurich', 'geneva', 'berlin', 'munich', 'paris', 'amsterdam', 'lisbon', 'madrid', 'barcelona', 'dublin', 'hong kong', 'tokyo', 'seoul', 'sydney', 'melbourne', 'toronto', 'vancouver', 'chicago', 'boston', 'austin', 'miami', 'seattle', 'los angeles', 'denver', 'bangalore', 'bengaluru', 'riyadh', 'doha', 'bahrain', 'cayman islands', 'bermuda', 'hk', 'ksa'];
+// "New York, NY", "London", "UAE": a known place, or place words with at most a two-letter code
+// beside them. A two-letter word on its own ("Go") is not a place.
+export function isPlace(l) {
+  const x = String(l).toLowerCase().replace(/[.,]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!x) return false;
+  const keys = [...Object.keys(KNOWN_GEO), ...MORE_PLACES];
+  if (keys.includes(x)) return true;
+  const words = x.split(' ');
+  const placeWord = w => w.length > 2 && keys.some(k => k.split(' ').includes(w));
+  return words.some(placeWord) && words.every(w => placeWord(w) || /^[a-z]{2}$/.test(w));
+}
+
+// "Software Engineer - Environment Platform" -> { title: 'Software Engineer', team: 'Environment Platform' }
+// Lever and Greenhouse write titles as "Role - Team"; the team is a hint, never searched as a title.
+export function splitTeam(raw) {
+  const t = clean(raw);
+  const parts = t.split(/\s+[-|:]\s+|\s*,\s+(?=[A-Z])|\s+\((?=[^)]*\)$)/).map(x => x.replace(/\)$/, '').trim()).filter(Boolean);
+  if (parts.length < 2) return { title: t, team: '' };
+  const withJob = parts.filter(p => JOB_WORD.test(p));
+  if (withJob.length !== 1) return { title: t, team: '' };       // both halves look like titles: keep it whole
+  if (RANK_ONLY.test(withJob[0])) return { title: t, team: '' };  // "VP, Engineering", "Senior Manager, Risk"
+  return { title: withJob[0], team: parts.filter(p => p !== withJob[0]).join(' · ') };
+}
+
+// Up to three guesses, best first, each with why it was picked.
+export function titleCandidates(text) {
+  const ls = lines(text);
+  const out = [];
+  const add = (raw, score, why) => {
+    const { title, team } = splitTeam(String(raw).replace(/\s*[\(\[].*$/, '').replace(/\s*[|,]\s*(remote|hybrid|onsite|on-site)\b.*$/i, ''));
+    if (!title || !JOB_WORD.test(title) || isPlace(title) || NOT_A_TITLE.test(title) || title.split(' ').length > 9) return;
+    if (why !== 'the spec labels it' && PROSE.test(title)) return;
+    if (!out.some(o => o.title.toLowerCase() === title.toLowerCase())) out.push({ title, team, score, why });
+  };
+  // 1. an explicit label
+  for (const l of ls) { const m = l.match(/^(?:job title|title|role|position)\s*[:\-]\s*(.{3,80})$/i); if (m) add(m[1], 100, 'the spec labels it'); }
+  // 2. a short line near the top that is a job title
+  ls.slice(0, 15).forEach((l, i) => { if (l.length <= 80 && !/[.:;!?]$/.test(l) && !/^(?:job title|title|role|position)\s*[:\-]/i.test(l)) add(l, 80 - i, i === 0 ? 'the first line' : 'a title line near the top'); });
+  // 3. "looking for a X" / "join us as a X" / "as a X, you"
+  for (const m of String(text).matchAll(/\b(?:looking for|hiring|seeking|appoint(?:ing)?|join (?:us|our team|the team) as|as)\s+(?:an?|the|our)\s+([A-Z][^.,\n]{3,60})/g)) add(m[1], 60, 'the spec says who it is looking for');
+  // 4. nothing named it: say what the spec reads like, as a clearly weaker guess
+  if (!out.length) { const f = familyOf('', text); if (FAMILY_TITLE[f]) out.push({ title: FAMILY_TITLE[f], team: '', score: 20, why: `the spec reads like ${FAMILY_WORD[f]}`, guessed: true }); }
+  return out.sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+// ---- what kind of role it is -------------------------------------------------------------------
+const FAMILY_SIGNS = {
+  engineering: /\b(software development|software engineer|coding|code review|kubernetes|k8s|microservices|distributed systems|apis?|backend|back-end|frontend|front-end|full[- ]stack|golang|java|python|typescript|rust|c\+\+|compilers?|system design|infrastructure)\b/g,
+  security: /\b(security|iam|siem|threat|vulnerabilit|penetration|incident response|zero trust|soc ?2|iso 27001|devsecops)\w*/g,
+  compliance: /\b(compliance|aml|kyc|regulat|licens|mica|vara|fca|sanctions|mlro)\w*/g,
+  sales: /\b(sales|business development|revenue|quota|pipeline|clients?|accounts?|partnerships|deal)\w*/g,
+};
+const FAMILY_TITLE = { engineering: 'Software Engineer', security: 'Security Engineer', compliance: 'Compliance Manager', sales: 'Business Development Manager' };
+export const FAMILY_WORD = { engineering: 'software engineering', security: 'security', compliance: 'compliance', sales: 'sales or business development', devrel: 'developer relations' };
+// Security engineers are engineers too; the title decides first, the spec only when the title is silent.
+export function familyOf(title, text = '') {
+  const t = String(title).toLowerCase();
+  if (/\b(developer relations|devrel|developer advocate|evangelist|community)\b/.test(t)) return 'devrel';
+  if (/\b(sales|business develop\w*|account (executive|manager)|partnerships?|solutions (architect|engineer)|pre-?sales|go[- ]to[- ]market)\b/.test(t)) return 'sales';
+  if (/\b(security|iam|ciso)\b/.test(t)) return 'security';
+  if (/\b(engineer|developer|programmer|sre|devops|architect)\b/.test(t)) return 'engineering';
+  if (/\b(compliance|aml|kyc|mlro|regulatory)\b/.test(t)) return 'compliance';
+  if (/\b(sales|business development|account executive|partnerships)\b/.test(t)) return 'sales';
+  const low = String(text).toLowerCase();
+  const n = Object.fromEntries(Object.entries(FAMILY_SIGNS).map(([f, re]) => [f, (low.match(re) || []).length]));
+  const [best, count] = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return count >= 3 ? best : '';
+}
+
+// "Software Engineer" says nothing about the work; "Rust Engineer" or "Cloud Security Engineer" does.
+// Only a generic title is widened: titled roles keep exactly the search Kai's pattern gives them.
+export const genericTitle = t => /^(?:(?:senior|lead|principal|staff|junior)\s+)?(?:(?:software|backend|back-end|platform|infrastructure|full[- ]stack|systems?|application)\s+)?(?:engineer|developer)$/i.test(clean(t));
+
+// A generic engineering title gets its near neighbours, picked by what the spec is about.
+export function relatedTitles(title, text, base = []) {
+  const out = [...base];
+  if (!genericTitle(title)) return out;
+  const low = String(text).toLowerCase();
+  const add = t => { if (!out.some(o => o.toLowerCase() === t.toLowerCase())) out.push(t); };
+  if (/\b(kubernetes|k8s|platform|infrastructure|containers?|devops)\b/.test(low)) { add('Platform Engineer'); add('Infrastructure Engineer'); }
+  if (/\b(backend|back-end|apis?|microservices|distributed systems)\b/.test(low)) add('Backend Engineer');
+  if (/\b(frontend|front-end|react|typescript)\b/.test(low)) add('Frontend Engineer');
+  if (/\b(data pipelines?|etl|spark|airflow)\b/.test(low)) add('Data Engineer');
+  // the seniority copies of a generic title are dropped first when there is not room for all
+  const plain = out.filter(t => !SENIORITY_PREFIX.test(t) && !/developer$/i.test(t));
+  return [...new Set([...plain.slice(0, 1), ...out.filter(t => /^senior /i.test(t)).slice(0, 1), ...plain.slice(1)])].slice(0, 5);
+}
+
+// Kubernetes is also written K8s, Go also Golang: both go in the same OR group.
+const ALIASES = { kubernetes: ['K8s'], go: ['Golang'], golang: ['Go'], javascript: ['JS'], typescript: ['TS'], 'google cloud': ['GCP'], gcp: ['Google Cloud'], 'smart contracts': ['Solidity'], iam: ['"Identity and Access Management"'] };
+export function withAliases(skill) {
+  const k = String(skill || '').toLowerCase();
+  return [labelSkill(k), ...(ALIASES[k] || [])].filter(Boolean);
+}
+
+// Search 2: built from the skills, not the title, so it finds the people Search 1's titles miss
+// (a "Staff Engineer, Kubernetes Controllers" is never a "Software Engineer" to LinkedIn).
+// Groups, each an AND term: the key skill (with aliases), the role's must-have words (Kai's
+// "Cloud", "IAM"), then for engineering roles the languages and the concepts the spec names, then
+// the kind of role, then the industry exactly as Search 1 has it.
+const LANGS = ['go', 'golang', 'java', 'python', 'rust', 'typescript', 'javascript', 'kotlin', 'scala', 'c++', 'c#', 'solidity'];
+const CONCEPTS = ['distributed systems', 'microservices', 'apis', 'controllers', 'operators', 'observability', 'infrastructure', 'containers'];
+const FAMILY_NOUNS = { engineering: ['engineer', 'developer'], security: ['security'], compliance: ['compliance', 'AML', 'KYC'], sales: ['sales', '"business development"'], devrel: ['"developer relations"', 'devrel', '"developer advocate"'] };
+const mentions = (low, w) => new RegExp(`(^|[^a-z0-9+#])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9+#])`).test(low);
+// What a spec says about the work, kept with the role so Search 2 can be rebuilt later without the
+// spec (Kai changes the key skill on the role card, Search 2 follows).
+export function specHints(text) {
+  const raw = String(text || ''), low = raw.toLowerCase();
+  return {
+    langs: LANGS.filter(l => (l === 'go' ? /(^|[^A-Za-z0-9+])Go(?![A-Za-z0-9+])/.test(raw) : mentions(low, l))),
+    concepts: CONCEPTS.filter(c => mentions(low, c) || mentions(low, c.replace(/s$/, ''))),
+  };
+}
+// The skills a specific title names ("Rust" in "Senior Rust Engineer"): Search 2 requires them.
+export const titleSkills = title => genericTitle(title) ? [] : TECH_SKILLS.filter(w => countOf(String(title).toLowerCase(), w));
+export function buildSkillsBoolean({ key = '', required = [], family = '', domain = [], text = '', hints = null, title = '', exclude = DEFAULT_EXCLUDE } = {}) {
+  const h = hints || specHints(text);
+  const used = new Set();
+  const groups = [];
+  const norm = x => String(x).toLowerCase().replace(/"/g, '');
+  const take = list => { const g = list.filter(x => !used.has(norm(x))); g.forEach(x => used.add(norm(x))); if (g.length) groups.push(g); };
+  const inTitle = titleSkills(title);
+  for (const w of inTitle) take(withAliases(w));
+  const langs = family === 'engineering' ? (h.langs || []) : [];
+  // "Go, Java, or equivalent" means either: a language as the key skill sits with the other languages,
+  // unless the title already names the language the job is about
+  const keyIsLang = LANGS.includes(String(key).toLowerCase()) && !inTitle.some(w => LANGS.includes(w));
+  if (key) take(keyIsLang ? [...new Set([String(key).toLowerCase(), ...langs].flatMap(withAliases))].slice(0, 5) : withAliases(key));
+  for (const r of required) if (r) take(withAliases(r));
+  if (family === 'engineering') {
+    if (!inTitle.some(w => LANGS.includes(w))) take([...new Set(langs.flatMap(withAliases))].slice(0, 4));
+    take((h.concepts || []).slice(0, 4).map(c => (/\s/.test(c) ? `"${c}"` : c)));
+  }
+  if (FAMILY_NOUNS[family]) take(FAMILY_NOUNS[family]);
+  // one group on its own is not a second search, it is a keyword
+  if (groups.length < 2) return '';
+  return buildBoolean({ titles: [], anyOf: groups, domain, exclude });
+}
+
+// The industry words Search 1 really uses, so Search 2 has the same (Kai edits Search 1 by hand).
+const INDUSTRY_WORD = /\b(crypto|blockchain|web3|fintech|defi|payments|trading|quant|digital asset|market making|stablecoin|exchange)\b/i;
+export function industryOf(boolean, fallback = []) {
+  const before = String(boolean || '').split(/\bNOT\b/)[0];
+  for (const m of before.matchAll(/\(([^()]*)\)/g)) {
+    const items = m[1].split(/\s+OR\s+/).map(t => t.trim()).filter(Boolean);
+    // the titles group ("Blockchain Engineer" OR ...) is not the industry, even with an industry word in it
+    if (items.some(t => JOB_WORD.test(t.replace(/"/g, '')))) continue;
+    if (INDUSTRY_WORD.test(m[1])) return items;
+  }
+  return fallback;
+}
+
+// The Search 2 a role runs: its own if it has one, otherwise built from what the role already says
+// (roles saved before 24 Sep 2026 have none).
+export function secondSearchFor(role) {
+  if (!role) return '';
+  if (role.boolean2) return role.boolean2;
+  const key = (role.recruiterSkills || [])[0] || '';
+  // the same industry as the wizard showed, unless Kai has since edited Search 1 by hand
+  const domain = role.booleanEdited || !(role.domain || []).length ? industryOf(role.boolean, role.domain || []) : role.domain;
+  // the kind of role as read from the whole spec when it was drafted ("Protocol Lead" is engineering)
+  return buildSkillsBoolean({ key, required: role.skills || [], family: role.family || familyOf(role.title), title: role.title || '', hints: role.specHints || { langs: [], concepts: [] }, domain, exclude: role.exclude || DEFAULT_EXCLUDE });
 }
 
 // Reads a .txt, .pdf or .docx into plain text.

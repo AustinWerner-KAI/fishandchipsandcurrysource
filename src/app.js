@@ -5,14 +5,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store, STATUSES, wasContacted } from './store.js';
-import { listCampaigns, loadCampaign } from './config.js';
+import { listCampaigns, loadCampaign, patchCampaign } from './config.js';
 import { CAMPAIGN_DIR, HOME, SCREENSHOT_DIR } from './paths.js';
 import { summarise } from './dashboard.js';
 import { exportCsv, importLeads, queueMessages } from './actions/import.js';
 import { weeklyLimitActive } from './actions/connect.js';
 import { Jobs } from './jobs.js';
 import { log } from './log.js';
-import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
+import { learnedFor } from './excludelearn.js';
+import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor, buildSkillsBoolean, secondSearchFor, familyOf, genericTitle, withAliases, relatedTitles } from './role.js';
+import { isJobLink, readJobLink } from './joblink.js';
+import { checkRole } from './rolecheck.js';
+import { vocab as learnedVocab, recordLesson, summary as learnSummary } from './rolelearn.js';
 import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
 import { pendingQuestion, answer as answerHeal, laneUp, shotExists, forget as forgetLearned } from './heal.js';
 import { tenureLabel, tenureOk, sizeWord, tooJunior, juniorTitle, minExperienceFor, overLevelled, levelFromTitle, SENIORITY, MIN_TENURE_MONTHS } from './company.js';
@@ -110,6 +114,7 @@ export function outreachList(store, cfg, now = new Date()) {
 const FIND_GROUPS = ['waiting', 'people', 'twonames', 'notfound', 'noname', 'removed'];
 const PER_GROUP = 60;
 function findGroup(f, lead) {
+  if (f.outcome === 'excluded') return 'removed';
   if (f.outcome === 'matched' || f.outcome === 'already-on-file') return lead ? 'people' : 'removed';
   if (f.outcome === 'ambiguous') return 'twonames';
   if (f.outcome === 'no-match' || f.outcome === 'lookup-failed') return 'notfound';
@@ -128,7 +133,7 @@ export function findsFor(store, campaign, perGroup = PER_GROUP) {
       key: f.key, name: f.name, github: f.github, company: f.company, url: f.url || '',
       sources: f.sources || [], evidence: (f.evidence || []).slice(0, 3),
       lastActiveAt: f.lastActiveAt, weight: f.weight ?? 0, group,
-      outcome: f.outcome || '', matchedUrl: f.matchedUrl || null, lookedUp: !!f.lookedUpAt,
+      outcome: f.outcome || '', matchedUrl: f.matchedUrl || null, twinUrl: f.twinUrl || null, lookedUp: !!f.lookedUpAt,
       leadStatus: lead ? (lead.approved && lead.status === 'new' ? 'approved' : lead.status) : null,
       // in People, but under another role: the page says which, rather than "in People"
       leadRole: lead && lead.campaign !== campaign ? lead.campaign : null,
@@ -214,6 +219,10 @@ export function state(jobs, campaignName) {
   const level = cfg?.seniority || levelFromTitle(cfg?.role?.title);
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
+    search2: cfg?.role ? secondSearchFor(cfg.role) : '',
+    // what Kai's excludes taught both searches, and what he turned off
+    learnedNot: cfg?.role ? learnedFor(store, cfg) : [],
+    learnedOff: cfg?.role?.learnedExcludeOff || [],
     inmail: cfg ? inmailList(store, cfg) : [],
     firstDegreePreview: firstPreview(store, cfg),
     outreach: cfg ? outreachList(store, cfg) : [],
@@ -470,11 +479,40 @@ export function createApp({ jobs = new Jobs() } = {}) {
         let text = String(b.text || '');
         if (b.file?.base64) text = await extractText(b.file.name, Buffer.from(b.file.base64, 'base64'));
         if (!text.trim()) return json(400, { error: 'The spec is empty' });
-        return json(200, { text, draft: draftRole(text) });
+        let known = {}, link = null;
+        if (isJobLink(text)) {
+          try { known = await readJobLink(text.trim()); } catch (e) { return json(400, { error: e.message }); }
+          link = { board: known.board, url: text.trim(), title: known.title, location: known.location, workType: known.workType, company: known.company };
+          text = known.text;
+        }
+        const v = learnedVocab();
+        const draft = draftRole(text, known, v);
+        return json(200, { text, link, draft, checks: checkRole(draft, { text }), learning: learnSummary(t => draftRole(t, {}, v)) });
       }
       if (u.pathname === '/api/role/boolean') {
-        const titles = b.titles?.length ? b.titles : titleVariants(b.title);
-        return json(200, { titles, boolean: buildBoolean({ titles, domain: b.domain || [], skills: b.skills || [], exclude: b.exclude || [] }) });
+        const titles = b.titles?.length ? b.titles : relatedTitles(b.title, b.text || '', titleVariants(b.title));
+        const key = (b.recruiterSkills || [])[0] || '';
+        // a generic engineering title carries its key skill in Search 1 (see draftRole)
+        const anyOf = genericTitle(b.title || '') && key ? [withAliases(key)] : [];
+        const boolean = buildBoolean({ titles, domain: b.domain || [], skills: b.skills || [], anyOf, exclude: b.exclude || [] });
+        const family = familyOf(b.title || '', b.text || '');
+        const boolean2 = buildSkillsBoolean({ key, required: b.skills || [], family, title: b.title || '', domain: b.domain || [], text: b.text || '', hints: b.specHints || null, exclude: b.exclude || [] });
+        return json(200, { titles, boolean, boolean2, family });
+      }
+      if (u.pathname === '/api/role/unlearn') {
+        // { campaign, term, on? } Undo turns a learned term off for this role; on:true lets it back
+        const raw = readCampaignRaw(b.campaign);
+        if (!raw?.role) return json(400, { error: 'Pick a role first' });
+        const term = String(b.term || '').trim().toLowerCase();
+        if (!term) return json(400, { error: 'nothing to undo' });
+        const off = new Set((raw.role.learnedExcludeOff || []).map(t => String(t).toLowerCase()));
+        if (b.on) off.delete(term); else off.add(term);
+        try { patchCampaign(b.campaign, { role: { ...raw.role, learnedExcludeOff: [...off] } }); }
+        catch (e) { log('undo saved, but the role has a problem to fix:', e.message); }
+        return json(200, { ok: true, off: [...off] });
+      }
+      if (u.pathname === '/api/role/check') {
+        return json(200, { checks: checkRole(b.role || {}, { text: String(b.text || '') }) });
       }
       if (u.pathname === '/api/role/save') {
         // { campaign?, role: { title, location, workType, candidateLocations, titles, domain, skills, exclude, boolean } }
@@ -500,7 +538,10 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const tz = timezoneFor(role.location);
         if (tz && (!existing || existing.role?.location !== role.location)) base.workingHours = { ...(existing?.workingHours || { start: '09:30', end: '18:00', days: [1, 2, 3, 4, 5] }), timezone: tz };
         const cfg = saveCampaign(name, { ...base, ...(existing ? {} : { mode: 'candidates', searchUrl: '' }), role: { ...role, geo: keep } });
-        return json(200, { ok: true, campaign: name, cfg, preview: rolePreview(cfg) });
+        // a new role drafted from a spec: what Kai changed before saving teaches the reader
+        let lesson = null;
+        if (!b.campaign && b.guess && b.specText) { try { lesson = recordLesson({ text: b.specText, guess: b.guess, final: role }); } catch (e) { log('could not keep the lesson from this role:', e.message); } }
+        return json(200, { ok: true, campaign: name, cfg, preview: rolePreview(cfg), learned: lesson ? { titleRight: lesson.titleRight, added: lesson.added, removed: lesson.removed } : null });
       }
       if (u.pathname === '/api/clear') {
         // { campaign } wipes the uncontacted people for this role

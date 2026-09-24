@@ -1,10 +1,11 @@
 import { collectSearchResults, resolveGeo } from '../linkedin.js';
 import { log, warn } from '../log.js';
 import { sleep, humanPauseMs } from '../limits.js';
-import { buildSearchUrl, lookupGeo, widenBoolean } from '../role.js';
-import { patchCampaign } from '../config.js';
+import { buildSearchUrl, lookupGeo, widenBoolean, secondSearchFor } from '../role.js';
+import { patchCampaign, loadCampaign } from '../config.js';
 import { stopRequested } from '../stop.js';
 import { sweepStart, sweepStep, sweepSet, sweepEnd } from '../sweeps.js';
+import { withLearnedNot } from '../excludelearn.js';
 
 // Where to look for people: for a remote role, wherever the recruiter said candidates may sit;
 // otherwise the office location.
@@ -16,7 +17,7 @@ export function searchLocations(role) {
 
 // Builds the search URL for a role. Locations become LinkedIn ids: known table first, then the
 // browser, and each answer is written back to the campaign so it is only looked up once.
-export async function urlForRole(page, cfg) {
+export async function urlForRole(page, cfg, learned = []) {
   const role = cfg.role;
   if (!role?.boolean) throw new Error('The role has no boolean search yet. Build it in the app first.');
   const geo = { ...(role.geo || {}) };
@@ -32,19 +33,19 @@ export async function urlForRole(page, cfg) {
     else warn(`could not find "${name}" on LinkedIn. Searching without that location filter. Open the search on LinkedIn, set the location by hand and paste the URL into the campaign settings.`);
   }
   if (JSON.stringify(geo) !== JSON.stringify(role.geo || {})) {
-    try { patchCampaign(cfg.name, { role: { ...role, geo } }); } catch (e) { warn('could not save location ids', e.message); }
+    try { const now = loadCampaign(cfg.name).role || role; patchCampaign(cfg.name, { role: { ...now, geo: { ...(now.geo || {}), ...geo } } }); } catch (e) { warn('could not save location ids', e.message); }
   }
-  return buildSearchUrl(role.boolean, ids);
+  return buildSearchUrl(withLearnedNot(role.boolean, learned), ids);
 }
 
-export async function runSearch(page, store, cfg, { url, maxPages, report } = {}) {
+export async function runSearch(page, store, cfg, { url, maxPages, report, seen, excludedSet } = {}) {
   // Recruiter Lite is the default for a role; "linkedin" uses normal people search.
   if (!url && !cfg.searchUrl && cfg.role && (cfg.role.source || 'recruiter') === 'recruiter') {
     const { runRecruiterSearch } = await import('./recruiter.js');
-    return runRecruiterSearch(page, store, cfg, { maxPages, report });
+    return runRecruiterSearch(page, store, cfg, { maxPages, report, seen, excludedSet, tag: 's1' });
   }
   let searchUrl = url || cfg.searchUrl;
-  if (!searchUrl && cfg.role) searchUrl = await urlForRole(page, cfg);
+  if (!searchUrl && cfg.role) searchUrl = await urlForRole(page, cfg, (await import('../excludelearn.js')).learnedFor(store, cfg));
   if (!searchUrl) throw new Error('Nothing to search. Build the role in the app, or put a LinkedIn search URL in the campaign settings.');
   log('search url', searchUrl);
   const pages = maxPages || cfg.maxSearchPages || 5;
@@ -68,7 +69,10 @@ export async function runSearch(page, store, cfg, { url, maxPages, report } = {}
     let fresh = 0;
     for (const r of rows) {
       const url = `https://www.linkedin.com/in/${r.slug}/`;
-      if (store.get(url)) continue;
+      if (store.get(url) || store.findByRecruiterUrl(url)) continue;
+      // someone Kai excluded, filed under their Recruiter address: they stay out
+      const gone = store.excludedTwin(cfg.name, r.name);
+      if (gone) { excludedSet?.add(gone.url); continue; }
       store.upsertLead({ url, name: r.name, headline: r.headline, location: r.location, degree: r.degree, campaign: cfg.name });
       fresh++;
     }
@@ -84,14 +88,16 @@ export async function runSearch(page, store, cfg, { url, maxPages, report } = {}
 // The sweep is a bonus on top, so a problem in it must never lose the LinkedIn results.
 // 24 Sep 2026: the sweep was wired only to the command line, so a Search pressed in the app while
 // a run was going (which is how Kai presses it) never swept, and the Finds list stayed empty.
-export async function searchAndSweep(page, store, cfg, { url, maxPages, sources = true, maxLookups, search = runSearch, sweep } = {}) {
+export async function searchAndSweep(page, store, cfg, { url, maxPages, sources = true, maxLookups, search = runSearch, search2, sweep } = {}) {
   // A one-off URL search is a look at one page, not the role: no sweep, and no progress shown.
   const role = !url && cfg.role ? cfg.name : null;
   const lane = (cfg.role?.source || 'recruiter') === 'recruiter' && !cfg.searchUrl ? 'recruiter' : 'linkedin';
   if (role) { sweepStart(role); sweepStep(role, lane, { state: 'running' }); }
   let added;
   const report = role ? patch => sweepStep(role, lane, patch) : undefined;
-  try { added = await search(page, store, cfg, { url, maxPages, report }); }
+  const s1 = new Set(), s2 = new Set();         // who each search found this press, for the overlap
+  const excludedSet = new Set();                // people Kai excluded that either search met, once each
+  try { added = await search(page, store, cfg, { url, maxPages, report, seen: s1, excludedSet }); }
   catch (e) {
     // pressing Stop closes Chrome under the search: that is a stop, not a problem
     if (role) {
@@ -102,6 +108,27 @@ export async function searchAndSweep(page, store, cfg, { url, maxPages, sources 
     throw e;
   }
   if (role) sweepStep(role, lane, { state: 'done', added: added ?? 0 });
+  // Search 2 (24 Sep 2026): the same Recruiter, built from the skills instead of the titles, so it
+  // finds the people Search 1's titles miss. Only for Recruiter roles, and only when there is one.
+  if (role && lane === 'recruiter') {
+    const b2 = secondSearchFor(cfg.role);
+    if (!b2) sweepStep(role, 'recruiter2', { state: 'skipped', problem: 'No Search 2: the role needs a key skill and one more skill or must-have word.' });
+    else if (stopRequested()) sweepStep(role, 'recruiter2', { state: 'skipped' });
+    else {
+      sweepStep(role, 'recruiter2', { state: 'running' });
+      const run2 = search2 || (await import('./recruiter.js')).runRecruiterSearch;
+      try {
+        const a2 = await run2(page, store, cfg, { maxPages, boolean: b2, tag: 's2', seen: s2, other: s1, excludedSet, report: patch => sweepStep(role, 'recruiter2', patch) });
+        sweepStep(role, 'recruiter2', { state: 'done', added: a2 ?? 0 });
+        added = (added || 0) + (a2 || 0);
+      } catch (e) {
+        if (e?.name === 'CheckpointError' || e?.name === 'NotLoggedInError') { sweepStep(role, 'recruiter2', { state: 'failed', problem: String(e.message).slice(0, 160) }); sweepEnd(role, 'failed'); throw e; }
+        // Search 1's people are already saved; a Search 2 problem only costs Search 2
+        sweepStep(role, 'recruiter2', { state: stopRequested() ? 'stopped' : 'failed', problem: String(e?.message || e).slice(0, 160) });
+        warn('search 2 failed, Search 1 results are saved:', String(e?.message || e).slice(0, 140));
+      }
+    }
+  }
   if (!role || !sources) { if (role) sweepEnd(role); return added; }
   // Pressing Stop during the LinkedIn half must not then start minutes of public searching.
   if (stopRequested()) { log('sources: skipped, you pressed Stop'); sweepEnd(role, 'stopped'); return added; }
@@ -111,7 +138,7 @@ export async function searchAndSweep(page, store, cfg, { url, maxPages, sources 
     set: patch => sweepSet(role, patch),
   };
   try {
-    const r = await runSources(page, store, cfg, { ...(maxLookups ? { maxLookups } : {}), progress });
+    const r = await runSources(page, store, cfg, { ...(maxLookups ? { maxLookups } : {}), progress, excludedSet });
     sweepEnd(role, r?.failed ? 'failed' : (r?.stopped || stopRequested()) ? 'stopped' : 'done');
   }
   catch (e) {

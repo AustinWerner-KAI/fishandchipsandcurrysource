@@ -79,7 +79,7 @@ export async function lookupOnLinkedIn(page, person, { collect = collectSearchRe
 // Runs the allowed public sources for this role, files everyone found, then looks up the
 // strongest few on LinkedIn so they join the normal list.
 // `progress` feeds the page's search panel (see sweeps.js): { step(id, patch), set(patch) }.
-export async function runSources(page, store, cfg, { maxLookups = 8, search = searchPublic, lookup = lookupOnLinkedIn, pause = true, progress = null } = {}) {
+export async function runSources(page, store, cfg, { maxLookups = 8, search = searchPublic, lookup = lookupOnLinkedIn, pause = true, progress = null, excludedSet = null } = {}) {
   const step = progress?.step || (() => {}), set = progress?.set || (() => {});
   const terms = termsForRole(cfg);
   if (!terms.length) { log('sources: this role has no skills or industry words to search for, so only LinkedIn was searched'); set({ note: 'This role has no skills or industry words, so only LinkedIn was searched.' }); return { found: 0, matched: 0 }; }
@@ -127,10 +127,10 @@ export async function runSources(page, store, cfg, { maxLookups = 8, search = se
     .filter(f => !f.lookedUpAt && f.name && f.name.split(/\s+/).length >= 2)
     .sort((a, b) => (b.weight || 0) - (a.weight || 0) || String(b.lastActiveAt || '').localeCompare(String(a.lastActiveAt || '')));
 
-  let matched = 0, looked = 0, already = 0, stopped = false;
+  let matched = 0, looked = 0, already = 0, excluded = 0, stopped = false;
   // found and named are this search; waiting is every named find for the role not looked up yet,
   // from this search and earlier ones, and the page labels it that way
-  const funnel = () => set({ funnel: { found: people.length, named, fresh, looked, matched, already, waiting: Math.max(0, queue.length - looked) } });
+  const funnel = () => set({ funnel: { found: people.length, named, fresh, looked, matched, already, excluded, waiting: Math.max(0, queue.length - looked) } });
   funnel();
   if (queue.length) step('lookups', { state: 'running', looked, matched, of: Math.min(queue.length, maxLookups) });
   for (const f of queue) {
@@ -146,7 +146,29 @@ export async function runSources(page, store, cfg, { maxLookups = 8, search = se
     if (r.outcome === 'matched') {
       // Where this person was found and why, kept on the person so the page can say so next to them.
       const foundOn = { key: f.key, sources: f.sources || [], evidence: (f.evidence || []).slice(0, 3), github: f.github || '', url: f.url || '', at: new Date().toISOString() };
-      const existing = store.get(r.url);
+      // the same address, or the same person already in this role under their Recruiter address
+      // The same /in/ address is the same person. A same name in this role (they may be filed under
+      // their Recruiter address) is only a maybe: anyone Kai excluded stays out, anyone else is left
+      // for Kai to check rather than pinning this evidence on what may be somebody else.
+      const sameUrl = store.get(r.url);
+      const twin = sameUrl ? null : store.findTwin(cfg.name, r.row?.name || f.name);
+      if (twin && !twin.skippedByHand) {
+        if (row) { row.outcome = 'ambiguous'; row.matchedUrl = null; row.twinUrl = twin.url; }
+        store.save();
+        if (pause) await sleep(humanPauseMs([8, 20]));
+        continue;
+      }
+      const existing = sameUrl || twin;
+      if (existing && existing.skippedByHand && existing.campaign === cfg.name) {
+        // Kai excluded them: they never come back, whichever route they arrive by
+        if (row) { row.outcome = 'excluded'; row.matchedUrl = existing.url; }
+        // counted once: the searches may have met them already this press
+        if (!excludedSet?.has(existing.url)) excluded++;
+        excludedSet?.add(existing.url);
+        store.save();
+        if (pause) await sleep(humanPauseMs([8, 20]));
+        continue;
+      }
       if (existing) {
         if (row) row.outcome = 'already-on-file';
         already++;
@@ -170,7 +192,7 @@ export async function runSources(page, store, cfg, { maxLookups = 8, search = se
         lead.foundOn = foundOn;
         matched++;
       }
-      if (row) row.matchedUrl = r.url;
+      if (row) row.matchedUrl = existing ? existing.url : r.url;
     }
     store.save();
     funnel(); step('lookups', { state: 'running', looked, matched });

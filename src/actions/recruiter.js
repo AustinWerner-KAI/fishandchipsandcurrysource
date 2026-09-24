@@ -8,6 +8,7 @@ import { log, warn } from '../log.js';
 import { sleep, randomBetween, humanPauseMs } from '../limits.js';
 import { searchLocations } from './search.js';
 import { normalizeUrl } from '../store.js';
+import { learnedFor, withLearnedNot } from '../excludelearn.js';
 
 const SEARCH_URL = 'https://www.linkedin.com/talent/search';
 
@@ -197,9 +198,17 @@ export async function widenIfNarrow(page) {
 }
 
 // `report` feeds the page's search panel as the pages come in (see sweeps.js).
-export async function runRecruiterSearch(page, store, cfg, { maxPages, report = () => {} } = {}) {
+// `boolean` and `tag` run it as Search 2 (tag 's2'); Search 1 is the role's own boolean (tag 's1').
+// Each person is marked with the search that found them (lead.foundBy). `seen` collects this
+// search's people and `other` is the other search's, so the overlap can be counted.
+export async function runRecruiterSearch(page, store, cfg, { maxPages, report = () => {}, boolean = null, tag = 's1', seen: seenSet = null, other = null, excludedSet = new Set() } = {}) {
   const role = cfg.role;
-  if (!role?.boolean) throw new Error('The role has no boolean search yet.');
+  if (!(boolean || role?.boolean)) throw new Error('The role has no boolean search yet.');
+  // what Kai's excludes taught: left out of both searches (see excludelearn.js)
+  store.refresh();                                 // excludes made in the app a moment ago count
+  const learned = learnedFor(store, cfg);
+  const query = withLearnedNot(boolean || role.boolean, learned);
+  if (learned.length) log(`search ${tag === 's2' ? 2 : 1} also leaves out, learned from your excludes:`, learned.map(x => x.term).join(', '));
   await ensureWide(page);                          // a narrow window hides the box and the filters
   await goto(page, SEARCH_URL);
   await widenIfNarrow(page);
@@ -213,11 +222,11 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages, report = 
   }
   await box.click(); await sleep(randomBetween(500, 900));
   await box.fill('');
-  await typeLikeHuman(box, role.boolean);
+  await typeLikeHuman(box, query);
   await sleep(randomBetween(800, 1400));
   const before = await firstHref(page);          // rows from an earlier search must not be read
   await page.keyboard.press('Enter');
-  log('recruiter search:', role.boolean);
+  log(`recruiter search${tag === 's2' ? ' 2' : ''}:`, query);
   await waitForResults(page, 20000, before);
   if (!searchLocations(role).length) warn('this role has no location, so Recruiter searches everywhere');
 
@@ -229,7 +238,8 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages, report = 
   for (const skill of recruiterSkills(role)) await addFacet(page, 'skill', skill);
 
   const pages = maxPages || cfg.maxSearchPages || 5;
-  let added = 0, seen = 0;
+  let added = 0, seen = 0, excluded = 0, overlap = 0;
+  const overlapSet = new Set();
   for (let p = 1; p <= pages; p++) {
     if (!(await waitForResults(page))) { if (p === 1) { await snap(page, 'recruiter-no-results'); warn('Recruiter found nobody for this search and location. Loosen it with Edit search.'); } break; }
     // results load as you scroll
@@ -237,23 +247,49 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages, report = 
     const rows = await readRecruiterResults(page);
     seen += rows.length;
     store.refresh();          // pick up approvals and exclusions made in the app while this search ran
-    let fresh = 0;
-    for (const r of rows) {
-      if (!r.recruiterUrl || store.findByRecruiterUrl(r.recruiterUrl)) continue;
-      const lead = store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', companyUrl: r.companyUrl || '', sector: r.industry || '', tenureText: r.tenureText || '', tenureMonths: tenureMonths(r.tenureText), currentTitle: r.currentTitle || '', experienceMonths: experienceMonths(r.history), historyTruncated: !!r.historyTruncated, campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
-      if (outsideArea(r.location, locs)) store.setStatus(lead.url, 'skipped', { error: `outside ${locs.join(' / ')} (${r.location})` });
-      fresh++;
-    }
+    const got = fileRecruiterRows(store, cfg, rows, { tag, seen: seenSet, other, locs, excludedSet, overlapSet });
+    const fresh = got.fresh;
+    excluded = got.excluded; overlap = got.overlap;
     added += fresh;
     store.save();
     log(`recruiter page ${p}: ${rows.length} people, ${fresh} new`);
-    report({ page: p, seen, added });
+    report({ page: p, seen, added, excluded, overlap });
     if (p < pages && !(await nextPage(page, p + 1))) break;
     await sleep(humanPauseMs([6, 15]));
   }
-  log(`recruiter search done: ${added} new people (${seen} seen) in "${cfg.name}"`);
-  report({ seen, added });
+  log(`recruiter search${tag === 's2' ? ' 2' : ''} done: ${added} new people (${seen} seen${excluded ? `, ${excluded} you excluded left out` : ''}) in "${cfg.name}"`);
+  report({ seen, added, excluded, overlap });
   return added;
+}
+
+// Files one page of Recruiter results for a role. Pure: no browser, so it is tested directly.
+// Each person is marked with the search that found them (lead.foundBy: 's1', 's2'); someone already
+// in the role under their /in/ address is never filed twice, and never comes back into To approve
+// if Kai excluded them or they have been contacted (24 Sep 2026).
+// `excludedSet` and `overlapSet` are shared across pages and both searches, so each person counts once.
+export function fileRecruiterRows(store, cfg, rows, { tag = 's1', seen = null, other = null, locs = [], excludedSet = new Set(), overlapSet = new Set() } = {}) {
+  let fresh = 0;
+  const mark = lead => {
+    if (!lead || lead.campaign !== cfg.name) return;
+    if (!(lead.foundBy || []).includes(tag)) lead.foundBy = [...(lead.foundBy || []), tag];
+    if (seen) seen.add(lead.url);
+    if (other && other.has(lead.url)) overlapSet.add(lead.url);
+  };
+  const leftOut = lead => { if (lead.skippedByHand && lead.campaign === cfg.name) excludedSet.add(lead.url); };
+  for (const r of rows) {
+    if (!r.recruiterUrl) continue;
+    const known = store.findByRecruiterUrl(r.recruiterUrl);
+    if (known) { leftOut(known); mark(known); continue; }
+    const gone = store.excludedTwin(cfg.name, r.name);
+    if (gone) { leftOut(gone); continue; }
+    const twin = store.findTwin(cfg.name, r.name, r.company);
+    if (twin) { leftOut(twin); if (twin.status === 'new') mark(twin); continue; }
+    const lead = store.upsertLead({ url: r.recruiterUrl, name: r.name, headline: r.headline, location: r.location, degree: r.degree, company: r.company || '', companyUrl: r.companyUrl || '', sector: r.industry || '', tenureText: r.tenureText || '', tenureMonths: tenureMonths(r.tenureText), currentTitle: r.currentTitle || '', experienceMonths: experienceMonths(r.history), historyTruncated: !!r.historyTruncated, campaign: cfg.name, notes: r.industry ? `industry: ${r.industry}` : '' });
+    mark(lead);
+    if (outsideArea(r.location, locs)) store.setStatus(lead.url, 'skipped', { error: `outside ${locs.join(' / ')} (${r.location})` });
+    fresh++;
+  }
+  return { fresh, excluded: excludedSet.size, overlap: overlapSet.size };
 }
 
 // Opens a Recruiter profile and reads the person's normal /in/ address from it.
