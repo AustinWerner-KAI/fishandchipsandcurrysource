@@ -21,7 +21,7 @@ export function features(lead) {
   const out = new Set();
   // phrases stay inside one part of the headline: "Engineer | Azure" is not "engineer azure"
   // accents dropped first, so "Ingénieur" is one word, not "ing" and "nieur"
-  for (const part of String(headline || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[|•·,/;()]+|\s[-–]\s|\sat\s|@/)) {
+  for (const part of String(headline || '').normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().split(/[|•·,/;()]+|\s[-–]\s|\sat\s|@/)) {
     const words = part.replace(/[^a-z0-9+#. ]+/g, ' ').split(/\s+/)
       .map(w => w.replace(/^\.+|\.+$/g, '')).filter(w => w.length > 1 && !STOP.has(w) && !/^\d+$/.test(w));
     for (const w of words) out.add(w);

@@ -26,7 +26,7 @@ const PERSONAL = new Set(('he him his she her hers they them their theirs xe xem
   'disabled disability neurodivergent autistic adhd dyslexic deaf blind immigrant refugee visa sponsorship citizen').split(' '));
 
 const low = s => String(s || '').toLowerCase();
-const plain = s => low(s).normalize('NFKD').replace(/[̀-ͯ]/g, '');
+const plain = s => low(s).normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '');
 const words = s => plain(s).replace(/[^a-z0-9+#. ]+/g, ' ').split(/\s+/).map(w => w.replace(/^\.+|\.+$/g, '')).filter(w => w.length > 1);
 
 const isKept = l => (l.approved && l.status === 'new') || KEPT.has(l.status) || !!l.acceptedAt || !!l.invitedAt;
