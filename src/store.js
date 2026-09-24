@@ -63,6 +63,16 @@ export function normalizeUrl(input) {
 
 export const isRecruiterUrl = url => /\/talent\/profile\//.test(String(url || ''));
 
+// Has anything actually gone to this person? Deliberately generous: keeping somebody who was
+// never really contacted costs nothing, while dropping somebody who was risks approaching them
+// twice, which is the one thing this tool must never do.
+export const wasContacted = l => !!(l && (
+  l.invitedAt || l.acceptedAt || l.repliedAt || l.direct
+  || (l.messages && l.messages.length)
+  || (l.inmail && (l.inmail.sentAt || l.inmail.replied))
+  || ['invited', 'accepted', 'messaged', 'replied', 'done'].includes(l.status)
+));
+
 export function firstNameOf(name) {
   if (!name) return '';
   const clean = name.replace(/\(.*?\)/g, '').replace(/[,|].*$/, '').trim();
@@ -259,10 +269,28 @@ export class Store {
     for (const [url, l] of Object.entries(this.data.leads)) {
       if (l.campaign !== campaign) continue;
       const touched = l.invitedAt || l.acceptedAt || (l.messages && l.messages.length) || (l.queue && l.queue.length) || l.inmail;
-      const clearable = l.status === 'new' || (l.status === 'skipped' && l.skippedByHand);
+      // Somebody excluded by hand is never removed. Removing them is the same as un-excluding
+      // them: the next search finds them again and puts them straight back in the list.
+      // The ones LinkedIn ruled out for us (a client, no Connect button) go, and are judged afresh.
+      const clearable = l.status === 'new' || (l.status === 'skipped' && !l.skippedByHand);
       if (clearable && !touched) { if (!dryRun) delete this.data.leads[url]; n++; }
     }
     return n;
+  }
+
+  // Delete a role: its people who were never contacted go with it, and anyone who was contacted
+  // stays on file. Keeping them is the whole point. They no longer show anywhere, but a later
+  // search still finds them already on file and will not approach them a second time.
+  deleteCampaign(campaign, { dryRun = false } = {}) {
+    let removed = 0, kept = 0;
+    const at = new Date().toISOString();
+    for (const [url, l] of Object.entries(this.data.leads)) {
+      if (l.campaign !== campaign) continue;
+      // Excluded by hand counts as a decision about that person, and outlives the role.
+      if (wasContacted(l) || l.skippedByHand) { kept++; if (!dryRun) { l.roleDeletedAt = at; l.approved = false; } }
+      else { removed++; if (!dryRun) delete this.data.leads[url]; }
+    }
+    return { removed, kept };
   }
 
   // A person found in Recruiter keeps their Recruiter URL after they are moved to their /in/ URL.
