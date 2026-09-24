@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sourcer</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#5f6672;--line:#e3e5ea;--accent:#1f4fd8;--ok:#0f7a43;--warn:#b45309;--bad:#b91c1c;--soft:#eef2ff}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--ink:#e6e8ee;--muted:#9aa3b2;--line:#262a33;--accent:#7aa2ff;--ok:#3ecf8e;--warn:#f5b048;--bad:#ff6b6b;--soft:#1c2233}}
+:root{color-scheme:light;--on-accent:#fff;--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#5f6672;--line:#e3e5ea;--accent:#1f4fd8;--ok:#0f7a43;--warn:#b45309;--bad:#b91c1c;--soft:#eef2ff}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--on-accent:#0f1115;--bg:#0f1115;--card:#171a21;--ink:#e6e8ee;--muted:#9aa3b2;--line:#262a33;--accent:#7aa2ff;--ok:#3ecf8e;--warn:#f5b048;--bad:#ff6b6b;--soft:#1c2233}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
@@ -44,6 +44,20 @@ code.bool{display:block;font:12px/1.5 ui-monospace,Menlo,monospace;background:va
 .ten-ok{color:var(--ok)}
 .ten-short{color:var(--bad)}
 .ten-unknown{opacity:.6}
+.heal{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);margin-bottom:14px}
+.healgrid{display:grid;grid-template-columns:1fr 300px;gap:16px;margin-top:12px}
+@media (max-width:760px){.healgrid{grid-template-columns:1fr}}
+.healshot{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg);max-height:420px;overflow-y:auto}
+.healshot img{display:block;width:100%;height:auto}
+.healopts{display:grid;gap:8px;align-content:start}
+.healopt{display:grid;grid-template-columns:22px 1fr;gap:10px;align-items:center;text-align:left;font:inherit;
+  padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer}
+.healopt:hover{border-color:var(--accent);background:var(--soft)}
+.healopt .healn{width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:12px;font-weight:700;display:grid;place-items:center}
+.healopt.none{grid-template-columns:1fr;border-style:dashed}
+.healopt b{display:block;font-weight:600}
+.healopt .sub{font-size:12px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 .filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .filters button{font-size:12px;padding:4px 10px;border-radius:999px}
 .filters button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -87,6 +101,8 @@ details.card[open]>summary{margin-bottom:10px}
 
   <nav class="tabs" id="tabs" aria-label="Roles"></nav>
   <div id="alerts"></div>
+  <div id="heal"></div>
+  <div id="learned"></div>
 
   <section id="wizard" class="card hide">
     <div class="row between"><h2 style="margin:0">New role</h2><span class="sub" id="roleStep"></span></div>
@@ -331,6 +347,8 @@ function render(){
   $('#rolePane').classList.toggle('hide', mode!=='role' || !S.campaign);
   if (mode!=='role' || !S.campaign) return;
   renderRole();
+  renderHeal();
+  renderLearned();
   renderReplies();
   renderInmail();
   renderFirst();
@@ -374,6 +392,8 @@ document.addEventListener('click', e => {
   if (act === 'putBack') return setStatus(url, 'new');
   if (act === 'setName') return setName(url);
   if (act === 'holdOverride') return holdOverride(url);
+  if (act === 'heal') return heal(b.dataset.n);
+  if (act === 'forget') return forgetLearned(b.dataset.step);
 });
 document.addEventListener('change', e => {
   const c = e.target.closest('input[data-act="approve"]'); if (c) approve(c.dataset.url, c.checked);
@@ -456,6 +476,84 @@ async function holdOverride(url){
 const LEVEL_YEARS = { junior:1, mid:3, senior:3, lead:6 };
 function levelPicked(){ $('#cfgExp').value = LEVEL_YEARS[$('#cfgLevel').value] ?? 3; settingsDirty=true; }
 
+const LANE_NAME = { connect:'Connection requests', inmail:'InMail', messages:'Messages', replies:'Replies' };
+const short = (t, n) => { const v = String(t||''); return v.length > n ? v.slice(0, n-1) + '…' : v; };
+
+// Sourcer could not find a control and has read the window out for you. Everything here happens
+// on this page: the picture and the choices both came back from the browser it drives.
+function renderHeal(){
+  const q = S.heal;
+  const el = $('#heal');
+  if (!q) { el.innerHTML = ''; return; }
+  const cands = q.candidates || [];
+  const shot = q.shot ? `/screenshots/${encodeURIComponent(q.shot)}` : '';
+  el.innerHTML = `<div class="card heal">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div><h2>Which one ${esc(q.want==='note'?'is the note box':q.want==='send'?'sends the invitation':'is it')}?</h2>
+        <div class="sub">${esc(q.lead?.name||'This profile')} &middot; ${esc(q.why)}. Picture taken ${ago(q.at)}. Nothing is sent by choosing.</div></div>
+      <span class="chip chip-error">needs you</span>
+    </div>
+    <div class="healgrid">
+      ${shot?`<div class="healshot"><img src="${shot}" alt="what LinkedIn was showing when it stopped"></div>`:'<div class="sub">No picture was taken.</div>'}
+      <div class="healopts">
+        <div class="sub" style="margin-bottom:2px">Everything it can click</div>
+        ${q.inDialog?'':'<div class="alert bad">The invitation window was not open when this was read, so this is the whole page. Only a control that names itself can be used from here. If none of these work, leave it paused and tell Claude.</div>'}
+        ${cands.map(c=>`<button class="healopt" data-act="heal" data-n="${esc(c.n)}">
+            <span class="healn">${esc(c.pos||c.n)}</span>
+            <span><b>${esc(c.typable ? 'A box to type in' : short(c.name||c.tag, 42))}</b>
+            <span class="sub">${esc([c.typable?'text box':(c.role||c.tag), c.primary?'main button':''].filter(Boolean).join(' · '))}</span></span>
+          </button>`).join('') || '<div class="sub">It could not see anything clickable. Press the last button below.</div>'}
+        <button class="healopt none" data-act="heal" data-n="none"><b>None of these</b><span class="sub">Leave invites paused and keep the page for Claude</span></button>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:10px">What you pick is tried on the next person without sending. Invites start again by themselves once it works.</div>
+  </div>`;
+}
+
+const STEP_NAME = { noteTextarea: 'The box the note is typed into', sendInviteButton: 'The button that sends the invitation' };
+
+// What Sourcer has been taught, and a way back out of it. A learned control that turns out to be
+// the wrong one would otherwise only be undoable by editing the database.
+function renderLearned(){
+  const el = $('#learned');
+  const rows = S.learned || [];
+  if (!rows.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card">
+    <h2>What Sourcer has been taught</h2>
+    <div class="sub">You told it where these are after LinkedIn moved them. If one looks wrong, forget it: Sourcer goes back to the controls it shipped with and asks you again.</div>
+    ${rows.map(l=>`<div class="row between person">
+      <span><b>${esc(STEP_NAME[l.step]||l.step)}</b>
+        <span class="sub">${esc(l.chose||'')} &middot; ${l.verified?'confirmed by a real invitation':'not proved yet'} &middot; ${ago(l.at)}</span></span>
+      <span class="row" style="gap:8px">
+        <span class="chip ${l.verified?'':'chip-error'}">${l.verified?'working':'unproven'}</span>
+        <button class="small" data-act="forget" data-step="${esc(l.step)}">Forget</button>
+      </span>
+    </div>`).join('')}
+  </div>`;
+}
+
+async function forgetLearned(step){
+  if (!confirm(`Forget where "${STEP_NAME[step]||step}" is?\n\nSourcer goes back to the controls it shipped with, and asks you again if it cannot find it.`)) return;
+  try { await api('/api/forget',{step}); } catch { return load(); }
+  toast('Forgotten. Sourcer will ask you again if it needs to.');
+  load();
+}
+
+async function heal(n){
+  const q = S.heal; if (!q) return;
+  const panel = $('#heal');
+  const off = () => panel.querySelectorAll('.healopt').forEach(b=>{ b.disabled = true; b.style.opacity = .5; });
+  if (n === 'none') { off(); await api('/api/heal',{n:'none'}).catch(()=>{}); toast('Left paused. The page is saved for Claude.'); return load(); }
+  const c = (q.candidates||[]).find(x=>String(x.n)===String(n));
+  const label = c ? (c.typable ? 'the box to type in' : `"${short(c.name, 42)}"`) : `choice ${n}`;
+  if (!confirm(`Use ${label}?\n\nNothing is sent now. Sourcer tries it on the next person first.`)) return;
+  off();
+  let r;
+  try { r = await api('/api/heal',{n}); } catch { return load(); }   // the reason is already shown
+  toast(`Got it. Trying ${r.chose?`"${short(r.chose,42)}"`:'that one'} on the next person.`);
+  load();
+}
+
 function copyThread(url){ const l=S.leads.find(x=>x.url===url); navigator.clipboard.writeText(`${l.name} (${l.headline}) ${l.url}\nI sent: ${l.lastMessage}\nThey replied: ${l.lastReply}\n\nDraft my next message. Keep it short.`); toast('Copied. Paste it to Claude.'); }
 function copyText(i){ const p=S.inmail[i]; navigator.clipboard.writeText(`${p.subject}\n\n${p.text}`); toast('Copied. Paste it into Recruiter Lite.'); }
 async function inmailReplied(url){ const text = prompt('Paste their reply (optional). It moves them to Replies and gives the InMail credit back.', ''); if (text===null) return; await api('/api/inmail-replied',{url, text}); toast('Moved to Replies. Credit back.'); load(); }
@@ -516,7 +614,10 @@ function renderStart(){
   const last = S.lastInvite ? ` Last invite: ${esc(S.lastInvite.name||'someone')}, ${ago(S.lastInvite.at)}.` : '';
   const bar = (tone, text, btn) => `<div class="alert ${tone}" style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px"><span>${text}</span>${btn||''}</div>`;
   let html = '';
-  if (S.health && Date.now()-new Date(S.health.at) < 12*3600e3) html += bar('bad', `<b>Paused:</b> ${esc(S.health.problem)}`);
+  // one lane being down no longer reads as the whole thing being down
+  for (const [lane, h2] of Object.entries(S.health||{})) {
+    if (h2?.at && Date.now()-new Date(h2.at) < 12*3600e3) html += bar('warn', `<b>${esc(LANE_NAME[lane]||lane)} paused:</b> ${esc(h2.problem)} Everything else is still running.`);
+  }
   if (mine) {
     const waiting = wh && !h.open;
     html += bar('', waiting
