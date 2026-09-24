@@ -21,7 +21,7 @@ import { log, warn } from './log.js';
 const [, , cmd, ...args] = process.argv;
 const flag = name => args.includes(`--${name}`);
 const opt = name => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined; };
-const VALUE_FLAGS = ['pages', 'max', 'port', 'status'];
+const VALUE_FLAGS = ['pages', 'max', 'port', 'status', 'location', 'since'];
 const positional = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && VALUE_FLAGS.includes(args[i - 1].replace(/^--/, ''))));
 
 const HELP = `
@@ -41,6 +41,8 @@ Sourcer. LinkedIn sourcing and outreach that runs as you.
   npm run dashboard                   read-only dashboard at http://localhost:4747
   npm run status [campaign]           quick counts in the terminal
   npm run menu                        simple menu (what the double-click launcher opens)
+  npm run sources -- <subject...>     search the public sources (GitHub, EIPs, Stack Exchange, Sherlock, npm, crates)
+  npm run sources -- --list           what each source gives, what it is licensed for, and what we never touch
 
 Campaign files: campaigns/<name>.json (the app creates them; examples in campaigns/examples/). Data: ${HOME}
 `;
@@ -165,6 +167,35 @@ async function main() {
     case 'record': {
       const { recordRoute } = await import('./record.js');
       return recordRoute(positional[0], positional[1] || 'https://www.linkedin.com/talent/home');
+    }
+    // Search every public source we are allowed to fetch, and say which ones must be read by hand.
+    case 'sources': {
+      const { searchPublic } = await import('./sources/search.js');
+      const { manualOnly, rejected } = await import('./sources/registry.js');
+      if (flag('list')) {
+        const { automated } = await import('./sources/registry.js');
+        console.log('\nFetched automatically:');
+        for (const s of automated()) console.log(`  ${s.id.padEnd(15)} ${s.title}\n  ${' '.repeat(15)} ${s.licence}`);
+        console.log('\nRead by hand, their terms forbid us fetching them:');
+        for (const s of manualOnly()) console.log(`  ${s.id.padEnd(15)} ${s.title}\n  ${' '.repeat(15)} ${s.url}`);
+        console.log('\nLooked at and rejected:');
+        for (const s of rejected()) console.log(`  ${s.id.padEnd(15)} ${s.why}`);
+        return;
+      }
+      const terms = positional;
+      if (!terms.length) throw new Error('sources needs something to look for, such as: npm run sources -- solidity');
+      const r = await searchPublic({ terms, location: opt('location') || '', since: opt('since') || null });
+      for (const p of r.people.slice(0, +(opt('max') || 40))) {
+        const where = Object.values(p.urls)[0] || '';
+        console.log(`\n${p.score}  ${p.name || '(no name yet)'}${p.location ? `  ${p.location}` : ''}${p.company ? `  at ${p.company}` : ''}`);
+        console.log(`    seen on: ${p.sources.join(', ')}${p.github ? `  github/${p.github}` : ''}${p.lastActiveAt ? `  last active ${String(p.lastActiveAt).slice(0, 10)}` : ''}`);
+        for (const e of p.evidence.slice(0, 4)) console.log(`    ${e.label}: ${e.value}`);
+        if (where) console.log(`    ${where}`);
+      }
+      if (r.problems.length) console.log(`\nCould not reach: ${r.problems.map(x => `${x.source} (${x.problem})`).join('; ')}`);
+      console.log('\nRead these yourself, we are not allowed to fetch them:');
+      for (const m of r.manual) console.log(`  ${m.title}  ${m.url || ''}`);
+      return;
     }
     case 'menu':
       return menu();

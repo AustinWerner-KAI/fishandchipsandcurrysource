@@ -22,7 +22,8 @@
     "dashboard": "node src/cli.js dashboard",
     "status": "node src/cli.js status",
     "test": "node --test test/*.test.js",
-    "test:browser": "node test/browser.e2e.js"
+    "test:browser": "node test/browser.e2e.js",
+    "sources": "node src/cli.js sources"
   },
   "dependencies": {
     "mammoth": "^1.12.3",
