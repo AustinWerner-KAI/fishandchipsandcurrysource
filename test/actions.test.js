@@ -373,7 +373,7 @@ test('self-healing: a failed invite is tried again, 3 in a row pause invites and
   const ops = { sendConnectionRequest: async () => { calls++; return { result: 'failed', info: {} }; } };
   await runConnect(null, s, { ...cfg, dailyCaps: { connects: 10, messages: 2, profileViews: 50 } }, { ops, pause: false });
   assert.equal(calls, 3);                                        // stopped after 3 in a row
-  assert.match(s.data.meta.health.problem, /paused/);
+  assert.match(s.data.meta.health.connect.problem, /paused/);      // invites only, not the whole day
   assert.equal(s.get('linkedin.com/in/fa').status, 'new');       // not an error yet: tried again next pass
   assert.equal(s.get('linkedin.com/in/fa').attempts, 1);
   // two more passes: the third failure for the same person makes it a problem Kai sees.
@@ -387,8 +387,8 @@ test('self-healing: a failed invite is tried again, 3 in a row pause invites and
   const ok = { sendConnectionRequest: async () => ({ result: 'sent', info: {} }) };
   s.setStatus('linkedin.com/in/fa', 'new'); delete s.data.meta.health; s.save();
   await runConnect(null, s, { ...cfg, dailyCaps: { connects: 10, messages: 2, profileViews: 50 } }, { ops: ok, pause: false });
-  assert.equal(s.data.meta.health, undefined);
-  assert.equal(new Store(s.file).data.meta.health, undefined);   // and the removal reached the file
+  assert.deepEqual(s.data.meta.health, {});
+  assert.deepEqual(new Store(s.file).data.meta.health, {});      // and the removal reached the file
 });
 
 test('invites record which note went, for the learning loop', async () => {
