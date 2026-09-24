@@ -9,6 +9,7 @@ import { cleanLead } from '../rank.js';
 import { learn, rankLearned, noteStats, chooseNote } from '../learn.js';
 import { allClients, offLimits } from '../offlimits.js';
 import { tooNewInRole, tooJunior, minExperienceFor, MIN_TENURE_MONTHS } from '../company.js';
+import { pendingQuestion, laneIsDown, laneDown, laneUp, confirmSteps, discardLane } from '../heal.js';
 
 const WEEK = 7 * 86400000;
 
@@ -54,9 +55,12 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   let budget = Math.min(remaining(store, cfg.dailyCaps, 'connects', new Date(), tz), max ?? Infinity);
   if (budget <= 0) { log('connect: daily cap reached'); return { sent: 0 }; }
 
-  // invites paused after repeated failures: try again after an hour, not every pass
-  const h = store.data.meta.health;
-  if (h?.at && Date.now() - new Date(h.at) < 60 * 60000) { log('connect: paused after earlier failures, trying again later'); return { sent: 0, paused: true }; }
+  // Invites only. A broken step here no longer stops InMail or the messages to 1st connections.
+  if (pendingQuestion(store)?.lane === 'connect') {
+    log('connect: waiting for you to say which control changed, in Sourcer');
+    return { sent: 0, paused: true, needsYou: true };
+  }
+  if (laneIsDown(store, 'connect')) { log('connect: paused after earlier failures, trying again later'); return { sent: 0, paused: true }; }
   const clients = allClients();
   const minTenure = cfg.minTenureMonths ?? MIN_TENURE_MONTHS;
   const minExperience = minExperienceFor(cfg);
@@ -85,10 +89,12 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   };
   const tooManyFails = () => {
     if (failStreak < 3) return false;
-    store.data.meta.health = { problem: 'LinkedIn is not behaving as expected, so invites are paused until the next pass. The page was saved so Claude can fix it.', at: new Date().toISOString() };
+    laneDown(store, 'connect', 'LinkedIn is not behaving as expected, so invites are paused for an hour. Everything else carries on.');
+    // three failures in a row means a learned control is probably the wrong one
+    discardLane(store, 'connect');
     store.save();
-    warn('connect: 3 failures in a row, pausing invites until the next pass');
-    notify('Sourcer paused invites', 'LinkedIn is not behaving as expected. It will try again on the next pass.');
+    warn('connect: 3 failures in a row, pausing invites for an hour');
+    notify('Sourcer paused invites', 'Invites hit trouble three times. InMail and messages are still running.');
     return true;
   };
   for (const picked of candidates) {
@@ -124,7 +130,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
 
     let r;
     try {
-      r = await ops.sendConnectionRequest(page, lead.url, note, { clients });
+      r = await ops.sendConnectionRequest(page, lead.url, note, { clients, store });
     } catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
       warn('connect failed', lead.url, e.message);
@@ -142,12 +148,20 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     if (r.info?.companyText && !cur.company) cur.company = r.info.companyText;
 
     switch (r.result) {
+      case 'needs-you':
+        store.save();
+        notify('Sourcer needs you', 'LinkedIn moved a button. Open Sourcer and say which one it is.');
+        log(`connect: stopped at ${cur.name || cur.url} and asked you which control changed`);
+        return { sent, needsYou: true };
       case 'sent':
         store.setStatus(cur.url, 'invited', { invitedAt: new Date().toISOString(), lastCheckedAt: new Date().toISOString() });
         store.recordAction('connects', cur.url, { note: r.noteSent ? note : '', noteTemplate: template, campaign: cfg.name });
         sent++; budget--; failStreak = 0;
         delete cur.attempts; delete cur.lastTryError;
-        if (store.data.meta.health) delete store.data.meta.health;
+        laneUp(store, 'connect');
+        // LinkedIn confirmed the invite, so the controls this send actually went through work.
+        // Only those: a send that carried no note proves nothing about the note box.
+        confirmSteps(store, r.usedSteps || []);
         log(`invited ${cur.name || cur.url}`);
         break;
       case 'off-limits':
