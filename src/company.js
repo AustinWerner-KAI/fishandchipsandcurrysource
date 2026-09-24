@@ -158,9 +158,11 @@ export function experienceMonths(history, now = new Date()) {
     const to = ends.sort((a, b) => b - a)[0];
     months = (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + (to.getUTCMonth() - from.getUTCMonth());
   }
-  // The spans are the floor: one long role beats a badly dated span. Adding them up is the last
-  // resort and can double count two jobs held at once, which errs towards keeping someone in.
-  months = Math.max(months, ...spans, spans.reduce((a, b) => a + b, 0) / (starts.length ? 2 : 1));
+  // The longest single role is the floor, for a career whose overall span could not be dated.
+  // The spans are NEVER added up: roles overlap, and Recruiter now gives years rather than
+  // months, so every role rounds up. Summing them read one real career as 38 years, which
+  // quietly turned off the seniority rule by making everybody look senior enough.
+  months = Math.max(months, ...spans);
   months = Math.round(months);
   // Nothing worth calling experience is the same as not knowing, and must never hold anyone back.
   return months > 0 ? months : null;
