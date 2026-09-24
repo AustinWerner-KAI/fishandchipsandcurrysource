@@ -249,3 +249,21 @@ test('the real searchPublic hands runSources something it can read', async () =>
   const r = await runSources(null, s, cfg, { search: () => Promise.resolve(got), lookup: async () => ({ outcome: 'no-match' }), pause: false });
   assert.equal(r.found, 0, 'and runSources reads it without throwing');
 });
+
+test('a hidden find is left out everywhere, survives another process saving, and comes back if a search finds them again', async () => {
+  const s = fresh();
+  s.upsertFind('github:noise', { name: 'Noise Person', campaign: 'c1', sources: ['eips'], weight: 99 });
+  s.upsertFind('github:real', { name: 'Real Person', campaign: 'c1', sources: ['npm'], weight: 1 });
+  s.save();
+  const other = new Store(s.file);                     // the runner, holding its own copy
+  s.data.finds['github:noise'].hidden = 'eips-fallback'; s.save();
+  other.recordAction('profileViews', 'x'); other.save();   // it saves without knowing
+  const disk = new Store(s.file);
+  assert.equal(disk.data.finds['github:noise'].hidden, 'eips-fallback', 'the mark survives the other process\'s save');
+  assert.deepEqual(disk.findRows('c1').map(f => f.key), ['github:real']);
+  const looked = [];
+  await runSources(null, disk, cfg, { search: async () => ({ people: [] }), lookup: async (p, f) => { looked.push(f.key); return { outcome: 'no-match' }; }, pause: false });
+  assert.deepEqual(looked, ['github:real'], 'never looked up on LinkedIn');
+  disk.upsertFind('github:noise', { sources: ['sherlock'] });
+  assert.equal(disk.findRows('c1').length, 2, 'a real sighting brings them back');
+});

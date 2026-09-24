@@ -342,3 +342,21 @@ test('a bad API shape takes out nothing', () => {
   assert.equal(h1Find({ username: 'u', signal: '6.6', impact: '2' }).evidence.find(e => e.label === 'report quality').value, '6.60');
   assert.equal(isBot(null), false);
 });
+
+// 24 Sep 2026, Kai's call: no fallback. A Cloud role used to get every recent EIP author (919
+// Ethereum protocol people) because no proposal title says "cloud".
+test('the EIPs give only authors of proposals that mention the role\'s word, and nobody otherwise', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { searchEips, cacheDir } = await import('../src/sources/eips.js');
+  const dir = path.join(cacheDir(), 'EIP', 'EIPS');
+  fs.mkdirSync(dir, { recursive: true });
+  const eip = (n, title, author) => fs.writeFileSync(path.join(dir, `eip-${n}.md`),
+    `---\neip: ${n}\ntitle: ${title}\nauthor: ${author}\nstatus: Draft\ncategory: Core\ncreated: 2025-01-01\n---\n\nBody.\n`);
+  eip(9001, 'IAM roles for validators', 'Ada Lovelace (@ada)');
+  eip(9002, 'Block gas accounting', 'Bob Builder (@bob)');
+  const iam = await searchEips({ match: 'iam', refreshFirst: false });
+  assert.deepEqual(iam.map(f => f.github), ['ada'], 'only the proposal that mentions it');
+  assert.deepEqual(await searchEips({ match: 'cloud', refreshFirst: false }), [], 'no mention, nobody: no falling back to every author');
+  assert.deepEqual(await searchEips({ match: '', refreshFirst: false }), [], 'no word, nobody');
+});

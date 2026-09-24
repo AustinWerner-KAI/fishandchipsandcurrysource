@@ -79,17 +79,15 @@ async function refresh({ runner = run } = {}) {
 export async function searchEips({ since = null, match = '', refreshFirst = true, runner = run } = {}) {
   mayFetch('eips');
   if (refreshFirst) await refresh({ runner });
-  // Two passes. The first keeps only proposals whose title or category mentions the subject. If
-  // that finds nobody, the subject simply is not how EIPs are titled, and the right answer is the
-  // people writing them recently rather than an empty list.
+  // Only proposals whose title or category mentions the role's main word. 24 Sep 2026, Kai's call:
+  // this used to fall back to every recent author when nothing matched, which for a Cloud role
+  // meant 919 Ethereum protocol people. Now no match means nobody from the EIPs for this role.
+  if (!String(match || '').trim()) return [];
   const strict = collect({ since, match, runner });
-  if (strict.length) { log(`eips: ${strict.length} author entries for "${match}"`); return strict; }
-  const recent = collect({ since: since || twoYearsAgo(), match: '', runner });
-  log(`eips: nothing titled "${match}", so ${recent.length} author entries from recent proposals instead`);
-  return recent;
+  log(strict.length ? `eips: ${strict.length} author entries for "${match}"` : `eips: no proposal mentions "${match}", so nobody from the EIPs for this role`);
+  return strict;
 }
 
-const twoYearsAgo = (now = new Date()) => new Date(now.getTime() - 730 * 86400000).toISOString().slice(0, 10);
 
 function collect({ since, match }) {
   const out = [];

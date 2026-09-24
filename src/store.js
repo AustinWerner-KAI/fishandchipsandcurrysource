@@ -321,6 +321,8 @@ export class Store {
       };
       return this.data.finds[key];
     }
+    // a find hidden as noise comes back when a search really turns them up again
+    if (cur.hidden) delete cur.hidden;
     // whatever we did not know before, and the strongest weight seen
     for (const k of ['name', 'github', 'company', 'location', 'url', 'campaign']) if (fields[k] && !cur[k]) cur[k] = fields[k];
     if (fields.weight != null) cur.weight = Math.max(cur.weight || 0, fields.weight);
@@ -333,8 +335,11 @@ export class Store {
     return cur;
   }
 
+  // Hidden finds are noise Kai chose to drop (24 Sep 2026: the EIPs fallback's 919 protocol authors
+  // on a Cloud role). They are marked, not deleted: finds are a cache that a merge never removes, so a
+  // running process would put a deleted row straight back on its next save.
   findRows(campaign) {
-    return Object.values(this.data.finds || {}).filter(f => !campaign || f.campaign === campaign);
+    return Object.values(this.data.finds || {}).filter(f => !f.hidden && (!campaign || f.campaign === campaign));
   }
 
   // A person found in Recruiter keeps their Recruiter URL after they are moved to their /in/ URL.
