@@ -22,6 +22,22 @@ export const STATUSES = ['new', 'invited', 'accepted', 'messaged', 'replied', 'd
 
 const EMPTY = () => ({ meta: {}, leads: {}, companies: {}, actions: [] });
 
+// Meta keys holding a map of rows (one per learned step, one per lane) rather than a single value.
+const MAP_META = new Set(['learned', 'health']);
+
+// Only the rows this process changed are written over what is on disk now. A row we removed is
+// removed; a row another process added while we were working is kept.
+function mergeMap(was, now, disk) {
+  if (!now || typeof now !== 'object' || Array.isArray(now)) return now;
+  const base = was && typeof was === 'object' && !Array.isArray(was) ? was : {};
+  const out = { ...(disk && typeof disk === 'object' && !Array.isArray(disk) ? disk : {}) };
+  for (const key of new Set([...Object.keys(base), ...Object.keys(now)])) {
+    if (JSON.stringify(base[key]) === JSON.stringify(now[key])) continue;
+    if (now[key] === undefined) delete out[key]; else out[key] = now[key];
+  }
+  return out;
+}
+
 function parseDb(raw) {
   const data = { ...EMPTY(), ...JSON.parse(raw) };
   data.companies ||= {};
@@ -108,7 +124,11 @@ export class Store {
       out.meta = { ...disk.meta };
       for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) {
         if (JSON.stringify(was[k]) === JSON.stringify(now[k])) continue;
-        if (now[k] === undefined) delete out.meta[k]; else out.meta[k] = now[k];
+        if (now[k] === undefined) { delete out.meta[k]; continue; }
+        // `learned` and `health` are one row per step or lane, written by whichever process
+        // noticed something. Treated as single values, the dashboard confirming one control would
+        // wipe the row the runner had just written for another. So they merge row by row.
+        out.meta[k] = MAP_META.has(k) ? mergeMap(was[k], now[k], disk.meta?.[k]) : now[k];
       }
     }
     // Companies are a cache: whatever we looked up this pass is written over disk's copy,
