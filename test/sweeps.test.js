@@ -103,7 +103,7 @@ test('the sweep reports each site, the funnel, and the look-ups, and marks where
   assert.equal(steps.eips.state, 'waiting', 'every site starts as waiting, so the page shows them all at once');
   assert.deepEqual([steps.lookups.state, steps.lookups.looked, steps.lookups.matched], ['done', 1, 1]);
   const funnel = sets.filter(x => x.funnel).at(-1).funnel;
-  assert.deepEqual(funnel, { found: 2, named: 1, fresh: 2, looked: 1, matched: 1, already: 0, waiting: 0 });
+  assert.deepEqual(funnel, { found: 2, named: 1, fresh: 2, looked: 1, matched: 1, already: 0, excluded: 0, waiting: 0 });
   assert.ok(sets.some(x => x.terms), 'the words it searched for are shown');
   const lead = s.get('https://www.linkedin.com/in/sam-lee/');
   assert.deepEqual(lead.foundOn.sources, ['npm']);

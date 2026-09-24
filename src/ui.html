@@ -44,6 +44,25 @@ button:disabled{opacity:.45;cursor:default}
 .tabx:hover{color:var(--bad)}
 .tab .sub{margin-left:6px}
 .role-title{font-size:18px;font-weight:600}
+.boolLabel{display:block;margin-top:8px}
+/* New role (24 Sep 2026): the link line, title picks, skills, and the role check */
+.readok{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--ok);border-radius:8px;padding:8px 12px;margin-top:10px;font-size:13px}
+.readok b{color:var(--ok)}
+.pick{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.pick button{border-radius:999px;font-size:12px;padding:4px 12px}
+.pick button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.skchip{display:inline-flex;align-items:center;gap:4px;padding:2px 6px 2px 10px;border-radius:999px;border:1px solid var(--line);font-size:13px;margin:0 4px 4px 0}
+.skchip button{border:0;background:none;padding:0 4px;color:var(--muted);font-size:14px;line-height:1}
+.skchip.learned{border-color:var(--accent);color:var(--accent)}
+.skadd{width:140px !important;padding:3px 8px !important;font-size:13px !important}
+.rcheck:empty{display:none}
+.rcheck{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:12px 0}
+.rcheck.hasbad{border-color:var(--bad)}
+.rcheck .hd{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+.chk{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:start;padding:7px 0;border-top:1px solid var(--line)}
+.chk > div > b{display:block;font-size:13px}
+.chk .ic.ok{background:var(--ok)}.chk .ic.bad{background:var(--bad)}
+.learnbar{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;border-top:1px solid var(--line);padding-top:8px;margin-top:4px;font-size:13px}
 code.bool{display:block;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0;white-space:pre-wrap;word-break:break-word}
 .firm{font-size:12px;color:var(--muted);margin-top:2px}
 .firm b{color:var(--ink);font-weight:600}
@@ -102,6 +121,11 @@ a{color:var(--accent);text-decoration:none}
 .filters button.srcf{border-color:var(--accent);color:var(--accent)}
 .filters button.srcf.on{background:var(--accent);color:var(--on-accent)}
 .filters .gap{width:10px}
+.excl{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-top:10px;font-size:13px;color:var(--muted)}
+.excl b{color:var(--ink)}
+.learned{border:1px dashed var(--line);border-radius:8px;padding:8px 12px;margin-top:10px;font-size:13px;line-height:1.9}
+.learned .lchip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:0 4px 0 10px;margin:0 4px 2px 0;background:var(--bg)}
+.learned .lchip .link{font-size:12px}
 tr.hl td{background:var(--soft)}
 .fe{display:grid;grid-template-columns:1fr 280px;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
 .fe:last-child{border:0}
@@ -151,14 +175,16 @@ details.card[open]>summary{margin-bottom:10px}
   <section id="wizard" class="card hide">
     <div class="row between"><h2 style="margin:0">New role</h2><span class="sub" id="roleStep"></span></div>
     <div id="w1" style="margin-top:10px">
-      <div class="field"><label for="specText">Paste the job spec, or pick the file (.pdf, .docx, .txt)</label>
+      <div class="field"><label for="specText">Paste the job spec, a job link (Lever, Greenhouse, Ashby), or pick the file (.pdf, .docx, .txt)</label>
         <textarea id="specText" style="min-height:160px"></textarea></div>
       <div class="row"><input type="file" id="specFile" aria-label="Spec file" accept=".txt,.pdf,.docx" style="width:auto"><button class="primary" onclick="readSpec()">Read spec</button><button class="link" onclick="closeWizard()">Cancel</button></div>
     </div>
+    <div id="wLink" class="readok hide"></div>
     <div id="w2" class="hide" style="margin-top:10px">
       <div class="grid2">
         <div>
-          <div class="field"><label for="rTitle">Role title</label><input type="text" id="rTitle"></div>
+          <div class="field"><label for="rTitle">Role title</label><input type="text" id="rTitle">
+            <div class="pick" id="rTitlePicks"></div><div class="sub" id="rTeam"></div></div>
           <div class="field"><label for="rLocation">Office location</label><input type="text" id="rLocation" placeholder="New York"></div>
         </div>
         <div>
@@ -171,6 +197,7 @@ details.card[open]>summary{margin-bottom:10px}
             <input type="text" id="rClientOther" placeholder="Other names they go by (optional), comma separated"></div>
         </div>
       </div>
+      <div class="rcheck" id="rCheck2"></div>
       <div class="row"><button onclick="showStep(1)">Back</button><button class="primary" onclick="toStep3()">Next: the search</button><button class="link" onclick="closeWizard()">Cancel</button></div>
     </div>
     <div id="w3" class="hide" style="margin-top:10px">
@@ -185,7 +212,13 @@ details.card[open]>summary{margin-bottom:10px}
           <div class="field"><label for="rKey">Key skill for Recruiter's Skills filter (1, or 2 at most)</label><input type="text" id="rKey" placeholder="Azure"></div>
         </div>
       </div>
-      <div class="field"><label for="rBoolean">Boolean search. Edit freely.</label><textarea id="rBoolean" style="min-height:70px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea></div>
+      <div class="field"><label>Skills Sourcer found <span class="sub">(× to remove, or add your own; what you change here is remembered)</span></label>
+        <div id="rSkillChips"></div><div class="sub" id="rLearnHint"></div></div>
+      <div class="grid2">
+        <div class="field"><label for="rBoolean">Search 1 · by title. Edit freely.</label><textarea id="rBoolean" style="min-height:90px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea></div>
+        <div class="field"><label for="rBoolean2">Search 2 · by skills, built differently. Edit freely.</label><textarea id="rBoolean2" style="min-height:90px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea></div>
+      </div>
+      <div class="rcheck" id="rCheck3"></div>
       <div class="row"><button onclick="keepStep3();showStep(2)">Back</button><button onclick="rebuildBoolean()">Rebuild</button><button class="primary" onclick="saveRole(true)">Save and search</button><button onclick="saveRole(false)">Save</button><button class="link" onclick="closeWizard()">Cancel</button></div>
     </div>
   </section>
@@ -205,9 +238,18 @@ details.card[open]>summary{margin-bottom:10px}
           <button class="danger" id="btnStop" onclick="job('stop')" disabled>Stop</button>
         </div>
       </div>
-      <code class="bool" id="rsBoolean"></code>
+      <div id="boolShow">
+        <div class="sub boolLabel">Search 1 · by title</div>
+        <code class="bool" id="rsBoolean"></code>
+        <div class="sub boolLabel">Search 2 · by skills <span id="rs2Note"></span></div>
+        <code class="bool" id="rsBoolean2"></code>
+        <div id="rsLearned" class="learned hide"></div>
+      </div>
       <div id="boolEdit" class="hide">
-        <textarea id="boolText" aria-label="Boolean search" style="min-height:80px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea>
+        <label class="sub boolLabel" for="boolText">Search 1 · by title</label>
+        <textarea id="boolText" aria-label="Search 1" style="min-height:80px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea>
+        <label class="sub boolLabel" for="boolText2">Search 2 · by skills. Leave empty to have Sourcer build it.</label>
+        <textarea id="boolText2" aria-label="Search 2" style="min-height:60px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea>
         <div class="row" style="margin-top:6px"><button class="small primary" onclick="saveBool(true)">Save and search</button><button class="small" onclick="saveBool(false)">Save</button><button class="small" onclick="closeBool()">Cancel</button><span class="sub" id="boolCheck"></span></div>
       </div>
       <div class="row" style="margin-top:4px">
@@ -421,15 +463,34 @@ function render(){
   $('#shots').innerHTML = (S.screenshots||[]).map(f=>`<a href="/screenshots/${encodeURIComponent(f)}" target="_blank" title="${esc(f)}"><img src="/screenshots/${encodeURIComponent(f)}" alt="screenshot ${esc(f)}"></a>`).join('');
 }
 
+// What Kai's excludes taught both searches: shown under them, each with an Undo (24 Sep 2026)
+function renderLearnedNot(){
+  const el=$('#rsLearned'); if(!el) return;
+  const on=S.learnedNot||[], off=S.learnedOff||[];
+  el.classList.toggle('hide', !on.length && !off.length);
+  if (!on.length && !off.length) { el.innerHTML=''; return; }
+  const label = x => x.company ? `people at ${esc(x.term)}` : `"${esc(x.term)}"`;
+  el.innerHTML = (on.length ? `<b>Learned from your excludes.</b> Both searches also leave out: `
+      + on.map(x=>`<span class="lchip">${label(x)} <span class="sub">${x.n} excluded</span><button type="button" class="link" data-act="unlearn" data-term="${esc(x.term)}">Undo</button></span>`).join(' ')
+    : `<b>Learned from your excludes.</b> Nothing left out right now.`)
+    + (off.length ? `<div class="sub" style="margin-top:4px">Turned off by you: ${off.map(t=>`${esc(t)} <button type="button" class="link" data-act="relearn" data-term="${esc(t)}">Use again</button>`).join(', ')}</div>` : '');
+}
+async function unlearn(term, on){ await api('/api/role/unlearn',{campaign:S.campaign, term, on:!!on}); toast(on?`"${term}" is left out again`:`"${term}" is no longer left out`); load(); }
 function renderRole(){
   const role = S.cfg && S.cfg.role;
   $('#rsControls').classList.toggle('hide', !role);
-  if (!role) { $('#rsTitle').textContent = S.campaign; $('#rsWhere').textContent = 'No role set up. Press Edit role.'; $('#rsBoolean').textContent = (S.cfg&&S.cfg.searchUrl)||''; $('#rsSkillHint').textContent=''; $('#rsHours').textContent=''; return; }
+  if (!role) { $('#rsTitle').textContent = S.campaign; $('#rsWhere').textContent = 'No role set up. Press Edit role.'; $('#rsBoolean').textContent = (S.cfg&&S.cfg.searchUrl)||''; $('#rsBoolean2').textContent=''; $('#rs2Note').textContent=''; $('#rsLearned').innerHTML=''; $('#rsLearned').classList.add('hide'); $('#rsSkillHint').textContent=''; $('#rsHours').textContent=''; return; }
   $('#rsTitle').textContent = role.title;
   const cl = role.client, hidden = S.leads.filter(l=>l.offLimits).length;
   $('#rsClient').innerHTML = cl ? `Client: <b>${esc(cl.name||cl.url)}</b>. Nobody there is contacted${hidden?` (${hidden} in the list, moved to Closed)`:''}.` : `<span style="color:var(--warn)">No client set.</span> <button class="link" onclick="editRole()">Add the client</button> so nobody who works there is contacted.`;
   $('#rsWhere').textContent = role.workType==='remote' ? `Remote · candidates in ${(role.candidateLocations||[]).join(', ')||'anywhere'}` : `${({onsite:'On site',hybrid:'Hybrid'})[role.workType]||'On site'} · ${role.location||''}`;
-  if (!boolOpen) $('#rsBoolean').textContent = role.boolean||'';
+  if (!boolOpen) {
+    $('#rsBoolean').textContent = role.boolean||'';
+    const inRecruiter = (role.source||'recruiter')==='recruiter' && !S.cfg.searchUrl;
+    $('#rsBoolean2').textContent = !inRecruiter ? 'Search 2 runs in Recruiter Lite only. Switch the search to Recruiter Lite to use it.' : S.search2 || 'None yet: add a key skill (Skills box) so Sourcer can build it.';
+    $('#rs2Note').textContent = !inRecruiter ? '(off)' : role.boolean2 ? '(yours)' : S.search2 ? '(built by Sourcer from the role)' : '';
+  }
+  renderLearnedNot();
   const src = role.source || 'recruiter';
   $('#rsSource').value = src;
   $('#rsSkillsWrap').classList.toggle('hide', src!=='recruiter');
@@ -446,13 +507,19 @@ document.addEventListener('click', e => {
   if (act === 'tab') return setCampaign(b.dataset.name);
   if (act === 'srcFilter') { srcFilter = srcFilter===b.dataset.src ? 'all' : b.dataset.src; return render(); }
   if (act === 'findTab') { findTab = b.dataset.tab; return renderFinds(); }
-  if (act === 'showLead') return showInPeople(b.dataset.url);
+  if (act === 'showLead') return showInPeople(b.dataset.url, b.dataset.any === '1');
+  if (act === 'pickTitle') { $('#rTitle').value = b.dataset.title; renderPicks(); return debounceCheck(); }
+  if (act === 'fix') return applyFix(b.dataset.kind, b.dataset.value);
+  if (act === 'addSkill') return addSkill(b.dataset.w);
+  if (act === 'dropSkill') { R.suggested = (R.suggested||[]).filter((_,i)=>i!==+b.dataset.i); return renderSkillChips(); }
   if (act === 'reply') return compose(url, true);
   if (act === 'copyThread') return copyThread(url);
   if (act === 'inmailSent') return inmailSent(url, b.dataset.kind);
   if (act === 'inmailReplied') return inmailReplied(url);
   if (act === 'queueOne') return queueOne(url, b.dataset.reply === '1');
   if (act === 'cancelCompose') { openComposer = null; const box = document.getElementById('c-' + key(url)); if (box) box.innerHTML = ''; return; }
+  if (act === 'unlearn') return unlearn(b.dataset.term, false);
+  if (act === 'relearn') return unlearn(b.dataset.term, true);
   if (act === 'exclude') return setStatus(url, 'skipped');
   if (act === 'putBack') return setStatus(url, 'new');
   if (act === 'setName') return setName(url);
@@ -466,10 +533,10 @@ document.addEventListener('change', e => {
   const f = e.target.closest('input[data-act="pickFirst"]'); if (f) { if (f.checked) firstOff.delete(f.dataset.url); else firstOff.add(f.dataset.url); renderFirst(); }
 });
 
-function boolProblems(b){ const p=[]; let d=0; for(const ch of b){ if(ch==='(') d++; if(ch===')') d--; if(d<0) break; } if(d!==0) p.push('brackets do not match'); if(((b.match(/"/g)||[]).length)%2) p.push('a quote is not closed'); if(/\b(and|or|not)\b/.test(b)) p.push('write AND, OR, NOT in capitals'); return p; }
-function openBool(){ if (!S.cfg||!S.cfg.role) return; boolOpen=true; $('#boolText').value=S.cfg.role.boolean||''; $('#boolEdit').classList.remove('hide'); $('#rsBoolean').classList.add('hide'); $('#btnEditBool').classList.add('hide'); const t=$('#boolText'); t.oninput=()=>{ const p=boolProblems(t.value); $('#boolCheck').textContent = p.join(' · '); $('#boolCheck').style.color = p.length ? 'var(--bad)' : ''; }; t.oninput(); t.focus(); }
-function closeBool(){ boolOpen=false; $('#boolEdit').classList.add('hide'); $('#rsBoolean').classList.remove('hide'); $('#btnEditBool').classList.remove('hide'); }
-async function saveBool(andSearch){ const b=$('#boolText').value.trim().replace(/\s+/g,' '); if(!b) return toast('The search is empty', true); const p=boolProblems(b); if(p.length) return toast(p[0], true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, boolean:b, booleanEdited:true}}); closeBool(); await load(); toast(andSearch?'Saved. Searching.':'Search saved'); if(andSearch) job('search'); }
+function boolProblems(b){ const p=[]; let d=0; for(const ch of b){ if(ch==='(') d++; if(ch===')') d--; if(d<0) break; } if(d!==0) p.push('brackets do not match'); if(((b.match(/"/g)||[]).length)%2) p.push('a quote is not closed'); if(/\b(and|or|not)\b/.test(b.replace(/"[^"]*"/g,''))) p.push('write AND, OR, NOT in capitals'); return p; }
+function openBool(){ if (!S.cfg||!S.cfg.role) return; boolOpen=true; $('#boolText').value=S.cfg.role.boolean||''; $('#boolText2').value=S.cfg.role.boolean2||''; $('#boolText2').placeholder=S.search2||''; $('#boolEdit').classList.remove('hide'); $('#boolShow').classList.add('hide'); $('#btnEditBool').classList.add('hide'); const t=$('#boolText'); t.oninput=()=>{ const p=boolProblems(t.value); $('#boolCheck').textContent = p.join(' · '); $('#boolCheck').style.color = p.length ? 'var(--bad)' : ''; }; t.oninput(); t.focus(); }
+function closeBool(){ boolOpen=false; $('#boolEdit').classList.add('hide'); $('#boolShow').classList.remove('hide'); $('#btnEditBool').classList.remove('hide'); }
+async function saveBool(andSearch){ const b=$('#boolText').value.trim().replace(/\s+/g,' '); if(!b) return toast('The search is empty', true); const p=boolProblems(b); if(p.length) return toast(p[0], true); const b2=$('#boolText2').value.trim().replace(/\s+/g,' '); const p2=b2?boolProblems(b2):[]; if(p2.length) return toast('Search 2: '+p2[0], true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, boolean:b, booleanEdited:true, boolean2:b2||undefined}}); closeBool(); await load(); toast(andSearch?'Saved. Searching.':'Search saved'); if(andSearch) job('search'); }
 async function setSource(v){ if (!S.cfg||!S.cfg.role) return; await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, source:v}}); toast(v==='recruiter'?'Searches run in Recruiter Lite':'Searches run in LinkedIn'); load(); }
 async function saveSkills(){ if (!S.cfg||!S.cfg.role) return; const list=$('#rsSkills').value.split(',').map(x=>x.trim()).filter(Boolean); if(list.length>2) return toast('Two skills at most', true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, recruiterSkills:list}}); toast(list.length?`Skills saved: ${list.join(', ')}`:'Skills cleared'); load(); }
 
@@ -519,19 +586,20 @@ const SOURCE_NAME = { github:'GitHub', npm:'npm', crates:'crates.io', eips:'EIPs
 // People seen on the public sources. GitHub, npm and the rest are used to find and check people,
 // never to contact them: no address is collected, and the way to reach someone is still LinkedIn.
 // ---- where people come from (24 Sep 2026) -------------------------------------------------
-const CHIP_NAME = { ...SOURCE_NAME, recruiter:'Recruiter', linkedin:'LinkedIn' };
-const CHIP_CLASS = { recruiter:'rec', linkedin:'rec', github:'gh', npm:'npm', crates:'npm', eips:'eip', stackexchange:'se', sherlock:'sher', hackerone:'h1', trailofbits:'sher' };
-const SWEEP_STEP = { ...SOURCE_NAME, recruiter:'Recruiter', linkedin:'LinkedIn search', names:'Names for handles', lookups:'LinkedIn look-ups' };
+const CHIP_NAME = { ...SOURCE_NAME, recruiter:'Recruiter', linkedin:'LinkedIn', s1:'Search 1', s2:'Search 2', both:'Search 1 + 2' };
+const CHIP_CLASS = { recruiter:'rec', linkedin:'rec', s1:'rec', s2:'se', both:'eip', github:'gh', npm:'npm', crates:'npm', eips:'eip', stackexchange:'se', sherlock:'sher', hackerone:'h1', trailofbits:'sher' };
+const SWEEP_STEP = { ...SOURCE_NAME, recruiter:'Search 1 · by title', recruiter2:'Search 2 · by skills', linkedin:'LinkedIn search', names:'Names for handles', lookups:'LinkedIn look-ups' };
 const chip = id => `<span class="s ${CHIP_CLASS[id]||'gh'}">${esc(CHIP_NAME[id]||id)}</span>`;
 // links built from values that came off public websites: only ever http(s)
 const safeUrl = u => /^https?:\/\//i.test(String(u||'')) ? String(u) : '';
 const onLinkedIn = l => (l.recruiterUrl || /\/talent\//.test(l.url||'')) ? 'recruiter' : 'linkedin';
 // where a person in People came from: a public source Sourcer matched, Recruiter, or LinkedIn
-function fromOf(l){ return l.foundOn ? 'public' : onLinkedIn(l); }
+const bySearch = l => { const f = l.foundBy || []; return f.includes('s1') && f.includes('s2') ? 'both' : f.includes('s2') ? 's2' : f.includes('s1') ? 's1' : ''; };
+function fromOf(l){ return l.foundOn ? 'public' : (bySearch(l) || onLinkedIn(l)); }
 // someone Recruiter found who also turned up on a public site shows both
 function chipsFor(l){
   const pub = l.foundOn ? (l.foundOn.sources||[]).map(chip) : [];
-  const li = !l.foundOn || onLinkedIn(l)==='recruiter' ? [chip(onLinkedIn(l))] : [];
+  const li = bySearch(l) ? [chip(bySearch(l))] : !l.foundOn || onLinkedIn(l)==='recruiter' ? [chip(onLinkedIn(l))] : [];
   return [...li, ...pub].join(' ');
 }
 const cap1 = t => t ? t[0].toUpperCase()+t.slice(1) : t;
@@ -546,7 +614,9 @@ function workLinks(x){
 function whyLine(l){
   if (!l.foundOn) {
     const r = (l.rank && l.rank.reasons) || [];
-    return `<div class="why"><span class="ev">${onLinkedIn(l)==='recruiter'?'Recruiter search for this role':'From LinkedIn'}${r.length?` <span>· ${r.map(esc).join(' · ')}</span>`:''}</span></div>`;
+    const how = { both:'Found by both searches', s2:'Only Search 2 found them', s1:'Search 1 (by title)' }[bySearch(l)] || (onLinkedIn(l)==='recruiter'?'Recruiter search for this role':'From LinkedIn');
+    const extra = bySearch(l)==='s2' ? ['their title is not in Search 1'] : [];
+    return `<div class="why"><span class="ev">${how}${r.length||extra.length?` <span>· ${[...extra, ...r].map(esc).join(' · ')}</span>`:''}</span></div>`;
   }
   const f=l.foundOn, ev=(f.evidence||[]).map(e=>`<span class="ev">${esc(evText(e))}</span>`).join('');
   const links=workLinks(f);
@@ -559,12 +629,12 @@ function liSearch(f){ const q=`"${f.name}"${f.company?` ${f.company}`:''}`; retu
 const FOUND_NOUN = { eips:'proposal authors', stackexchange:'answerers', sherlock:'auditors', npm:'package maintainers', crates:'crate maintainers', github:'developers', hackerone:'researchers' };
 function stepText(id, st, live){
   if (st.state==='waiting') return live ? 'waiting' : 'not reached';
-  if (st.state==='skipped') return 'not reached';
+  if (st.state==='skipped') return st.problem || 'not reached';
   if (st.state==='stopped' || (st.state==='running' && !live)) return 'cut off';
   if (st.state==='running') return id==='lookups' ? `looked up ${st.looked||0}${st.of?` of ${st.of}`:''}` : st.page ? `page ${st.page} · ${st.seen||0} seen · ${st.added||0} new so far` : 'searching…';
   if (st.state==='failed') return `failed${st.problem?`: ${st.problem}`:''}`;
   if (st.state==='limited') return `${st.count??0} · ${st.problem||'limited by the site'}${id==='github'?' Add a GitHub token to search more.':''}`;
-  if (id==='recruiter'||id==='linkedin') return st.seen!=null ? `${st.seen} seen · ${st.added??0} new` : `${st.added??0} new people`;
+  if (id==='recruiter'||id==='recruiter2'||id==='linkedin') return (st.seen!=null ? `${st.seen} seen · ${st.added??0} new` : `${st.added??0} new people`) + (id==='recruiter2' && st.overlap ? ` · ${st.overlap} also in Search 1` : '');
   if (id==='names') return `put names to ${st.count??0} handles`;
   if (id==='lookups') return `${st.looked||0} looked up · ${st.matched||0} added`;
   return `${st.count??0} ${FOUND_NOUN[id]||'found'}`;
@@ -579,7 +649,7 @@ function renderSweep(){
     const lastMove = Math.max(new Date(w.startedAt||0), ...Object.values(w.steps).map(st=>new Date(st.at||0)));
     const live = w.state==='running' && S.job && S.job.running && Date.now()-lastMove < 15*60e3;
     const state = w.state==='running' && !live ? 'stopped' : w.state;
-    const first=['recruiter','linkedin'], last=['names','lookups'];
+    const first=['recruiter','recruiter2','linkedin'], last=['names','lookups'];
     const order=[...first, ...Object.keys(w.steps).filter(k=>!first.includes(k)&&!last.includes(k)), ...last].filter(k=>w.steps[k]);
     const icon = st => st.state==='done' ? '<span class="ic done">✓</span>'
       : st.state==='running' && live ? '<span class="ic run" aria-label="searching"></span>'
@@ -589,10 +659,12 @@ function renderSweep(){
       : `Last search · ${when(w.startedAt)}${w.finishedAt?` to ${clock(w.finishedAt)}`:''}${state==='failed'?' · stopped by a problem':state==='stopped'?' · stopped part way':''}`;
     const f=w.funnel;
     const funnel = f ? `<div class="funnel"><span class="st">${f.found} found this search</span><span class="arr">→</span><span class="st">${f.named} with a real name</span><span class="arr">→</span><span class="st">${f.looked} looked up on LinkedIn</span><span class="arr">→</span><span class="st ${f.matched?'go':''}">${f.matched} added to To approve</span>${f.already?`<span class="sub">${f.already} already in People</span>`:''}</div>${f.waiting?`<div class="sub" style="margin-top:6px">${f.waiting} named people still to look up, from this and earlier Searches. Each Search looks up the strongest few.</div>`:''}` : '';
+    const excluded = Math.max(0, ...['recruiter','recruiter2'].map(k=>(w.steps[k]||{}).excluded||0)) + ((f&&f.excluded)||0);
+    const exLine = excluded ? `<div class="excl"><b>${excluded} ${excluded===1?'person':'people'} left out because you excluded them.</b> Excluded people never come back into To approve, whichever search finds them.</div>` : '';
     html = `<div class="card">
       <div class="row between"><h2 style="margin:0">${head}</h2>${(w.terms||[]).length?`<span class="sub">Searching for: ${esc(w.terms.join(', '))}</span>`:''}</div>
       <div class="sweep">${order.map(k=>{ const st=w.steps[k]; return `<div class="src ${['failed','limited'].includes(st.state)?'warn':''}">${icon(st)}<div><b>${esc(SWEEP_STEP[k]||k)}</b><span class="n">${esc(stepText(k,st,live))}</span></div></div>`; }).join('')}</div>
-      ${funnel}${w.note?`<div class="sub" style="margin-top:8px">${esc(w.note)}</div>`:''}${w.problem?`<div class="sub" style="margin-top:8px">${esc(w.problem)}</div>`:''}
+      ${funnel}${exLine}${w.note?`<div class="sub" style="margin-top:8px">${esc(w.note)}</div>`:''}${w.problem?`<div class="sub" style="margin-top:8px">${esc(w.problem)}</div>`:''}
     </div>`;
   }
   // only redrawn when something changed, so a spinner does not restart every 8 seconds
@@ -603,8 +675,8 @@ function renderSweep(){
 const FIND_TABS = [['waiting','Waiting for a LinkedIn look-up'],['people','In People'],['twonames','Two people with the name'],['notfound','Not on LinkedIn'],['noname','Handle only, no name'],['removed','Taken out of People']];
 const LEAD_WORD = { approved:'Approved', new:'To approve', invited:'Contacted', accepted:'Contacted', messaged:'Contacted', replied:'Replied', skipped:'Excluded', done:'Closed', error:'Closed' };
 let findTab = null;
-function showInPeople(url){
-  srcFilter='public'; filter='all'; render();
+function showInPeople(url, any){
+  srcFilter = any ? 'all' : 'public'; filter='all'; render();
   const row = [...document.querySelectorAll('#rows tr[data-lead]')].find(r=>r.dataset.lead===url);
   (row || $('#peopleCard')).scrollIntoView({behavior:'smooth', block: row ? 'center' : 'start'});
   if (row) { row.classList.add('hl'); setTimeout(()=>row.classList.remove('hl'), 4000); }
@@ -615,8 +687,10 @@ function findState(f){
   if (f.group==='people' && f.leadRole) return `<div class="fstate no"><b>In People under another role</b><span class="sub">${esc(roleTitle(f.leadRole))} · ${esc(LEAD_WORD[f.leadStatus]||'')}</span></div>`;
   if (f.group==='people') return `<div class="fstate go"><b>In People · ${esc(LEAD_WORD[f.leadStatus]||'on your list')}</b><span class="sub">Found on LinkedIn by full name.</span><div class="row"><button class="small" data-act="showLead" data-url="${esc(f.matchedUrl||'')}">Show in People</button></div></div>`;
   if (f.group==='waiting') return `<div class="fstate wait"><b>Not looked up yet</b><span class="sub">The next Search looks up the strongest few.</span><div class="row">${btn}</div></div>`;
+  if (f.group==='twonames' && f.twinUrl) return `<div class="fstate no"><b>Same name as someone in People</b><span class="sub">Could be them, could be another person. Sourcer never guesses.</span><div class="row"><button class="small" data-act="showLead" data-any="1" data-url="${esc(f.twinUrl)}">Show who is in People</button>${btn}</div></div>`;
   if (f.group==='twonames') return `<div class="fstate no"><b>More than one person with this name</b><span class="sub">Sourcer never guesses. Check by hand if you want them.</span><div class="row">${btn}</div></div>`;
   if (f.group==='notfound') return `<div class="fstate no"><b>${f.outcome==='lookup-failed'?'The look-up failed':'Not found on LinkedIn'}</b><span class="sub">You can still check by hand.</span><div class="row">${btn}</div></div>`;
+  if (f.group==='removed' && f.outcome==='excluded') return `<div class="fstate no"><b>You excluded them</b><span class="sub">Found again on a public site. They stay out.</span></div>`;
   if (f.group==='removed') return `<div class="fstate no"><b>Taken out of People</b><span class="sub">Removed with Clear list, or when a role was deleted. Not looked up again.</span><div class="row">${btn}</div></div>`;
   return `<div class="fstate no"><b>No real name</b><span class="sub">Can't be matched on LinkedIn. Their work is linked if you want to reach them there.</span></div>`;
 }
@@ -794,8 +868,8 @@ const inSrc = l => srcFilter==='all' || fromOf(l)===srcFilter;
 function renderPeople(){
   const count = g => S.leads.filter(l=>inGroup(l,g)&&inSrc(l)).length;
   const srcCount = k => S.leads.filter(l=>fromOf(l)===k).length;
-  const srcBtn = (k,label) => srcCount(k) || srcFilter===k ? `<button class="srcf ${srcFilter===k?'on':''}" data-act="srcFilter" data-src="${k}">${label} ${srcCount(k)}</button>` : '';
-  $('#filters').innerHTML = Object.keys(GROUPS).map(g=>`<button class="${g===filter?'on':''}" onclick="filter='${g}';render()">${GROUP_LABEL[g]} ${count(g)}</button>`).join('') + `<span class="gap"></span>` + srcBtn('public','From public sources') + srcBtn('recruiter','From Recruiter') + srcBtn('linkedin','From LinkedIn')
+  const srcBtn = (k,label) => srcCount(k) || srcFilter===k ? `<button class="srcf ${srcFilter===k?'on':''}" data-act="srcFilter" data-src="${k}">${label} · ${srcCount(k)}</button>` : '';
+  $('#filters').innerHTML = Object.keys(GROUPS).map(g=>`<button class="${g===filter?'on':''}" onclick="filter='${g}';render()">${GROUP_LABEL[g]} ${count(g)}</button>`).join('') + `<span class="gap"></span>` + srcBtn('s1','Only Search 1') + srcBtn('s2','Only Search 2') + srcBtn('both','Both searches') + srcBtn('public','From public sources') + srcBtn('recruiter','From Recruiter') + srcBtn('linkedin','From LinkedIn')
     + `<button class="${filter==='all'?'on':''}" onclick="filter='all';render()">All ${S.leads.filter(inSrc).length}</button>`;
   const rows = S.leads.filter(l=>inGroup(l,filter)&&inSrc(l)).sort((a,b)=> sortBy==='match' ? (sc(b)-sc(a) || (b.updatedAt||'').localeCompare(a.updatedAt||'')) : (b.updatedAt||'').localeCompare(a.updatedAt||''));
   $('#leadCount').textContent = `· ${S.leads.length}`;
@@ -820,7 +894,13 @@ async function approveVisible(on){ const urls = S.leads.filter(l=>inGroup(l,filt
 async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!isFirst(l)&&!l.offLimits&&!isShort(l)&&!isJunior(l)&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
 async function clearList(){ const {n}=await api('/api/clear',{campaign:S.campaign, dryRun:true}); if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted? Anyone already contacted stays.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
 async function setName(url){ const l=S.leads.find(x=>x.url===url); const fn=prompt(`First name for ${l?l.name||l.url:'this person'}? It goes into every message to them.`, (l&&l.firstName)||''); if(fn===null||!fn.trim()) return; await api('/api/firstname',{url, firstName:fn.trim()}); toast('Name saved'); load(); }
-async function setStatus(url, status){ await api('/api/status',{url,status}); load(); }
+async function setStatus(url, status){
+  const before = (S.learnedNot||[]).map(x=>x.term);
+  await api('/api/status',{url,status}); await load();
+  // an exclude can teach both searches something: say so the moment it does
+  const fresh = (S.learnedNot||[]).filter(x=>!before.includes(x.term));
+  if (status==='skipped' && fresh.length) toast(`Learned: both searches now leave out ${fresh.map(x=>x.company?`people at ${x.term}`:`"${x.term}"`).join(', ')}. Undo on the role card.`);
+}
 
 // The one button that starts outreach for the people Kai approved (and 1st connections he lined up).
 // One line at the top that says what is happening, what happens next, and the one button needed.
@@ -947,26 +1027,44 @@ async function saveSettings(){
   await api('/api/campaign',{name:S.campaign, config}); settingsDirty=false; toast('Saved'); await load(); preview();
 }
 
-function openWizard(){ if (!leaveOk()) return; settingsDirty=false; mode='wizard'; R=null; $('#specText').value=''; $('#specFile').value=''; showStep(1); if (S) render(); }
-function closeWizard(){ if (!S.campaigns.length) return toast('Set up a role first'); mode='role'; R=null; render(); }
-function showStep(n){ for(const i of [1,2,3]) $('#w'+i).classList.toggle('hide', i!==n); $('#roleStep').textContent=`step ${n} of 3`; }
-function editRole(){ const role=S.cfg.role; if(!role) return openWizard(); R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[], editing:S.campaign}; mode='wizard'; fillStep2(); showStep(2); render(); }
+function openWizard(){ if (!leaveOk()) return; settingsDirty=false; mode='wizard'; R=null; $('#specText').value=''; $('#specFile').value=''; $('#wLink').classList.add('hide'); ['#rCheck2','#rCheck3'].forEach(x=>{ $(x).innerHTML=''; }); showStep(1); if (S) render(); }
+function closeWizard(){ if (!S.campaigns.length) return toast('Set up a role first'); mode='role'; R=null; $('#wLink').classList.add('hide'); render(); }
+function showStep(n){ for(const i of [1,2,3]) $('#w'+i).classList.toggle('hide', i!==n); $('#wLink').classList.toggle('hide', n!==2 || !(R&&R.link)); $('#roleStep').textContent=`step ${n} of 3`; }
+function editRole(){ const role=S.cfg.role; if(!role) return openWizard(); R={...role, titles:role.titles||[], domain:role.domain||[], exclude:role.exclude||[], candidateLocations:role.candidateLocations||[], skillsChosen:role.skills||[], suggested:role.suggestedSkills||[], boolean2:role.boolean2||'', built2:role.boolean2?'':(S.search2||''), editing:S.campaign, checks:[]}; if(!R.boolean2) R.boolean2=S.search2||''; mode='wizard'; fillStep2(); showStep(2); render(); }
 async function readSpec(){
   const f=$('#specFile').files[0]; const text=$('#specText').value.trim();
   if(!f && !text) return toast('Paste the spec or pick a file', true);
   let body={text};
   if(f){ const b64=await new Promise((res,rej)=>{const r=new FileReader(); r.onload=()=>res(r.result.split(',')[1]); r.onerror=rej; r.readAsDataURL(f);}); body={file:{name:f.name, base64:b64}}; }
-  const r=await api('/api/role/draft', body);
-  if (f) { $('#specText').value=r.text; $('#specFile').value=''; }
-  R={...r.draft, editing:null, suggested:r.draft.skills||[], skillsChosen:r.draft.required||[]}; fillStep2(); showStep(2);
+  let r; try { r=await api('/api/role/draft', body); } catch { return; }
+  if (f || r.link) { $('#specText').value=r.text; $('#specFile').value=''; }
+  // what the reader guessed, kept as it was so what Kai changes can be learned when he saves
+  R={...r.draft, editing:null, suggested:r.draft.skills||[], skillsChosen:r.draft.required||[], checks:r.checks||[], learning:r.learning||null,
+     link:r.link||null, specText:r.text, built2:r.draft.boolean2||'', guess:{ title:r.draft.title, skills:r.draft.skills||[], boolean:r.draft.boolean, boolean2:r.draft.boolean2 }};
+  if (R.company && !R.client) R.client = { name:R.company, url:'', otherNames:[] };
+  fillStep2(); showStep(2);
 }
-function fillStep2(){ $('#rTitle').value=R.title||''; $('#rLocation').value=R.location||''; document.querySelectorAll('input[name=wt]').forEach(e=>{ e.checked = e.value===(R.workType||'onsite'); e.onchange=syncCand; }); $('#rCand').value=(R.candidateLocations||[]).join(', '); syncCand();
+const BOARD = { lever:'Lever', greenhouse:'Greenhouse', ashby:'Ashby' };
+function renderLink(){
+  const l = R && R.link;
+  $('#wLink').classList.toggle('hide', !l || mode!=='wizard' || $('#w2').classList.contains('hide'));
+  if (l) $('#wLink').innerHTML = `<b>✓ Read from ${esc(BOARD[l.board]||l.board)}</b><span>${[l.title, l.company, l.location, l.workType].filter(Boolean).map(esc).join(' · ')}</span>`;
+}
+function renderPicks(){
+  const cur = $('#rTitle').value.trim().toLowerCase();
+  const opts = [...new Set([...(R.titleOptions||[]), R.title].filter(Boolean))].slice(0,3);
+  $('#rTitlePicks').innerHTML = opts.length>1 ? opts.map(t=>`<button type="button" class="${t.toLowerCase()===cur?'on':''}" data-act="pickTitle" data-title="${esc(t)}">${esc(t)}</button>`).join('') : '';
+  $('#rTeam').innerHTML = R.team ? `Team kept as a hint, not searched as a title: <b>${esc(R.team)}</b>` : '';
+}
+function fillStep2(){ renderLink(); $('#rTitle').value=R.title||''; renderPicks(); renderCheck('#rCheck2', (R.checks||[]).filter(c=>['title','fit'].includes(c.id)), false); $('#rTitle').oninput=()=>{ renderPicks(); debounceCheck(); }; $('#rLocation').value=R.location||''; document.querySelectorAll('input[name=wt]').forEach(e=>{ e.checked = e.value===(R.workType||'onsite'); e.onchange=syncCand; }); $('#rCand').value=(R.candidateLocations||[]).join(', '); syncCand();
   const cl=R.client||{}; $('#rClient').value=cl.name||''; $('#rClientUrl').value=cl.url||''; $('#rClientOther').value=(cl.otherNames||[]).join(', '); }
 function syncCand(){ const wt=document.querySelector('input[name=wt]:checked').value; $('#rCandField').classList.toggle('hide', wt!=='remote'); }
 const splitList = v => v.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
-function keepStep3(){ R.titles=splitList($('#rTitles').value); R.domain=splitList($('#rDomain').value); R.skillsChosen=splitList($('#rSkills').value); R.exclude=splitList($('#rExclude').value); R.recruiterSkills=splitList($('#rKey').value); R.boolean=$('#rBoolean').value.trim(); }
+function keepStep3(){ R.titles=splitList($('#rTitles').value); R.domain=splitList($('#rDomain').value); R.skillsChosen=splitList($('#rSkills').value); R.exclude=splitList($('#rExclude').value); R.recruiterSkills=splitList($('#rKey').value); R.boolean=$('#rBoolean').value.trim(); R.boolean2=$('#rBoolean2').value.trim(); }
 function toStep3(){
   const title=$('#rTitle').value.trim(); if(!title) return toast('Give the role a title', true);
+  const badTitle=(R.checks||[]).find(c=>c.id==='title' && c.level==='bad');
+  if (badTitle && title===R.title && !confirm(`${badTitle.title}.\n\n${badTitle.detail}\n\nCarry on with "${title}" anyway?`)) return;
   const wt=document.querySelector('input[name=wt]:checked').value, loc=$('#rLocation').value.trim();
   if (wt!=='remote' && !loc) return toast('Where is the office?', true);
   if (title!==R.title) { R.titles=[]; R.boolean=''; }
@@ -981,23 +1079,106 @@ function toStep3(){
   $('#rTitles').value=(R.titles||[]).join('\n'); $('#rDomain').value=(R.domain||[]).join(', ').replace(/"/g,'');
   $('#rSkills').value=(R.skillsChosen||[]).join(', '); $('#rExclude').value=(R.exclude||[]).join(', ');
   $('#rKey').value=(R.recruiterSkills||[]).join(', ');
-  $('#rSkillHints').innerHTML = (R.suggested||[]).length ? 'From the spec: '+R.suggested.map((w,i)=>`<button class="small" onclick="addSkill(${i})">${esc(w)}</button>`).join(' ') : '';
+  renderSkillChips(); renderLearning();
   showStep(3);
-  if (!(R.titles||[]).length || !R.boolean) rebuildBoolean(); else $('#rBoolean').value=R.boolean;
+  $('#rBoolean2').value = R.boolean2||'';
+  if (!(R.titles||[]).length || !R.boolean) rebuildBoolean(); else { $('#rBoolean').value=R.boolean; checkNow(); }
+  for (const id of ['#rBoolean','#rBoolean2','#rTitles','#rSkills','#rKey','#rDomain']) $(id).oninput=debounceCheck;
 }
-function addSkill(i){ const w=R.suggested[i]; const cur=splitList($('#rSkills').value); if(!cur.includes(w)) cur.push(w); $('#rSkills').value=cur.join(', '); rebuildBoolean(); }
-async function rebuildBoolean(){ const r=await api('/api/role/boolean',{ title:R.title, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value) }); if (!splitList($('#rTitles').value).length) $('#rTitles').value=r.titles.join('\n'); $('#rBoolean').value=r.boolean; R.built=r.boolean; }
+function addSkill(w){ if(!w) return; const cur=splitList($('#rSkills').value); if(!cur.map(x=>x.toLowerCase()).includes(w.toLowerCase())) cur.push(w); $('#rSkills').value=cur.join(', '); renderSkillChips(); rebuildBoolean(); }
+async function rebuildBoolean(only2){
+  const r=await api('/api/role/boolean',{ title:R.title, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), recruiterSkills:splitList($('#rKey').value), text:R.specText||'', specHints:R.specHints||null });
+  if (!only2) { if (!splitList($('#rTitles').value).length) $('#rTitles').value=r.titles.join('\n'); $('#rBoolean').value=r.boolean; R.built=r.boolean; }
+  // the kind of role follows the title as it is now, so the saved Search 2 is the one shown here
+  if (r.family !== undefined) R.family = r.family;
+  const cur2=$('#rBoolean2').value.trim();
+  if (only2 || !cur2 || cur2===R.built2) { $('#rBoolean2').value=r.boolean2||''; R.built2=r.boolean2||''; }
+  checkNow();
+}
+// ---- the role check, the skills and the learning line (24 Sep 2026) ----
+function draftNow(){
+  return { title: $('#rTitle').value.trim() || R.title, location: R.location, workType: R.workType, company: R.company||'',
+    titles: splitList($('#rTitles').value), domain: splitList($('#rDomain').value), skills: splitList($('#rSkills').value),
+    recruiterSkills: splitList($('#rKey').value), boolean: $('#rBoolean').value.trim(), boolean2: $('#rBoolean2').value.trim() };
+}
+let checkSeq=0;
+async function checkNow(){
+  if (!R) return [];
+  const mine = ++checkSeq;
+  const onStep3 = !$('#w3').classList.contains('hide');
+  const role = onStep3 ? draftNow() : { ...R, title: $('#rTitle').value.trim() || R.title };
+  let r; try { r = await api('/api/role/check', { role, text: R.specText||'' }); } catch { return R.checks||[]; }
+  if (mine !== checkSeq || !R) return (R && R.checks) || [];
+  R.checks = r.checks||[];
+  renderCheck('#rCheck2', R.checks.filter(c=>['title','fit'].includes(c.id)), false);
+  if (onStep3) renderCheck('#rCheck3', R.checks, true);
+  return R.checks;
+}
+let checkTimer=null;
+function debounceCheck(){ clearTimeout(checkTimer); checkTimer=setTimeout(()=>checkNow().catch(()=>{}), 450); }
+const FIX_LABEL = { pickTitle:'Pick the title', rebuild:'Rebuild the searches', rebuild2:'Rebuild Search 2', setTitle:'Use it' };
+function renderCheck(sel, checks, full){
+  const el=$(sel); if (!el) return;
+  if (!checks.length) { el.innerHTML=''; el.classList.remove('hasbad'); return; }
+  const n = l => checks.filter(c=>c.level===l).length;
+  const icon = l => l==='ok' ? '<span class="ic ok">✓</span>' : l==='bad' ? '<span class="ic bad">!</span>' : '<span class="ic warn">!</span>';
+  const fix = c => !c.fix ? '' : c.fix.kind==='seniority'
+    ? `<div class="row"><button class="small" data-act="fix" data-kind="keepSenior">Keep Senior</button><button class="small" data-act="fix" data-kind="dropSenior">Drop it</button></div>`
+    : `<button class="small" data-act="fix" data-kind="${esc(c.fix.kind)}" data-value="${esc(c.fix.value||'')}">${esc(FIX_LABEL[c.fix.kind]||'Fix')}</button>`;
+  const shown = full ? checks : checks.filter(c=>c.level!=='ok' || c.id==='title');
+  el.classList.toggle('hasbad', n('bad')>0);
+  el.innerHTML = `<div class="hd"><b style="font-size:13px">Role check</b><span class="sub">${n('ok')} fine${n('warn')?` · ${n('warn')} to look at`:''}${n('bad')?` · <span style="color:var(--bad)">${n('bad')} to fix</span>`:''}</span></div>`
+    + shown.map(c=>`<div class="chk">${icon(c.level)}<div><b>${esc(c.title)}</b>${c.detail?`<span class="sub">${esc(c.detail)}</span>`:''}</div>${fix(c)}</div>`).join('')
+    + (full ? learnBar() : '');
+}
+async function applyFix(kind, value){
+  if (kind==='pickTitle') { showStep(2); $('#rTitle').focus(); return; }
+  if (kind==='setTitle') { $('#rTitle').value=value; renderPicks(); if ($('#w3').classList.contains('hide')) return checkNow(); R.title=value; $('#rTitles').value=''; return rebuildBoolean(); }
+  if (kind==='rebuild') { $('#rTitles').value=''; return rebuildBoolean(); }
+  if (kind==='rebuild2') return rebuildBoolean(true);
+  if (kind==='dropSenior') { $('#rTitles').value=splitList($('#rTitles').value).filter(t=>!/^(senior|lead|principal|staff)\b/i.test(t)).join('\n'); const r=await api('/api/role/boolean',{ title:R.title, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), recruiterSkills:splitList($('#rKey').value), text:R.specText||'', specHints:R.specHints||null }); $('#rBoolean').value=r.boolean; R.built=r.boolean; return checkNow(); }
+  if (kind==='keepSenior') { R.checks=(R.checks||[]).filter(c=>c.id!=='seniority'); renderCheck('#rCheck3', R.checks, true); }
+}
+function renderSkillChips(){
+  const learned = (R.learning && R.learning.learned) || [];
+  $('#rSkillChips').innerHTML = (R.suggested||[]).map((w,i)=>`<span class="skchip ${learned.includes(String(w).toLowerCase())?'learned':''}">${esc(w)}${learned.includes(String(w).toLowerCase())?' <span class="sub">learned</span>':''}<button type="button" aria-label="Remove ${esc(w)}" data-act="dropSkill" data-i="${i}">×</button></span>`).join('')
+    + `<input type="text" class="skadd" id="rSkillAdd" placeholder="+ add a skill" aria-label="Add a skill">`;
+  $('#rSkillAdd').onkeydown = e => { if (e.key==='Enter') { e.preventDefault(); const w=e.target.value.trim(); if (w && !(R.suggested||[]).map(x=>x.toLowerCase()).includes(w.toLowerCase())) R.suggested=[...(R.suggested||[]), w]; renderSkillChips(); $('#rSkillAdd').focus(); } };
+  const have = splitList($('#rSkills').value).map(x=>x.toLowerCase());
+  const hints = (R.suggested||[]).filter(w=>!have.includes(String(w).toLowerCase()));
+  $('#rSkillHints').innerHTML = hints.length ? 'Add as a must-have: '+hints.map(w=>`<button class="small" type="button" data-act="addSkill" data-w="${esc(w)}">${esc(w)}</button>`).join(' ') : '';
+  const dropped = (R.learning && R.learning.dropped) || [];
+  $('#rLearnHint').innerHTML = dropped.length ? `Not offered, because you removed ${dropped.length===1?'it':'them'} before: ${dropped.map(w=>`<s>${esc(w)}</s>`).join(', ')}` : '';
+}
+function renderLearning(){ /* the learning line is drawn inside the role check */ }
+function learnBar(){
+  const L = R && R.learning; if (!L) return '';
+  const sc = L.score && L.score.of ? `Role reading: title right first time on ${L.score.right} of ${L.score.of} role${L.score.of===1?'':'s'}` : 'Role reading starts learning with this role';
+  const bits = [];
+  if ((L.learned||[]).length) bits.push(`learned ${L.learned.map(w=>`"${esc(w)}"`).join(', ')}`);
+  if ((L.dropped||[]).length) bits.push(`stopped suggesting ${L.dropped.map(w=>`"${esc(w)}"`).join(', ')}`);
+  if ((L.titleFixes||[]).length) bits.push(`title fixes: ${L.titleFixes.map(f=>`"${esc(f.was||'nothing')}" to "${esc(f.now)}"`).join(', ')}`);
+  return `<div class="learnbar"><b>${sc}</b>${bits.length?`<span class="sub">From your corrections: ${bits.join('; ')}.</span>`:'<span class="sub">Anything you change before saving is remembered, so the next role is read better.</span>'}</div>`;
+}
+
 async function saveRole(andSearch){
   const prev = R.editing ? S.cfg.role : {};
   const boolean=$('#rBoolean').value.trim();
   const edited = R.built ? boolean !== R.built : (boolean !== (prev.boolean||'') || !!prev.booleanEdited);
-  const role={ ...prev, title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, suggestedSkills:R.suggested||[], recruiterSkills:splitList($('#rKey').value), client:R.client||null };
+  const boolean2=$('#rBoolean2').value.trim().replace(/\s+/g,' ');
+  const role={ ...prev, title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, boolean2:(boolean2===R.built2) ? undefined : (boolean2||undefined), suggestedSkills:R.suggested||[], ...(R.specHints?{specHints:R.specHints}:{}), titleGuessed: R.editing ? !!(prev.titleGuessed && R.title===prev.title) : !!(R.titleGuessed && R.guess && R.title===R.guess.title), ...(R.family?{family:R.family}:{}), recruiterSkills:splitList($('#rKey').value), client:R.client||null, ...(R.team?{team:R.team}:{}) };
   if (role.recruiterSkills.length>2) return toast('Two key skills at most', true);
   if(!role.boolean) return toast('The boolean search is empty', true);
-  const r=await api('/api/role/save',{ campaign:R.editing||undefined, role });
+  const p2 = boolean2 ? boolProblems(boolean2) : []; if (p2.length) return toast('Search 2: '+p2[0], true);
+  // the role check has the last word before saving: anything red is said out loud
+  const checks = await checkNow();
+  const bad = (checks||[]).filter(c=>c.level==='bad');
+  if (bad.length && !confirm(`The role check found ${bad.length===1?'a problem':bad.length+' problems'}:\n\n${bad.map(c=>'• '+c.title+(c.detail?': '+c.detail:'')).join('\n')}\n\nSave anyway?`)) return;
+  const r=await api('/api/role/save',{ campaign:R.editing||undefined, role, ...(R.editing?{}:{ guess:R.guess, specText:R.specText }) });
+  const taught = r.learned && (r.learned.added.length || r.learned.removed.length || !r.learned.titleRight);
   mode='role'; R=null; campaign=r.campaign; remember(campaign);
   await load();
-  toast(andSearch ? 'Saved. Searching.' : 'Role saved');
+  toast((andSearch ? 'Saved. Searching.' : 'Role saved.') + (taught ? ' Sourcer will remember what you changed.' : ''));
   if (andSearch) job('search');
 }
 

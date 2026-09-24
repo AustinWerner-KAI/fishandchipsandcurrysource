@@ -116,3 +116,27 @@ test('a second Store sweeping alongside never loses a reply the run has not save
   assert.equal(disk.data.actions.filter(a => a.type === 'profileViews').length, 1,
     'the profile view the sweep spent is counted once, so the daily cap stays right');
 });
+
+test('findTwin: "Acme" is "Acme Inc.", LinkedIn Member is nobody, and an excluded name stays out whatever the company', async () => {
+  const { Store } = await import('../src/store.js');
+  const s = new Store();
+  s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/tw1', name: 'Jane Doe', company: 'Acme', campaign: 'tw' });
+  s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/tw2', name: 'LinkedIn Member', company: '', campaign: 'tw' });
+  assert.ok(s.findTwin('tw', 'Jane Doe', 'Acme Inc.'));
+  assert.equal(s.findTwin('tw', 'Jane Doe', 'Globex'), null);
+  assert.equal(s.findTwin('tw', 'LinkedIn Member', ''), null);
+  assert.equal(s.excludedTwin('tw', 'Jane Doe'), null, 'not excluded');
+  s.setStatus('https://www.linkedin.com/talent/profile/tw1', 'skipped', { skippedByHand: true });
+  assert.ok(s.excludedTwin('tw', 'Dr Jane Doe, CISSP'), 'excluded: stays out under any company');
+});
+
+test('findTwin: Meta is not Metaco, and a company that is only a suffix word is compared whole', async () => {
+  const { Store } = await import('../src/store.js');
+  const s = new Store();
+  s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/mc1', name: 'Mike Chen', company: 'Meta', campaign: 'mc' });
+  assert.equal(s.findTwin('mc', 'Mike Chen', 'Metaco'), null);
+  assert.equal(s.findTwin('mc', 'Mike Chen', 'Group'), null);
+  assert.ok(s.findTwin('mc', 'Mike Chen', 'Meta Platforms Inc') === null, 'a different legal name is a different company to a simple match');
+  assert.ok(s.findTwin('mc', 'Mike Chen', 'META Ltd'));
+  assert.ok(s.findTwin('mc', 'Mike Chen', ''), 'no company to compare: same name counts');
+});

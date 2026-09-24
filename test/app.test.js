@@ -359,3 +359,78 @@ test('1st connections: /api/direct lines up only uncontacted 1st degree people i
   const again = await post('/api/direct', { campaign: 'example', urls: ['linkedin.com/in/fd-one'] });
   assert.equal(again.body.n, 0);
 });
+
+// ---- the New role screen (24 Sep 2026) --------------------------------------------------------------
+test('a pasted Lever link is read as the job, with its check and the learning line', async () => {
+  const real = globalThis.fetch;
+  // the app's own server stays reachable; only the job board is faked
+  globalThis.fetch = async (url, opts) => /api\.lever\.co/.test(String(url))
+    ? { status: 200, ok: true, json: async () => ({ text: 'Software Engineer - Environment Platform', workplaceType: 'hybrid', categories: { location: 'New York, NY' },
+        descriptionPlain: 'Build APIs on Kubernetes controllers. Distributed systems.', lists: [{ text: 'What We Require', content: '<li>3+ years of software development</li><li>Go or Java</li>' }] }) }
+    : real(url, opts);
+  try {
+    const r = await post('/api/role/draft', { text: 'https://jobs.lever.co/palantir/d5d83a8f-cb96-41cc-9612-c7224fbb2fbc' });
+    assert.equal(r.status, 200);
+    assert.deepEqual([r.body.link.board, r.body.link.company], ['lever', 'Palantir']);
+    assert.deepEqual([r.body.draft.title, r.body.draft.team, r.body.draft.location, r.body.draft.workType], ['Software Engineer', 'Environment Platform', 'New York, NY', 'hybrid']);
+    assert.match(r.body.text, /What We Require/, 'the page gets the job text, so the spec box shows what was read');
+    assert.deepEqual(r.body.checks.filter(c => c.level === 'bad'), []);
+    assert.deepEqual(r.body.learning.score, { right: 0, of: 0 });
+    const bad = await post('/api/role/draft', { text: 'https://careers.example.com/job/1' });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error, /Lever, Greenhouse and Ashby/);
+  } finally { globalThis.fetch = real; }
+});
+
+test('the role check endpoint, both searches from Rebuild, and a saved new role teaches the reader', async () => {
+  let r = await post('/api/role/check', { role: { title: 'New York, NY', location: 'New York', boolean: 'New AND "York, NY"' }, text: 'Kubernetes, Go, software development' });
+  assert.equal(r.body.checks.find(c => c.id === 'title').level, 'bad');
+  r = await post('/api/role/boolean', { title: 'Software Engineer', recruiterSkills: ['Kubernetes'], text: 'Kubernetes controllers in Go. Distributed systems.', exclude: ['recruiter'] });
+  assert.match(r.body.boolean, /^\("Software Engineer" OR .*\) AND \(Kubernetes OR K8s\) NOT recruiter$/);
+  assert.equal(r.body.boolean2, '(Kubernetes OR K8s) AND (Go OR Golang) AND ("distributed systems" OR controllers) AND (engineer OR developer) NOT recruiter');
+  const guess = { title: 'Software Engineer', skills: ['kubernetes', 'ecosystem'], boolean: 'x', boolean2: 'y' };
+  const role = { title: 'Platform Engineer', location: 'New York', workType: 'hybrid', candidateLocations: ['New York'], titles: ['Platform Engineer'], boolean: '"Platform Engineer" AND Kubernetes', boolean2: '(Kubernetes OR K8s) AND Go', suggestedSkills: ['kubernetes', 'grpc'], recruiterSkills: ['Kubernetes'] };
+  r = await post('/api/role/save', { role, guess, specText: 'Kubernetes controllers in Go. gRPC.' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.learned, { titleRight: false, added: ['grpc'], removed: ['ecosystem'] });
+  const st = await get('/api/state?c=' + r.body.campaign);
+  assert.equal(st.cfg.role.boolean2, '(Kubernetes OR K8s) AND Go', 'Search 2 is saved with the role');
+  assert.equal(st.search2, '(Kubernetes OR K8s) AND Go', 'and shown on the role card');
+  // editing a role never records a lesson (there is no spec and no guess to learn from)
+  r = await post('/api/role/save', { campaign: r.body.campaign, role: { ...role, title: 'Staff Platform Engineer' } });
+  assert.equal(r.body.learned, null);
+});
+
+// ---- excludes teach both searches (24 Sep 2026) ------------------------------------------------------
+test('excluding three consultants teaches both searches, the card sees it, and Undo turns it off', async () => {
+  const r = await post('/api/role/save', { role: { title: 'Platform Engineer', location: 'Leeds', workType: 'onsite', titles: ['Platform Engineer'], boolean: '"Platform Engineer" AND (Kubernetes OR K8s) NOT recruiter', recruiterSkills: ['Kubernetes'] } });
+  const c = r.body.campaign;
+  const store = new Store();
+  const hl = ['SAP Consultant', 'IT Consultant at Capgemini', 'Cloud Consultant', 'Platform Engineer at Monzo', 'Platform Engineer'];
+  hl.forEach((h, i) => store.upsertLead({ url: `https://www.linkedin.com/in/xl-${i}/`, name: `X ${i}`, headline: h, campaign: c }));
+  store.save();
+  await post('/api/approve', { urls: ['https://www.linkedin.com/in/xl-3/'], approved: true });
+  for (const i of [0, 1]) await post('/api/status', { url: `https://www.linkedin.com/in/xl-${i}/`, status: 'skipped' });
+  assert.deepEqual((await get('/api/state?c=' + c)).learnedNot, [], 'two excludes teach nothing yet');
+  await post('/api/status', { url: 'https://www.linkedin.com/in/xl-2/', status: 'skipped' });
+  let st = await get('/api/state?c=' + c);
+  assert.deepEqual(st.learnedNot.map(x => [x.term, x.n]), [['consultant', 3]]);
+  // what a Search would type: both searches carry it
+  const { learnedFor, withLearnedNot } = await import('../src/excludelearn.js');
+  const { loadCampaign } = await import('../src/config.js');
+  const { secondSearchFor } = await import('../src/role.js');
+  const cfg = loadCampaign(c), learned = learnedFor(new Store(), cfg);
+  assert.match(withLearnedNot(cfg.role.boolean, learned), /NOT \(recruiter OR consultant\)$/);
+  assert.match(withLearnedNot(secondSearchFor(cfg.role), learned), /consultant\)$/);
+  // Undo, then Use again
+  let u = await post('/api/role/unlearn', { campaign: c, term: 'consultant' });
+  assert.deepEqual(u.body.off, ['consultant']);
+  st = await get('/api/state?c=' + c);
+  assert.deepEqual([st.learnedNot, st.learnedOff], [[], ['consultant']]);
+  u = await post('/api/role/unlearn', { campaign: c, term: 'consultant', on: true });
+  assert.deepEqual((await get('/api/state?c=' + c)).learnedNot.map(x => x.term), ['consultant']);
+  // putting one back takes the lesson away again
+  await post('/api/status', { url: 'https://www.linkedin.com/in/xl-0/', status: 'new' });
+  assert.deepEqual((await get('/api/state?c=' + c)).learnedNot, []);
+  assert.equal((await post('/api/role/unlearn', { campaign: '../x', term: 'a' })).status, 400);
+});
