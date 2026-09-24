@@ -107,29 +107,33 @@ try {
     assert.match(got.body, /^Hi Nathan,/);
     assert.equal(got.template, '', 'the template box is never typed into');
   }
-  // 24 Sep 2026: a search tab opened 796px wide and Recruiter hid the search box and the filters.
+  // 24 Sep 2026: search tabs opened 796 and 822px wide, and Recruiter loaded its narrow layout:
+  // no search box in the page, filters folded away. Twice a Search failed before it started.
   {
-    const { ensureWide } = await import('../src/browser.js');
-    const { openSearchBox } = await import('../src/actions/recruiter.js');
+    const { ensureWide, loadedNarrow } = await import('../src/browser.js');
+    const { openSearchBox, widenIfNarrow } = await import('../src/actions/recruiter.js');
     const box = '#system-search-typeahead', rail = '.search-facet-wrapper.facet-locations';
+    const url = 'http://127.0.0.1:4790/talent/search';
 
-    // narrow, as the tab was: both the box and the filter rail are hidden
-    await page.setViewportSize({ width: 796, height: 706 });
-    await page.goto('http://127.0.0.1:4790/talent/search');
-    assert.equal(await page.locator(box).isVisible(), false, 'the fake must hide the box when narrow, or this proves nothing');
-    assert.equal(await page.locator(rail).isVisible(), false, 'and the filter rail');
+    // narrow, as the tab was: the real narrow layout
+    await page.setViewportSize({ width: 822, height: 777 });
+    await page.goto(url);
+    assert.equal(await loadedNarrow(page), true);
+    assert.equal(await page.locator(box).count(), 0, 'the fake must have no search box when narrow, like the real page');
+    assert.equal(await page.locator(rail).count(), 0, 'nor the filter rail');
 
-    // the fallback alone opens the box but cannot bring the filters back, which is why it is not the fix
-    assert.ok(await openSearchBox(page), 'the magnifier should open the box');
-    assert.equal(await page.locator(rail).isVisible(), false);
+    // the last-resort opener finds the real magnifier, but the filters stay folded away
+    assert.ok(await openSearchBox(page), 'the magnifier should bring up the box');
+    assert.equal(await page.locator(rail).count(), 0, 'which is why opening the box alone is not the fix');
 
-    // the fix: the page is made wide again before searching, and everything is where Sourcer looks
-    await page.goto('http://127.0.0.1:4790/talent/search');
-    assert.notEqual(await ensureWide(page), 'narrow');
-    assert.ok((await page.evaluate(() => window.innerWidth)) >= 1200);
-    assert.equal(await page.locator(box).isVisible(), true, 'the search box shows when wide');
-    assert.equal(await page.locator(rail).isVisible(), true, 'and so do the filters');
-    assert.equal(await ensureWide(page), 'already', 'a wide page is left alone');
+    // the fix, as runRecruiterSearch does it: the page loaded narrow, so widen and load it again
+    await page.goto(url);
+    assert.equal(await widenIfNarrow(page), true, 'a narrow page should be widened and reloaded');
+    assert.equal(await loadedNarrow(page), false);
+    assert.equal(await page.locator(box).isVisible(), true, 'the search box is there');
+    assert.equal(await page.locator(rail).isVisible(), true, 'and so are the filters');
+    assert.equal(await widenIfNarrow(page), false, 'a wide page is left alone');
+    assert.equal(await ensureWide(page), 'already');
     await page.setViewportSize({ width: 1360, height: 860 });
   }
 

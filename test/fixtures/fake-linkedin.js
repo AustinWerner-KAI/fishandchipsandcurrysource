@@ -102,33 +102,25 @@ $('button[data-test-component="message-icon-btn"]').onclick=()=>{
 };
 </script></body></html>`;
 
-// Recruiter's "Start a search" page as Kai's account served it on 24 Sep 2026. Like the real one it
-// changes layout by width: below 1200px the search box shrinks to the magnifier in the top bar and
-// the filter rail (Locations, Skills) disappears. That is what made a narrow search tab fail.
-const recruiterEmptySearch = () => `<!doctype html><html><head><title>Recruiter Lite</title><style>
-@media (max-width: 1199px) {
-  .ts-common-typeahead:not(.open) { display: none; }
-  .left-rail { display: none; }
-}
-</style></head><body>
-<div class="global-nav__right">
-  <div data-test-system-search-typeahead class="system-search-typeahead global-nav__system-search">
-    <div class="system-search-typeahead__icon-container"><span>search</span></div>
-    <div class="ts-common-typeahead">
-      <input id="system-search-typeahead" placeholder="Start a new search…" type="text"
-             aria-label="Search by job title, ideal candidate, keyword, or boolean">
-    </div>
-  </div>
-</div>
-<aside aria-label="Search filters" class="left-rail">
-  <div class="search-facet-wrapper facet-locations"><button data-test-facet-edit>Locations</button></div>
-  <div class="search-facet-wrapper facet-skills"><button data-test-facet-edit>Skills</button></div>
-</aside>
+// Recruiter's "Start a search" page, modelled on the page Kai's account served on 24 Sep 2026.
+// Like the real one it picks its layout when it loads: below 1200px it is "page-layout--small",
+// with no search box in the page at all (only a magnifier button) and the filters behind a
+// "Show filters" button. At 1200px and up it is "page-layout--large" with both on show.
+const recruiterEmptySearch = () => `<!doctype html><html><head><title>Search | LinkedIn Talent Solutions</title></head><body>
+<div id="nav"></div><section id="layout" class="page-layout"></section>
 <main><h2>Start a search</h2><p>You haven't started a search yet.</p></main>
 <script>
-document.querySelector('.system-search-typeahead__icon-container').onclick = () => {
-  document.querySelector('.ts-common-typeahead').classList.add('open');
-};
+const small = window.innerWidth < 1200;
+document.getElementById('layout').classList.add(small ? 'page-layout--small' : 'page-layout--large');
+const typeahead = '<div data-test-system-search-typeahead class="system-search-typeahead"><input id="system-search-typeahead" placeholder="Start a new search…" type="text" aria-label="Search by job title, ideal candidate, keyword, or boolean"></div>';
+document.getElementById('nav').innerHTML = small
+  ? '<button data-test-global-nav-search-button type="button"><span aria-label="Open search input">search</span></button>'
+  : typeahead;
+document.getElementById('layout').innerHTML = small
+  ? '<button data-test-panel-trigger type="button">Show filters</button>'
+  : '<aside aria-label="Search filters" class="left-rail"><div class="search-facet-wrapper facet-locations"><button data-test-facet-edit>Locations</button></div><div class="search-facet-wrapper facet-skills"><button data-test-facet-edit>Skills</button></div></aside>';
+const mag = document.querySelector('[data-test-global-nav-search-button]');
+if (mag) mag.onclick = () => { document.getElementById('nav').innerHTML = typeahead; };
 </script></body></html>`;
 
 export function startFake(port = 4790) {

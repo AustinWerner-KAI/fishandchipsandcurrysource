@@ -225,3 +225,27 @@ test('Chrome closing mid-lookup is not written down as a lookup that was tried',
   assert.equal((await lookupOnLinkedIn(null, { name: 'Sam Lee' }, { collect: flaky })).outcome, 'lookup-failed',
     'an ordinary slow page is still a failed lookup, as before');
 });
+
+// 24 Sep 2026: the first live sweep found 153 people and saved none, because searchPublic answers
+// { people, problems, manual } and runSources read that as a bare list. Every earlier test injected
+// a bare list, so none of them saw it. These use the real shape, and the real function.
+test('a sweep saves what the real public search returns, in the shape it really returns it', async () => {
+  const s = fresh();
+  const search = async () => ({
+    people: [{ name: 'Sam Lee', github: 'samlee', sources: ['npm'], weight: 5, evidence: [{ label: 'npm', value: 'maintains iam-kit' }] }],
+    problems: [{ source: 'github', error: 'rate limited' }], manual: [],
+  });
+  const lookup = async () => ({ outcome: 'no-match' });
+  const r = await runSources(null, s, cfg, { search, lookup, pause: false });
+  assert.equal(r.found, 1);
+  assert.ok(s.data.finds['github:samlee'], 'the find must be saved');
+});
+
+test('the real searchPublic hands runSources something it can read', async () => {
+  const { searchPublic } = await import('../src/sources/search.js');
+  const got = await searchPublic({ terms: ['iam'], sources: [], enrich: false });   // no sites, no network
+  assert.ok(Array.isArray(got.people), 'searchPublic answers { people: [...] }');
+  const s = fresh();
+  const r = await runSources(null, s, cfg, { search: () => Promise.resolve(got), lookup: async () => ({ outcome: 'no-match' }), pause: false });
+  assert.equal(r.found, 0, 'and runSources reads it without throwing');
+});
