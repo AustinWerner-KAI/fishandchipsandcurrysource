@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Store, STATUSES } from './store.js';
+import { Store, STATUSES, wasContacted } from './store.js';
 import { listCampaigns, loadCampaign } from './config.js';
 import { CAMPAIGN_DIR, HOME, SCREENSHOT_DIR } from './paths.js';
 import { summarise } from './dashboard.js';
@@ -60,6 +60,42 @@ export function inmailList(store, cfg, now = new Date(), clients = allClients())
   const credits = inmailCredits(store, im.monthlyCredits ?? 30, now, ACCOUNT_TZ);
   firsts.sort((a, b) => b.score - a.score);
   return [...out, ...firsts.slice(0, credits.left)];
+}
+
+// Everyone this role has actually reached: invited, InMailed or messaged. One list, replies first,
+// because the question is always "who came back to me" before "who is still quiet".
+export function outreachList(store, cfg, now = new Date()) {
+  if (!cfg) return [];
+  const im = cfg.inmail || {};
+  return store.leads({ campaign: cfg.name }).filter(wasContacted).map(l => {
+    const sent = l.inmail?.sentAt || null;
+    const lastMsg = l.messages?.[l.messages.length - 1]?.at || null;
+    const replied = l.status === 'replied' || !!l.inmail?.replied;
+    // Lined up is not the same as sent. Somebody waiting for their first message has had nothing
+    // from us at all, and saying "sent" about them would be a plain untruth on the screen.
+    const reached = !!(sent || l.invitedAt || lastMsg);
+    // a follow-up is only ever offered for an InMail that has had no answer
+    const followDue = !!(sent && !l.inmail.followUpAt && !replied
+      && now - new Date(sent) >= (im.followUpAfterDays ?? 4) * 86400000);
+    return {
+      url: l.url, name: l.name || '', headline: l.headline || '', company: l.company || '',
+      how: sent ? 'InMail' : l.invitedAt ? 'Invitation' : 'Message',
+      at: sent || l.invitedAt || lastMsg || l.acceptedAt || l.updatedAt,
+      reached,
+      replied,
+      repliedAt: l.repliedAt || l.inmail?.replied || null,
+      lastReply: l.lastReply || '',
+      awaitingInmail: !!(sent && !replied),      // only these can be marked "they replied" by hand
+      followUpDue: followDue,
+      accepted: l.status === 'accepted' || !!l.acceptedAt,
+      closed: ['skipped', 'error', 'done'].includes(l.status),
+      why: l.error || '',
+    };
+  }).sort((a, b) =>
+    (b.replied - a.replied)                       // answers first, always
+    || (a.closed - b.closed)                      // then anything closed drops to the bottom
+    || (b.reached - a.reached)                    // then what has really gone, before what is queued
+    || String(b.at || '').localeCompare(String(a.at || '')));
 }
 
 // The 1st connections message as the best-matched person on that list would get it.
@@ -134,6 +170,7 @@ export function state(jobs, campaignName) {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     inmail: cfg ? inmailList(store, cfg) : [],
     firstDegreePreview: firstPreview(store, cfg),
+    outreach: cfg ? outreachList(store, cfg) : [],
 
     inmailCredits: cfg?.inmail ? inmailCredits(store, cfg.inmail.monthlyCredits ?? 30, new Date(), ACCOUNT_TZ) : null,
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
@@ -265,6 +302,25 @@ export function createApp({ jobs = new Jobs() } = {}) {
         }
         return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
       }
+      // The X on a role tab. Its people who were never contacted go with it; anyone already
+      // contacted stays on file so a later search cannot approach them a second time.
+      if (u.pathname === '/api/campaign/delete') {
+        const name = String(b.campaign || '');
+        if (!NAME_RE.test(name)) return json(400, { error: 'bad role name' });
+        const f = path.join(CAMPAIGN_DIR, `${name}.json`);
+        if (!fs.existsSync(f)) return json(404, { error: 'no such role' });
+        const j = jobs.status();
+        if (j.running && j.campaign === name) return json(400, { error: 'Stop the job running for this role first' });
+        const store = new Store();
+        if (b.dryRun) return json(200, { ok: true, ...store.deleteCampaign(name, { dryRun: true }) });
+        const counts = store.deleteCampaign(name);
+        store.recordAction('roleDeleted', '-', { campaign: name, ...counts });
+        store.save();
+        fs.rmSync(f, { force: true });
+        log(`role "${name}" deleted: ${counts.removed} people removed, ${counts.kept} kept on file`);
+        return json(200, { ok: true, ...counts });
+      }
+
       // Kai picked which control it is, from the list Sourcer read off the page.
       if (u.pathname === '/api/heal') {
         const store = new Store();
