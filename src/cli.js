@@ -8,7 +8,7 @@ import { Store } from './store.js';
 import { loadCampaign, listCampaigns } from './config.js';
 import { openBrowser, closeBrowser, isLoggedIn, hasLoginCookie, saveSession, passContractChooser } from './browser.js';
 import { SEL } from './selectors.js';
-import { runSearch } from './actions/search.js';
+import { searchAndSweep } from './actions/search.js';
 import { importLeads, exportCsv, approveLeads, queueMessages } from './actions/import.js';
 import { runConnect } from './actions/connect.js';
 import { runMessages, sweepAcceptances, sweepReplies } from './actions/followup.js';
@@ -72,19 +72,9 @@ async function main() {
     case 'search': {
       const cfg = campaignArg();
       const url = positional[1];
-      return withBrowser(async (page, store) => {
-        const added = await runSearch(page, store, cfg, { url, maxPages: opt('pages') && +opt('pages') });
-        // The same press also sweeps the public sources, unless this was a one-off URL search.
-        if (!url && cfg.role && !flag('no-sources')) {
-          const { runSources } = await import('./actions/sources.js');
-          try { await runSources(page, store, cfg); }
-          catch (e) {
-            if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
-            warn('sources: skipped after a problem, LinkedIn results are saved:', e.message.slice(0, 140));
-          }
-        }
-        return added;
-      });
+      return withBrowser((page, store) => searchAndSweep(page, store, cfg, {
+        url, maxPages: opt('pages') && +opt('pages'), sources: !flag('no-sources'),
+      }));
     }
     case 'import': {
       const cfg = campaignArg();
@@ -233,7 +223,7 @@ async function menu() {
         return loadCampaign(n.trim());
       };
       if (a === '1') await login();
-      else if (a === '2') { const cfg = await pickCampaign(); await withBrowser((p, s) => runSearch(p, s, cfg)); }
+      else if (a === '2') { const cfg = await pickCampaign(); await withBrowser((p, s) => searchAndSweep(p, s, cfg)); }
       else if (a === '3') { if (!dash) dash = startDashboard({}); exec('open http://localhost:4747'); console.log('Dashboard running while this window is open.'); }
       else if (a === '4') { const cfg = await pickCampaign(); rl.close(); return runCampaign(cfg); }
       else if (a === '5') { const cfg = await pickCampaign(); await runCampaign(cfg, { once: true }); }
