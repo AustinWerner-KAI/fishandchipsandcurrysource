@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sourcer</title>
 <style>
-:root{color-scheme:light;--on-accent:#fff;--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#5f6672;--line:#e3e5ea;--accent:#1f4fd8;--ok:#0f7a43;--warn:#b45309;--bad:#b91c1c;--soft:#eef2ff}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--on-accent:#0f1115;--bg:#0f1115;--card:#171a21;--ink:#e6e8ee;--muted:#9aa3b2;--line:#262a33;--accent:#7aa2ff;--ok:#3ecf8e;--warn:#f5b048;--bad:#ff6b6b;--soft:#1c2233}}
+:root{--s-rec:#1f4fd8;--s-gh:#3b4250;--s-npm:#c2272d;--s-sher:#6d3fc7;--s-se:#b45309;--s-eip:#0f7a43;--s-h1:#b3246e;color-scheme:light;--on-accent:#fff;--bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#5f6672;--line:#e3e5ea;--accent:#1f4fd8;--ok:#0f7a43;--warn:#b45309;--bad:#b91c1c;--soft:#eef2ff}
+@media (prefers-color-scheme:dark){:root{--s-rec:#7aa2ff;--s-gh:#c9d1d9;--s-npm:#ff6b6b;--s-sher:#b392f0;--s-se:#f5b048;--s-eip:#3ecf8e;--s-h1:#f778ba;color-scheme:dark;--on-accent:#0f1115;--bg:#0f1115;--card:#171a21;--ink:#e6e8ee;--muted:#9aa3b2;--line:#262a33;--accent:#7aa2ff;--ok:#3ecf8e;--warn:#f5b048;--bad:#ff6b6b;--soft:#1c2233}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:18px 16px 60px}
@@ -78,6 +78,39 @@ a{color:var(--accent);text-decoration:none}
 .scroll{max-height:560px;overflow:auto}
 .person{padding:10px 0;border-bottom:1px solid var(--line)}.person:last-child{border:0}
 .person q{display:block;margin-top:4px;white-space:pre-wrap}
+/* where people come from (24 Sep 2026): the search panel, source chips, the "why" line, Found elsewhere */
+.sweep{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-top:10px}
+.src{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;gap:10px;align-items:flex-start}
+.src.warn{border-color:var(--warn)}
+.src b{display:block;font-size:13px}
+.src .n{display:block;font-size:12px;color:var(--muted)}
+.ic{width:18px;height:18px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--on-accent);margin-top:1px}
+.ic.done{background:var(--ok)}.ic.warn{background:var(--warn)}.ic.wait{border:2px solid var(--line)}
+.ic.run{border:2px solid var(--accent);border-right-color:transparent;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.ic.run{animation:none}}
+.funnel{margin-top:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px}
+.funnel .st{padding:3px 10px;border-radius:999px;border:1px solid var(--line)}
+.funnel .st.go{border-color:var(--ok);color:var(--ok)}
+.funnel .arr{color:var(--muted)}
+.s{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid currentColor;white-space:nowrap;vertical-align:1px}
+.s::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.s.rec{color:var(--s-rec)}.s.gh{color:var(--s-gh)}.s.npm{color:var(--s-npm)}.s.sher{color:var(--s-sher)}.s.se{color:var(--s-se)}.s.eip{color:var(--s-eip)}.s.h1{color:var(--s-h1)}
+.why{margin-top:6px;border-left:2px solid var(--line);padding:2px 0 2px 10px;font-size:13px}
+.why .ev{display:block}
+.why .ev span{color:var(--muted)}
+.filters button.srcf{border-color:var(--accent);color:var(--accent)}
+.filters button.srcf.on{background:var(--accent);color:var(--on-accent)}
+.filters .gap{width:10px}
+tr.hl td{background:var(--soft)}
+.fe{display:grid;grid-template-columns:1fr 280px;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.fe:last-child{border:0}
+.fstate{font-size:13px}
+.fstate b{display:block}
+.fstate.go b{color:var(--ok)}.fstate.no b{color:var(--muted)}.fstate.wait b{color:var(--warn)}
+.fstate .row{margin-top:6px}
+.btnlink{display:inline-block;padding:4px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;color:var(--ink);text-decoration:none}
+@media (max-width:760px){.fe{grid-template-columns:1fr}}
 .person.out.ans{border-left:3px solid var(--accent);padding-left:10px;margin-left:-13px}
 .person.out .outtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:nowrap}
 .person.out .outwho{min-width:0;flex:1 1 auto}
@@ -189,12 +222,12 @@ details.card[open]>summary{margin-bottom:10px}
       <div class="sub" id="rsHours" style="margin-top:4px"></div>
     </section>
 
+    <section id="sweep"></section>
     <section id="replies"></section>
     <section id="inmail"></section>
     <section id="first"></section>
-    <section id="finds"></section>
 
-    <section class="card">
+    <section class="card" id="peopleCard">
       <div class="row between">
         <h2 style="margin:0">People <span id="leadCount"></span></h2>
         <div class="row">
@@ -210,6 +243,8 @@ details.card[open]>summary{margin-bottom:10px}
       <div class="sub" id="learnLine" style="margin-bottom:8px"></div>
       <div class="scroll"><table><thead><tr><th>Match</th><th>Person</th><th>Status</th><th>OK</th><th>Next</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
     </section>
+
+    <section id="finds"></section>
 
     <details class="card" id="activity"><summary>Activity</summary>
       <div class="log" id="log">Nothing running.</div>
@@ -319,7 +354,7 @@ async function load(){
   render();
 }
 function leaveOk(){ return !(settingsDirty || (mode==='wizard' && R)) || confirm('You have changes that are not saved. Leave them?'); }
-function setCampaign(c){ if (c!==campaign && !leaveOk()) return; campaign=c; remember(c); mode='role'; closeBool(); settingsDirty=false; openComposer=null; load(); }
+function setCampaign(c){ if (c!==campaign && !leaveOk()) return; if (c!==campaign) { srcFilter='all'; findTab=null; } campaign=c; remember(c); mode='role'; closeBool(); settingsDirty=false; openComposer=null; load(); }
 
 function renderTabs(){
   const tabs = (S.roles||[]).map(r => `<span class="tabwrap ${mode==='role'&&r.name===S.campaign?'on':''}"><button class="tab ${mode==='role'&&r.name===S.campaign?'on':''}" data-act="tab" data-name="${esc(r.name)}">${esc(r.title)}${r.location?`<span class="sub">${esc(r.location)}</span>`:''}</button><button class="tabx" title="Delete this role" aria-label="Delete ${esc(r.title)}" data-act="delRole" data-name="${esc(r.name)}">&times;</button></span>`).join('');
@@ -372,6 +407,7 @@ function render(){
   $('#rolePane').classList.toggle('hide', mode!=='role' || !S.campaign);
   if (mode!=='role' || !S.campaign) return;
   renderRole();
+  renderSweep();
   renderHeal();
   renderLearned();
   renderReplies();
@@ -408,6 +444,9 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.tagName === 'INPUT') return;
   const url = b.dataset.url, act = b.dataset.act;
   if (act === 'tab') return setCampaign(b.dataset.name);
+  if (act === 'srcFilter') { srcFilter = srcFilter===b.dataset.src ? 'all' : b.dataset.src; return render(); }
+  if (act === 'findTab') { findTab = b.dataset.tab; return renderFinds(); }
+  if (act === 'showLead') return showInPeople(b.dataset.url);
   if (act === 'reply') return compose(url, true);
   if (act === 'copyThread') return copyThread(url);
   if (act === 'inmailSent') return inmailSent(url, b.dataset.kind);
@@ -476,41 +515,126 @@ function renderInmail(){
   $('#inmail').innerHTML = im.length ? `<div class="card"><div class="row between"><h2 style="margin:0">InMail${im.length?` · ${im.length} ready`:''}</h2><span class="sub">${credits}</span></div>${im.length?`<div class="sub" style="margin:4px 0 6px">Did not accept the connection. Copy, send in Recruiter Lite, press Sent. Best matches first, only as many as you have credits for.</div>`:''}${none}${ready}</div>` : none;
 }
 const SOURCE_NAME = { github:'GitHub', npm:'npm', crates:'crates.io', eips:'EIPs', stackexchange:'Stack Exchange', sherlock:'Sherlock', hackerone:'HackerOne', trailofbits:'Trail of Bits' };
-const OUTCOME = {
-  matched: ['on your list', 'chip-accepted'],
-  'already-on-file': ['already on your list', ''],
-  'no-match': ['not found on LinkedIn', ''],
-  ambiguous: ['more than one person of that name', 'chip-error'],
-  'no-name': ['only a handle, no real name', ''],
-  'lookup-failed': ['the lookup failed', 'chip-error'],
-};
 
 // People seen on the public sources. GitHub, npm and the rest are used to find and check people,
 // never to contact them: no address is collected, and the way to reach someone is still LinkedIn.
+// ---- where people come from (24 Sep 2026) -------------------------------------------------
+const CHIP_NAME = { ...SOURCE_NAME, recruiter:'Recruiter', linkedin:'LinkedIn' };
+const CHIP_CLASS = { recruiter:'rec', linkedin:'rec', github:'gh', npm:'npm', crates:'npm', eips:'eip', stackexchange:'se', sherlock:'sher', hackerone:'h1', trailofbits:'sher' };
+const SWEEP_STEP = { ...SOURCE_NAME, recruiter:'Recruiter', linkedin:'LinkedIn search', names:'Names for handles', lookups:'LinkedIn look-ups' };
+const chip = id => `<span class="s ${CHIP_CLASS[id]||'gh'}">${esc(CHIP_NAME[id]||id)}</span>`;
+// links built from values that came off public websites: only ever http(s)
+const safeUrl = u => /^https?:\/\//i.test(String(u||'')) ? String(u) : '';
+const onLinkedIn = l => (l.recruiterUrl || /\/talent\//.test(l.url||'')) ? 'recruiter' : 'linkedin';
+// where a person in People came from: a public source Sourcer matched, Recruiter, or LinkedIn
+function fromOf(l){ return l.foundOn ? 'public' : onLinkedIn(l); }
+// someone Recruiter found who also turned up on a public site shows both
+function chipsFor(l){
+  const pub = l.foundOn ? (l.foundOn.sources||[]).map(chip) : [];
+  const li = !l.foundOn || onLinkedIn(l)==='recruiter' ? [chip(onLinkedIn(l))] : [];
+  return [...li, ...pub].join(' ');
+}
+const cap1 = t => t ? t[0].toUpperCase()+t.slice(1) : t;
+// one piece of evidence as a sentence: "Maintains aws-iam-kit (4,000 downloads)", "Reputation: 2100"
+function evText(e){ const l=String(e.label||''), v=String(e.value||''); return /^(maintains|possibly the same person as)$/i.test(l) ? cap1(`${l} ${v}`) : `${cap1(l)}: ${v}`; }
+function workLinks(x){
+  const out=[];
+  if (x.github) out.push(`<a href="https://github.com/${encodeURIComponent(x.github)}" target="_blank" rel="noopener">GitHub</a>`);
+  if (safeUrl(x.url) && !/github\.com/.test(x.url)) out.push(`<a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">Their work</a>`);
+  return out.join(' · ');
+}
+function whyLine(l){
+  if (!l.foundOn) {
+    const r = (l.rank && l.rank.reasons) || [];
+    return `<div class="why"><span class="ev">${onLinkedIn(l)==='recruiter'?'Recruiter search for this role':'From LinkedIn'}${r.length?` <span>· ${r.map(esc).join(' · ')}</span>`:''}</span></div>`;
+  }
+  const f=l.foundOn, ev=(f.evidence||[]).map(e=>`<span class="ev">${esc(evText(e))}</span>`).join('');
+  const links=workLinks(f);
+  const how = l.foundOn.at ? 'matched on LinkedIn by full name' : 'matched on LinkedIn';
+  return `<div class="why">${ev}<span class="sub">Found on ${esc((f.sources||[]).map(x=>CHIP_NAME[x]||x).join(', '))}, ${how}.${links?` ${links}`:''}</span></div>`;
+}
+function liSearch(f){ const q=`"${f.name}"${f.company?` ${f.company}`:''}`; return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(q)}`; }
+
+// Part 1: what the latest Search did, site by site
+const FOUND_NOUN = { eips:'proposal authors', stackexchange:'answerers', sherlock:'auditors', npm:'package maintainers', crates:'crate maintainers', github:'developers', hackerone:'researchers' };
+function stepText(id, st, live){
+  if (st.state==='waiting') return live ? 'waiting' : 'not reached';
+  if (st.state==='skipped') return 'not reached';
+  if (st.state==='stopped' || (st.state==='running' && !live)) return 'cut off';
+  if (st.state==='running') return id==='lookups' ? `looked up ${st.looked||0}${st.of?` of ${st.of}`:''}` : st.page ? `page ${st.page} · ${st.seen||0} seen · ${st.added||0} new so far` : 'searching…';
+  if (st.state==='failed') return `failed${st.problem?`: ${st.problem}`:''}`;
+  if (st.state==='limited') return `${st.count??0} · ${st.problem||'limited by the site'}${id==='github'?' Add a GitHub token to search more.':''}`;
+  if (id==='recruiter'||id==='linkedin') return st.seen!=null ? `${st.seen} seen · ${st.added??0} new` : `${st.added??0} new people`;
+  if (id==='names') return `put names to ${st.count??0} handles`;
+  if (id==='lookups') return `${st.looked||0} looked up · ${st.matched||0} added`;
+  return `${st.count??0} ${FOUND_NOUN[id]||'found'}`;
+}
+const clock = iso => iso ? new Date(iso).toLocaleTimeString('en-GB',{timeZone:tzOf(),hour:'2-digit',minute:'2-digit'}) : '';
+function renderSweep(){
+  const el=$('#sweep'), w=S.sweep;
+  let html='';
+  if (w && w.steps && Object.keys(w.steps).length) {
+    // "running" is only believed while a job is running and the search has moved in the last
+    // 15 minutes; a Stop, a crash or an update restart can end a search without it saying so
+    const lastMove = Math.max(new Date(w.startedAt||0), ...Object.values(w.steps).map(st=>new Date(st.at||0)));
+    const live = w.state==='running' && S.job && S.job.running && Date.now()-lastMove < 15*60e3;
+    const state = w.state==='running' && !live ? 'stopped' : w.state;
+    const first=['recruiter','linkedin'], last=['names','lookups'];
+    const order=[...first, ...Object.keys(w.steps).filter(k=>!first.includes(k)&&!last.includes(k)), ...last].filter(k=>w.steps[k]);
+    const icon = st => st.state==='done' ? '<span class="ic done">✓</span>'
+      : st.state==='running' && live ? '<span class="ic run" aria-label="searching"></span>'
+      : st.state==='waiting' && live ? '<span class="ic wait"></span>'
+      : ['failed','limited'].includes(st.state) ? '<span class="ic warn">!</span>' : '<span class="ic wait">–</span>';
+    const head = state==='running' ? `Searching now · started ${clock(w.startedAt)}`
+      : `Last search · ${when(w.startedAt)}${w.finishedAt?` to ${clock(w.finishedAt)}`:''}${state==='failed'?' · stopped by a problem':state==='stopped'?' · stopped part way':''}`;
+    const f=w.funnel;
+    const funnel = f ? `<div class="funnel"><span class="st">${f.found} found this search</span><span class="arr">→</span><span class="st">${f.named} with a real name</span><span class="arr">→</span><span class="st">${f.looked} looked up on LinkedIn</span><span class="arr">→</span><span class="st ${f.matched?'go':''}">${f.matched} added to To approve</span>${f.already?`<span class="sub">${f.already} already in People</span>`:''}</div>${f.waiting?`<div class="sub" style="margin-top:6px">${f.waiting} named people still to look up, from this and earlier Searches. Each Search looks up the strongest few.</div>`:''}` : '';
+    html = `<div class="card">
+      <div class="row between"><h2 style="margin:0">${head}</h2>${(w.terms||[]).length?`<span class="sub">Searching for: ${esc(w.terms.join(', '))}</span>`:''}</div>
+      <div class="sweep">${order.map(k=>{ const st=w.steps[k]; return `<div class="src ${['failed','limited'].includes(st.state)?'warn':''}">${icon(st)}<div><b>${esc(SWEEP_STEP[k]||k)}</b><span class="n">${esc(stepText(k,st,live))}</span></div></div>`; }).join('')}</div>
+      ${funnel}${w.note?`<div class="sub" style="margin-top:8px">${esc(w.note)}</div>`:''}${w.problem?`<div class="sub" style="margin-top:8px">${esc(w.problem)}</div>`:''}
+    </div>`;
+  }
+  // only redrawn when something changed, so a spinner does not restart every 8 seconds
+  if (el._html !== html) { el.innerHTML = html; el._html = html; }
+}
+
+// Part 3: everyone the public sources found, and whether Kai can reach them
+const FIND_TABS = [['waiting','Waiting for a LinkedIn look-up'],['people','In People'],['twonames','Two people with the name'],['notfound','Not on LinkedIn'],['noname','Handle only, no name'],['removed','Taken out of People']];
+const LEAD_WORD = { approved:'Approved', new:'To approve', invited:'Contacted', accepted:'Contacted', messaged:'Contacted', replied:'Replied', skipped:'Excluded', done:'Closed', error:'Closed' };
+let findTab = null;
+function showInPeople(url){
+  srcFilter='public'; filter='all'; render();
+  const row = [...document.querySelectorAll('#rows tr[data-lead]')].find(r=>r.dataset.lead===url);
+  (row || $('#peopleCard')).scrollIntoView({behavior:'smooth', block: row ? 'center' : 'start'});
+  if (row) { row.classList.add('hl'); setTimeout(()=>row.classList.remove('hl'), 4000); }
+}
+const roleTitle = name => ((S.roles||[]).find(r=>r.name===name)||{}).title || name;
+function findState(f){
+  const btn = `<a class="btnlink" href="${esc(liSearch(f))}" target="_blank" rel="noopener">Search LinkedIn ↗</a>`;
+  if (f.group==='people' && f.leadRole) return `<div class="fstate no"><b>In People under another role</b><span class="sub">${esc(roleTitle(f.leadRole))} · ${esc(LEAD_WORD[f.leadStatus]||'')}</span></div>`;
+  if (f.group==='people') return `<div class="fstate go"><b>In People · ${esc(LEAD_WORD[f.leadStatus]||'on your list')}</b><span class="sub">Found on LinkedIn by full name.</span><div class="row"><button class="small" data-act="showLead" data-url="${esc(f.matchedUrl||'')}">Show in People</button></div></div>`;
+  if (f.group==='waiting') return `<div class="fstate wait"><b>Not looked up yet</b><span class="sub">The next Search looks up the strongest few.</span><div class="row">${btn}</div></div>`;
+  if (f.group==='twonames') return `<div class="fstate no"><b>More than one person with this name</b><span class="sub">Sourcer never guesses. Check by hand if you want them.</span><div class="row">${btn}</div></div>`;
+  if (f.group==='notfound') return `<div class="fstate no"><b>${f.outcome==='lookup-failed'?'The look-up failed':'Not found on LinkedIn'}</b><span class="sub">You can still check by hand.</span><div class="row">${btn}</div></div>`;
+  if (f.group==='removed') return `<div class="fstate no"><b>Taken out of People</b><span class="sub">Removed with Clear list, or when a role was deleted. Not looked up again.</span><div class="row">${btn}</div></div>`;
+  return `<div class="fstate no"><b>No real name</b><span class="sub">Can't be matched on LinkedIn. Their work is linked if you want to reach them there.</span></div>`;
+}
 function renderFinds(){
-  const el = $('#finds');
-  const rows = S.finds || [];
-  if (!rows.length) { el.innerHTML = ''; return; }
-  const placed = rows.filter(f => f.matchedUrl).length;
-  const waiting = rows.filter(f => !f.lookedUp).length;
+  const el=$('#finds'), rows=S.finds||[], n=S.findCounts||{};
+  const total=Object.values(n).reduce((a,b)=>a+b,0);
+  if (!total) { el.innerHTML=''; return; }
+  if (!findTab || !n[findTab]) findTab = (FIND_TABS.find(([g])=>n[g])||['waiting'])[0];
+  const list=rows.filter(f=>f.group===findTab);
+  const who = f => f.name ? `<b>${esc(f.name)}</b>` : `<b>${esc(f.github?'@'+f.github:String(f.key||'').split(':').slice(1).join(':')||'(no name)')}</b> <span class="sub">handle only</span>`;
   el.innerHTML = `<div class="card">
-    <div class="row between"><h2 style="margin:0">Found elsewhere &middot; ${rows.length}</h2>
-      <span class="sub">${placed} placed on LinkedIn${waiting?` &middot; ${waiting} still to look up`:''}</span></div>
-    <div class="sub" style="margin:4px 0 8px">Seen on GitHub, npm, the EIPs and the rest. Sourcer looks the strongest few up on LinkedIn each search, so they join the list above and can be approached the normal way.</div>
-    ${rows.map(f=>{
-      const [word, cls] = OUTCOME[f.outcome] || ['waiting to be looked up', ''];
-      return `<div class="row between person" style="align-items:flex-start;gap:12px;flex-wrap:nowrap">
-        <span style="min-width:0">
-          <span class="outline"><b>${esc(f.name || (f.github ? '@'+f.github : '(no name)'))}</b>
-            <span class="sub">${esc((f.sources||[]).map(x=>SOURCE_NAME[x]||x).join(', '))}${f.company?` &middot; ${esc(f.company)}`:''}</span></span>
-          <div class="sub outline"><span class="chip ${cls}">${esc(word)}</span>
-            ${(f.evidence||[]).map(e=>`${esc(e.label)}: ${esc(short(e.value,60))}`).join(' &middot; ') || 'no detail recorded'}</div></span>
-        <span class="row" style="gap:6px;flex:0 0 auto">
-          ${f.matchedUrl?`<a class="small" href="${esc(f.matchedUrl)}" target="_blank" style="padding:4px 10px;border:1px solid var(--line);border-radius:8px">Profile</a>`:''}
-          ${(f.url||f.github)?`<a class="small" href="${esc(f.url || 'https://github.com/'+f.github)}" target="_blank" style="padding:4px 10px;border:1px solid var(--line);border-radius:8px">Their work</a>`:''}
-        </span>
-      </div>`;
-    }).join('')}
+    <div class="row between"><h2 style="margin:0">Found elsewhere · ${total} <span style="text-transform:none;letter-spacing:0">from every Search for this role</span></h2><span class="sub">You only contact people once they are in People. This list shows who could join it.</span></div>
+    <div class="filters">${FIND_TABS.filter(([g])=>g!=='removed'||n[g]).map(([g,label])=>`<button class="${g===findTab?'on':''}" ${n[g]?'':'disabled'} data-act="findTab" data-tab="${g}">${label} ${n[g]||0}</button>`).join('')}</div>
+    ${list.map(f=>{ const links=workLinks(f); return `<div class="fe"><div>
+        <div>${who(f)} &nbsp;${(f.sources||[]).map(chip).join(' ')}${f.company?` <span class="sub">· ${esc(f.company)}</span>`:''}</div>
+        <div class="why">${(f.evidence||[]).map(e=>`<span class="ev">${esc(evText(e))}</span>`).join('') || '<span class="sub">No detail recorded.</span>'}${links?`<span class="sub">${links}</span>`:''}</div>
+      </div>${findState(f)}</div>`; }).join('')}
+    ${(n[findTab]||0)>list.length?`<div class="sub" style="margin-top:8px">Showing the strongest ${list.length} of ${n[findTab]}.</div>`:''}
   </div>`;
 }
 
@@ -665,10 +789,15 @@ function nextStep(l){
   if (l.status==='replied') return 'You reply';
   return esc(l.error||'') || 'Nothing more';
 }
+let srcFilter = 'all';
+const inSrc = l => srcFilter==='all' || fromOf(l)===srcFilter;
 function renderPeople(){
-  const count = g => S.leads.filter(l=>inGroup(l,g)).length;
-  $('#filters').innerHTML = Object.keys(GROUPS).map(g=>`<button class="${g===filter?'on':''}" onclick="filter='${g}';render()">${GROUP_LABEL[g]} ${count(g)}</button>`).join('') + `<button class="${filter==='all'?'on':''}" onclick="filter='all';render()">All ${S.leads.length}</button>`;
-  const rows = S.leads.filter(l=>inGroup(l,filter)).sort((a,b)=> sortBy==='match' ? (sc(b)-sc(a) || (b.updatedAt||'').localeCompare(a.updatedAt||'')) : (b.updatedAt||'').localeCompare(a.updatedAt||''));
+  const count = g => S.leads.filter(l=>inGroup(l,g)&&inSrc(l)).length;
+  const srcCount = k => S.leads.filter(l=>fromOf(l)===k).length;
+  const srcBtn = (k,label) => srcCount(k) || srcFilter===k ? `<button class="srcf ${srcFilter===k?'on':''}" data-act="srcFilter" data-src="${k}">${label} ${srcCount(k)}</button>` : '';
+  $('#filters').innerHTML = Object.keys(GROUPS).map(g=>`<button class="${g===filter?'on':''}" onclick="filter='${g}';render()">${GROUP_LABEL[g]} ${count(g)}</button>`).join('') + `<span class="gap"></span>` + srcBtn('public','From public sources') + srcBtn('recruiter','From Recruiter') + srcBtn('linkedin','From LinkedIn')
+    + `<button class="${filter==='all'?'on':''}" onclick="filter='all';render()">All ${S.leads.filter(inSrc).length}</button>`;
+  const rows = S.leads.filter(l=>inGroup(l,filter)&&inSrc(l)).sort((a,b)=> sortBy==='match' ? (sc(b)-sc(a) || (b.updatedAt||'').localeCompare(a.updatedAt||'')) : (b.updatedAt||'').localeCompare(a.updatedAt||''));
   $('#leadCount').textContent = `· ${S.leads.length}`;
   $('#topN').textContent = (S.caps && S.caps.connects) || 15;
   $('#exportLink').href = '/export.csv?c=' + encodeURIComponent(S.campaign||'');
@@ -677,9 +806,9 @@ function renderPeople(){
   const wk = S.week ? ` · this week ${S.week.connects}/${S.week.cap} invites` : '';
   const crd = S.inmailCredits ? ` · ${S.inmailCredits.left}/${S.inmailCredits.total} InMails this month${S.inmailBalance!=null?`, ${S.inmailBalance} in Recruiter`:''}` : '';
   $('#today').textContent = `${approved} approved and waiting · today ${cap('connects')} invites, ${cap('messages')} messages, ${cap('profileViews')} profile views${wk}${crd}`;
-  $('#rows').innerHTML = rows.map(l=>`<tr>
+  $('#rows').innerHTML = rows.map(l=>`<tr data-lead="${esc(l.url)}">
     <td><span class="match ${sc(l)>=70?'hi':sc(l)>=45?'mid':'lo'}">${sc(l)<0?'':sc(l)}</span></td>
-    <td><a href="${esc(l.recruiterUrl||l.url)}" target="_blank">${esc(l.name||'(no name)')}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''}<div class="sub">${esc(l.headline)}${l.location?` · ${esc(l.location)}`:''}</div>${firmLine(l)}${l.rank&&l.rank.reasons.length?`<div class="sub">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
+    <td><a href="${esc(l.recruiterUrl||l.url)}" target="_blank">${esc(l.name||'(no name)')}</a>${l.degree?` <span class="sub">${esc(l.degree)}</span>`:''} &nbsp;${chipsFor(l)}<div class="sub">${esc(l.headline)}${l.location?` · ${esc(l.location)}`:''}</div>${whyLine(l)}${firmLine(l)}${l.foundOn&&l.rank&&l.rank.reasons.length?`<div class="sub">${l.rank.reasons.map(esc).join(' · ')}</div>`:''}</td>
     <td>${l.offLimits?`<span class="chip chip-error">client</span>`:`<span class="chip chip-${l.status}">${l.status==='skipped'?'excluded':l.status}</span>`}</td>
     <td><input type="checkbox" aria-label="Approve ${esc(l.name)}" ${l.approved?'checked':''} ${l.status!=='new'||isFirst(l)||l.offLimits||isShort(l)||isJunior(l)?'disabled':''} data-act="approve" data-url="${esc(l.url)}"></td>
     <td class="sub">${nextStep(l)}</td>
@@ -687,7 +816,7 @@ function renderPeople(){
   </tr>`).join('') || `<tr><td colspan="6" class="sub">${S.leads.length ? 'Nobody in this group.' : 'Nobody yet. Press Search.'}</td></tr>`;
 }
 async function approve(url, on){ await api('/api/approve',{url, approved:on}); load(); }
-async function approveVisible(on){ const urls = S.leads.filter(l=>inGroup(l,filter)&&l.status==='new'&&!isFirst(l)&&!l.offLimits&&!isShort(l)&&!isJunior(l)&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
+async function approveVisible(on){ const urls = S.leads.filter(l=>inGroup(l,filter)&&inSrc(l)&&l.status==='new'&&!isFirst(l)&&!l.offLimits&&!isShort(l)&&!isJunior(l)&&!!l.approved!==on).map(l=>l.url); if(!urls.length) return toast('Nobody to change'); await api('/api/approve',{urls, approved:on}); toast(`${urls.length} updated`); load(); }
 async function approveTop(){ const n=(S.caps&&S.caps.connects)||15; const urls=S.leads.filter(l=>l.status==='new'&&!isFirst(l)&&!l.offLimits&&!isShort(l)&&!isJunior(l)&&!l.approved&&sc(l)>0).sort((a,b)=>sc(b)-sc(a)).slice(0,n).map(l=>l.url); if(!urls.length) return toast('Nobody new to approve'); if(!confirm(`Approve the ${urls.length} best matches? Invites go out on the next run, up to ${n} a day.`)) return; await api('/api/approve',{urls, approved:true}); toast(`${urls.length} approved`); load(); }
 async function clearList(){ const {n}=await api('/api/clear',{campaign:S.campaign, dryRun:true}); if(!n) return toast('Nothing to clear'); if(!confirm(`Remove ${n} people not yet contacted? Anyone already contacted stays.`)) return; const r=await api('/api/clear',{campaign:S.campaign}); toast(`${r.n} removed`); load(); }
 async function setName(url){ const l=S.leads.find(x=>x.url===url); const fn=prompt(`First name for ${l?l.name||l.url:'this person'}? It goes into every message to them.`, (l&&l.firstName)||''); if(fn===null||!fn.trim()) return; await api('/api/firstname',{url, firstName:fn.trim()}); toast('Name saved'); load(); }
