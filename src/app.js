@@ -13,6 +13,7 @@ import { Jobs } from './jobs.js';
 import { log } from './log.js';
 import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor } from './role.js';
 import { ACCOUNT_TZ, nextWorkingStart, withinWorkingHours, inmailCredits, weekCount, DEFAULT_WEEKLY_CONNECTS } from './limits.js';
+import { pendingQuestion, answer as answerHeal, laneUp, shotExists, forget as forgetLearned } from './heal.js';
 import { tenureLabel, tenureOk, sizeWord, tooJunior, juniorTitle, minExperienceFor, overLevelled, levelFromTitle, SENIORITY, MIN_TENURE_MONTHS } from './company.js';
 import { scoreLead } from './rank.js';
 import { render, renderChecked, nameFor } from './template.js';
@@ -138,7 +139,13 @@ export function state(jobs, campaignName) {
     week: { connects: weekCount(store, 'connects'), cap: cfg?.dailyCaps?.weeklyConnects ?? DEFAULT_WEEKLY_CONNECTS },
     hours: cfg?.workingHours ? { open: withinWorkingHours(cfg.workingHours), nextStart: nextWorkingStart(cfg.workingHours)?.toISOString() || null, timezone: cfg.workingHours.timezone } : { open: true, nextStart: null, timezone: null },
     client: cfg?.role?.client || null,
-    health: store.data.meta.health || null,
+    health: store.data.meta.health || {},
+    // the question waiting for Kai, with the picture and the choices, so he never leaves this page
+    heal: (() => {
+      const q = pendingQuestion(store);
+      return q ? { ...q, shot: shotExists(q.shot) ? q.shot : '' } : null;
+    })(),
+    learned: Object.values(store.data.meta.learned || {}).map(l => ({ step: l.step, lane: l.lane, chose: l.chose, verified: l.verified, at: l.at })),
     queued: c ? pending(c) : [],
     inmailRehearsal: store.data.meta.inmailApprovedAt ? null : store.data.meta.inmailRehearsal || null,
     inmailBalance: store.data.meta.inmailBalance ?? null,
@@ -230,7 +237,11 @@ export function createApp({ jobs = new Jobs() } = {}) {
         return res.end(exportCsv(store, { name: c }));
       }
       if (req.method === 'GET' && u.pathname.startsWith('/screenshots/')) {
-        const f = path.join(SCREENSHOT_DIR, path.basename(u.pathname));
+        // the name is encoded by the page, so decode before looking for it; basename keeps the
+        // lookup inside the screenshots folder whatever the decoded text turns out to be
+        let want = u.pathname;
+        try { want = decodeURIComponent(u.pathname); } catch { /* use it as it came */ }
+        const f = path.join(SCREENSHOT_DIR, path.basename(want));
         if (!fs.existsSync(f)) { res.writeHead(404); return res.end(); }
         res.writeHead(200, { 'content-type': 'image/png' });
         return res.end(fs.readFileSync(f));
@@ -254,6 +265,31 @@ export function createApp({ jobs = new Jobs() } = {}) {
         }
         return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
       }
+      // Kai picked which control it is, from the list Sourcer read off the page.
+      if (u.pathname === '/api/heal') {
+        const store = new Store();
+        const q = pendingQuestion(store);
+        const choice = b.n === undefined ? b.choice : b.n;
+        // an empty body is a mistake, not a decision to skip
+        if (choice === undefined) return json(400, { ok: false, error: 'say which one it is' });
+        const r = answerHeal(store, choice);
+        // the UI reads `error`, so a reason reaches Kai instead of the word "failed"
+        if (!r.ok) return json(400, { ...r, error: r.problem });
+        if (!r.skipped && q?.lane) laneUp(store, q.lane);
+        store.save();
+        return json(200, r);
+      }
+
+      // Kai looked at a control Sourcer learned and said it is the wrong one. Without this the
+      // only way back would be editing the database by hand.
+      if (u.pathname === '/api/forget') {
+        const store = new Store();
+        const r = forgetLearned(store, String(b.step || ''));
+        if (!r.ok) return json(400, { ...r, error: r.problem });
+        store.save();
+        return json(200, r);
+      }
+
       // "Contact them anyway": Kai has looked at someone the tenure or seniority rule held back
       // and decided they are worth approaching. Nobody at a client can ever be let through.
       if (u.pathname === '/api/hold-override') {
