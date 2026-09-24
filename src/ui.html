@@ -36,6 +36,12 @@ button:disabled{opacity:.45;cursor:default}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:14px 0 12px;overflow-x:auto}
 .tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--muted);font-weight:500}
 .tab.on{color:var(--ink);border-bottom-color:var(--accent)}
+.tabwrap{display:inline-flex;align-items:stretch;border-bottom:2px solid transparent}
+.tabwrap.on{border-bottom-color:var(--accent)}
+.tabwrap .tab{border-bottom:0}
+.tabx{border:0;background:none;color:var(--muted);padding:0 8px 0 0;font-size:15px;line-height:1;opacity:0;transition:opacity .12s}
+.tabwrap:hover .tabx,.tabx:focus-visible{opacity:1}
+.tabx:hover{color:var(--bad)}
 .tab .sub{margin-left:6px}
 .role-title{font-size:18px;font-weight:600}
 code.bool{display:block;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0;white-space:pre-wrap;word-break:break-word}
@@ -72,6 +78,11 @@ a{color:var(--accent);text-decoration:none}
 .scroll{max-height:560px;overflow:auto}
 .person{padding:10px 0;border-bottom:1px solid var(--line)}.person:last-child{border:0}
 .person q{display:block;margin-top:4px;white-space:pre-wrap}
+.person.out.ans{border-left:3px solid var(--accent);padding-left:10px;margin-left:-13px}
+.person.out .outtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:nowrap}
+.person.out .outwho{min-width:0;flex:1 1 auto}
+.person.out .outact{flex:0 0 auto;display:flex;gap:6px}
+.person.out .outline{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .composer{margin-top:8px;padding:10px;border:1px dashed var(--line);border-radius:8px;background:var(--soft)}
 .field{margin-bottom:10px}.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
 details.card>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;list-style:none}
@@ -181,6 +192,7 @@ details.card[open]>summary{margin-bottom:10px}
     <section id="replies"></section>
     <section id="inmail"></section>
     <section id="first"></section>
+    <section id="finds"></section>
 
     <section class="card">
       <div class="row between">
@@ -310,9 +322,22 @@ function leaveOk(){ return !(settingsDirty || (mode==='wizard' && R)) || confirm
 function setCampaign(c){ if (c!==campaign && !leaveOk()) return; campaign=c; remember(c); mode='role'; closeBool(); settingsDirty=false; openComposer=null; load(); }
 
 function renderTabs(){
-  const tabs = (S.roles||[]).map(r => `<button class="tab ${mode==='role'&&r.name===S.campaign?'on':''}" data-act="tab" data-name="${esc(r.name)}">${esc(r.title)}${r.location?`<span class="sub">${esc(r.location)}</span>`:''}</button>`).join('');
+  const tabs = (S.roles||[]).map(r => `<span class="tabwrap ${mode==='role'&&r.name===S.campaign?'on':''}"><button class="tab ${mode==='role'&&r.name===S.campaign?'on':''}" data-act="tab" data-name="${esc(r.name)}">${esc(r.title)}${r.location?`<span class="sub">${esc(r.location)}</span>`:''}</button><button class="tabx" title="Delete this role" aria-label="Delete ${esc(r.title)}" data-act="delRole" data-name="${esc(r.name)}">&times;</button></span>`).join('');
   $('#tabs').innerHTML = tabs + `<button class="tab ${mode==='wizard'?'on':''}" onclick="openWizard()">+ New role</button>`;
 }
+async function deleteRole(name){
+  const role = (S.roles||[]).find(r=>r.name===name);
+  const title = role ? role.title : name;
+  let n;
+  try { n = await api('/api/campaign/delete',{campaign:name, dryRun:true}); } catch { return; }
+  const keptLine = n.kept ? `\n\n${n.kept} ${n.kept===1?'person you contacted or excluded stays':'people you contacted or excluded stay'} on file, so a later search cannot approach them again. They will not show anywhere.` : '';
+  if (!confirm(`Delete "${title}"?\n\n${n.removed} ${n.removed===1?'person':'people'} you never contacted will be removed.${keptLine}\n\nThis cannot be undone.`)) return;
+  try { await api('/api/campaign/delete',{campaign:name}); } catch { return; }
+  if (name === campaign) { campaign = ''; remember(''); }
+  toast(`"${title}" deleted. ${n.kept} kept on file.`);
+  load();
+}
+
 function applyJob(j){
   $('#jobPill').classList.toggle('on', j.running);
   const mine = S && j.campaign === S.campaign;
@@ -352,6 +377,7 @@ function render(){
   renderReplies();
   renderInmail();
   renderFirst();
+  renderFinds();
   renderPeople();
   renderStart();
   if (!settingsDirty) fillSettings();
@@ -394,6 +420,7 @@ document.addEventListener('click', e => {
   if (act === 'holdOverride') return holdOverride(url);
   if (act === 'heal') return heal(b.dataset.n);
   if (act === 'forget') return forgetLearned(b.dataset.step);
+  if (act === 'delRole') return deleteRole(b.dataset.name);
 });
 document.addEventListener('change', e => {
   const c = e.target.closest('input[data-act="approve"]'); if (c) approve(c.dataset.url, c.checked);
@@ -408,20 +435,85 @@ async function setSource(v){ if (!S.cfg||!S.cfg.role) return; await api('/api/ro
 async function saveSkills(){ if (!S.cfg||!S.cfg.role) return; const list=$('#rsSkills').value.split(',').map(x=>x.trim()).filter(Boolean); if(list.length>2) return toast('Two skills at most', true); await api('/api/role/save',{campaign:S.campaign, role:{...S.cfg.role, recruiterSkills:list}}); toast(list.length?`Skills saved: ${list.join(', ')}`:'Skills cleared'); load(); }
 
 function renderReplies(){
-  const rep = S.leads.filter(l=>l.status==='replied').sort((a,b)=>(b.repliedAt||'').localeCompare(a.repliedAt||''));
-  $('#replies').innerHTML = rep.length ? `<div class="card" style="border-color:var(--accent)"><h2>Replies · ${rep.length}</h2>${rep.map(l=>`<div class="person"><a href="${esc(l.url)}" target="_blank"><b>${esc(l.name)}</b></a> <span class="sub">${esc(l.headline)} · ${when(l.repliedAt)}</span><q>${esc(l.lastReply)}</q><div class="row" style="margin-top:6px"><button class="small primary" data-act="reply" data-url="${esc(l.url)}">Reply</button><button class="small" data-act="copyThread" data-url="${esc(l.url)}">Copy for Claude</button></div><div id="c-${key(l.url)}"></div></div>`).join('')}</div>` : '';
-  if (openComposer) { if (rep.some(l=>l.url===openComposer.url)) compose(openComposer.url, openComposer.reply, true); else openComposer=null; }
+  const all = S.outreach || [];
+  const el = $('#replies');
+  if (!all.length) { el.innerHTML = ''; return; }
+  const answered = all.filter(o=>o.replied).length;
+  const waiting = all.filter(o=>!o.replied && !o.closed && o.reached).length;
+  const lined = all.filter(o=>!o.reached && !o.closed).length;
+  const HOW = { InMail:'InMail', Invitation:'Invitation', Message:'Message' };
+  const row = o => `<div class="person out ${o.replied?'ans':''}">
+    <div class="outtop">
+      <span class="outwho">
+        <span class="outline"><a href="${esc(o.url)}" target="_blank"><b>${esc(o.name||'(no name)')}</b></a>
+          <span class="sub" title="${esc(o.headline||'')}">${esc(short(o.headline||'', 78))}</span></span>
+        <div class="sub outline"><span class="chip ${o.replied?'chip-replied':o.closed?'':o.reached?'chip-invited':''}">${o.replied?'replied':o.closed?'closed':o.reached?'waiting':'lined up'}</span>
+          ${o.company?`<b>${esc(o.company)}</b> &middot; `:''}${o.reached?`${esc(HOW[o.how]||o.how)} sent ${when(o.at)}`:`${esc(HOW[o.how]||o.how)} goes on the next run`}${o.repliedAt?` &middot; answered ${when(o.repliedAt)}`:''}${o.closed&&o.why?` &middot; ${esc(o.why)}`:''}</div></span>
+      <span class="outact">
+        ${o.replied?`<button class="small primary" data-act="reply" data-url="${esc(o.url)}">Reply</button><button class="small" data-act="copyThread" data-url="${esc(o.url)}">Copy for Claude</button>`
+          : o.awaitingInmail?`<button class="small" data-act="inmailReplied" data-url="${esc(o.url)}">They replied</button>`:''}
+      </span>
+    </div>
+    ${o.replied&&o.lastReply?`<q>${esc(o.lastReply)}</q>`:''}
+    ${o.followUpDue?`<div class="sub" style="margin-top:4px">Follow-up is due. It shows in the InMail card below.</div>`:''}
+    <div id="c-${key(o.url)}"></div>
+  </div>`;
+  el.innerHTML = `<div class="card" style="border-color:${answered?'var(--accent)':'var(--line)'}">
+    <div class="row between"><h2 style="margin:0">Outreach &middot; ${all.length}</h2>
+      <span class="sub">${answered} replied &middot; ${waiting} waiting${lined?` &middot; ${lined} lined up`:''}</span></div>
+    <div class="sub" style="margin:4px 0 6px">Everyone this role has reached, and anyone lined up to be. Answers first.</div>
+    ${all.map(row).join('')}
+  </div>`;
+  if (openComposer) { if (all.some(o=>o.url===openComposer.url)) compose(openComposer.url, openComposer.reply, true); else openComposer=null; }
 }
 function renderInmail(){
   const im = S.inmail||[];
   const cr = S.inmailCredits;
   const credits = cr ? `${cr.left} of ${cr.total} InMails left this month` : '';
-  const waiting = S.leads.filter(l => l.inmail && l.inmail.sentAt && !l.inmail.replied && l.status!=='replied');
+  // who is still quiet now lives in the Outreach card above, so it is not repeated here
   const ready = im.map((p,i)=>`<div class="person"><a href="${esc(p.url)}" target="_blank"><b>${esc(p.name)}</b></a> <span class="sub">${p.kind==='followUp'?'follow-up due, no credit needed':'InMail due, uses 1 credit'}</span><div class="sub"><b>Subject:</b> ${esc(p.subject)}</div><q>${esc(p.text)}</q>${p.problem?`<div class="alert bad" style="margin-top:6px">Not ready: ${esc(p.problem)}. <button class="small" data-act="setName" data-url="${esc(p.url)}">Set first name</button></div>`:''}<div class="row" style="margin-top:6px"><button class="small" onclick="copyText(${i})" ${p.problem?'disabled':''}>Copy</button><button class="small primary" ${p.problem?'disabled':''} data-act="inmailSent" data-url="${esc(p.url)}" data-kind="${p.kind==='followUp'?'followUp':'inmail'}">Sent</button></div></div>`).join('');
-  const wait = waiting.length ? `<div class="sub" style="margin-top:8px"><b>Waiting on a reply · ${waiting.length}</b></div>${waiting.map(l=>`<div class="row between person"><span><a href="${esc(l.url)}" target="_blank">${esc(l.name)}</a> <span class="sub">InMail ${when(l.inmail.sentAt)}</span></span><button class="small" data-act="inmailReplied" data-url="${esc(l.url)}">They replied</button></div>`).join('')}` : '';
   const none = cr && cr.left===0 ? `<div class="alert">No InMail credits left this month (${cr.used} used). Press They replied when someone answers to get the credit back.</div>` : '';
-  $('#inmail').innerHTML = (im.length || waiting.length) ? `<div class="card"><div class="row between"><h2 style="margin:0">InMail${im.length?` · ${im.length} ready`:''}</h2><span class="sub">${credits}</span></div>${im.length?`<div class="sub" style="margin:4px 0 6px">Did not accept the connection. Copy, send in Recruiter Lite, press Sent. Best matches first, only as many as you have credits for.</div>`:''}${none}${ready}${wait}</div>` : none;
+  $('#inmail').innerHTML = im.length ? `<div class="card"><div class="row between"><h2 style="margin:0">InMail${im.length?` · ${im.length} ready`:''}</h2><span class="sub">${credits}</span></div>${im.length?`<div class="sub" style="margin:4px 0 6px">Did not accept the connection. Copy, send in Recruiter Lite, press Sent. Best matches first, only as many as you have credits for.</div>`:''}${none}${ready}</div>` : none;
 }
+const SOURCE_NAME = { github:'GitHub', npm:'npm', crates:'crates.io', eips:'EIPs', stackexchange:'Stack Exchange', sherlock:'Sherlock', hackerone:'HackerOne', trailofbits:'Trail of Bits' };
+const OUTCOME = {
+  matched: ['on your list', 'chip-accepted'],
+  'already-on-file': ['already on your list', ''],
+  'no-match': ['not found on LinkedIn', ''],
+  ambiguous: ['more than one person of that name', 'chip-error'],
+  'no-name': ['only a handle, no real name', ''],
+  'lookup-failed': ['the lookup failed', 'chip-error'],
+};
+
+// People seen on the public sources. GitHub, npm and the rest are used to find and check people,
+// never to contact them: no address is collected, and the way to reach someone is still LinkedIn.
+function renderFinds(){
+  const el = $('#finds');
+  const rows = S.finds || [];
+  if (!rows.length) { el.innerHTML = ''; return; }
+  const placed = rows.filter(f => f.matchedUrl).length;
+  const waiting = rows.filter(f => !f.lookedUp).length;
+  el.innerHTML = `<div class="card">
+    <div class="row between"><h2 style="margin:0">Found elsewhere &middot; ${rows.length}</h2>
+      <span class="sub">${placed} placed on LinkedIn${waiting?` &middot; ${waiting} still to look up`:''}</span></div>
+    <div class="sub" style="margin:4px 0 8px">Seen on GitHub, npm, the EIPs and the rest. Sourcer looks the strongest few up on LinkedIn each search, so they join the list above and can be approached the normal way.</div>
+    ${rows.map(f=>{
+      const [word, cls] = OUTCOME[f.outcome] || ['waiting to be looked up', ''];
+      return `<div class="row between person" style="align-items:flex-start;gap:12px;flex-wrap:nowrap">
+        <span style="min-width:0">
+          <span class="outline"><b>${esc(f.name || (f.github ? '@'+f.github : '(no name)'))}</b>
+            <span class="sub">${esc((f.sources||[]).map(x=>SOURCE_NAME[x]||x).join(', '))}${f.company?` &middot; ${esc(f.company)}`:''}</span></span>
+          <div class="sub outline"><span class="chip ${cls}">${esc(word)}</span>
+            ${(f.evidence||[]).map(e=>`${esc(e.label)}: ${esc(short(e.value,60))}`).join(' &middot; ') || 'no detail recorded'}</div></span>
+        <span class="row" style="gap:6px;flex:0 0 auto">
+          ${f.matchedUrl?`<a class="small" href="${esc(f.matchedUrl)}" target="_blank" style="padding:4px 10px;border:1px solid var(--line);border-radius:8px">Profile</a>`:''}
+          ${(f.url||f.github)?`<a class="small" href="${esc(f.url || 'https://github.com/'+f.github)}" target="_blank" style="padding:4px 10px;border:1px solid var(--line);border-radius:8px">Their work</a>`:''}
+        </span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 function renderFirst(){
   const list = S.leads.filter(l=>l.status==='new' && isFirst(l) && !l.offLimits).sort((a,b)=>sc(b)-sc(a));
   if (!list.length) { $('#first').innerHTML=''; return; }
