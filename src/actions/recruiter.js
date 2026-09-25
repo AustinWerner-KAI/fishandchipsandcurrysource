@@ -228,7 +228,7 @@ export async function runRecruiterSearch(page, store, cfg, { maxPages, report = 
   await page.keyboard.press('Enter');
   log(`recruiter search${tag === 's2' ? ' 2' : ''}:`, query);
   await waitForResults(page, 20000, before);
-  if (!searchLocations(role).length) warn('this role has no location, so Recruiter searches everywhere');
+  if (!searchLocations(role).length) log('unrestricted location: Recruiter searches worldwide');
 
   // Without the location the list would be people from anywhere, so a location that will not apply stops the search.
   const locs = searchLocations(role);

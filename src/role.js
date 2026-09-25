@@ -103,11 +103,14 @@ export function guessLocation(text) {
   return hit ? hit.replace(/\b\w/g, c => c.toUpperCase()) : '';
 }
 
+export const isGlobalLocation = value => /^(?:(?:fully\s+)?remote[ ,/-]*)?(?:global|worldwide|anywhere|any location|work from anywhere)(?:[ ,/-]*remote)?$/i.test(String(value || '').trim());
+
 export function guessWorkType(text) {
   const t = String(text).toLowerCase();
   if (/\b(fully|100%)\s+remote\b|\bremote[- ]first\b|\bremote\b(?!\s*(?:work|working)?\s*(?:is not|not|no))/.test(t) && !/\bhybrid\b/.test(t)) return 'remote';
   if (/\bhybrid\b/.test(t)) return 'hybrid';
   if (/\bon[- ]?site\b|\bin[- ]office\b|\boffice[- ]based\b|\brelocat/.test(t)) return 'onsite';
+  if (isGlobalLocation(guessLocation(text))) return 'remote';
   return guessLocation(text) ? 'onsite' : 'remote';
 }
 
@@ -273,7 +276,7 @@ export function draftRole(text, known = {}, vocab = {}) {
     title, location, workType, team, family, titleOptions,
     company: known.company || '',
     // remote roles: where the candidate may sit. Starts equal to the office location; the recruiter widens it.
-    candidateLocations: location ? [location] : [],
+    candidateLocations: location && !isGlobalLocation(location) ? [location] : [],
     titles,
     domain: domainBool,
     suggestedDomain: domain?.boolean || [],

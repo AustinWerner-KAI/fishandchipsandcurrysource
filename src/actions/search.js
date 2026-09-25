@@ -1,7 +1,7 @@
 import { collectSearchResults, resolveGeo } from '../linkedin.js';
 import { log, warn } from '../log.js';
 import { sleep, humanPauseMs } from '../limits.js';
-import { buildSearchUrl, lookupGeo, widenBoolean, secondSearchFor } from '../role.js';
+import { buildSearchUrl, lookupGeo, widenBoolean, secondSearchFor, isGlobalLocation } from '../role.js';
 import { patchCampaign } from '../config.js';
 import { stopRequested } from '../stop.js';
 import { sweepStart, sweepStep, sweepSet, sweepEnd } from '../sweeps.js';
@@ -11,8 +11,8 @@ import { withLearnedNot } from '../excludelearn.js';
 // otherwise the office location.
 export function searchLocations(role) {
   if (!role) return [];
-  const list = role.workType === 'remote' && role.candidateLocations?.length ? role.candidateLocations : [role.location];
-  return [...new Set(list.map(s => String(s || '').trim()).filter(Boolean))];
+  const list = role.workType === 'remote' && Array.isArray(role.candidateLocations) ? role.candidateLocations : [role.location];
+  return [...new Set(list.map(s => String(s || '').trim()).filter(s => s && !isGlobalLocation(s)))];
 }
 
 // Builds the search URL for a role. Locations become LinkedIn ids: known table first, then the

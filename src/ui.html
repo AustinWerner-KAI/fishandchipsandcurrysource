@@ -190,7 +190,7 @@ details.card[open]>summary{margin-bottom:10px}
         <div>
           <div class="field"><label>Work type</label>
             <div class="row"><label class="sub"><input type="radio" name="wt" value="onsite"> On site</label><label class="sub"><input type="radio" name="wt" value="hybrid"> Hybrid</label><label class="sub"><input type="radio" name="wt" value="remote"> Remote</label></div></div>
-          <div class="field" id="rCandField"><label for="rCand">Where can candidates be based? Countries, comma separated</label><input type="text" id="rCand"></div>
+          <div class="field" id="rCandField"><label for="rCand">Candidate location restrictions (optional)</label><input type="text" id="rCand" placeholder="Leave blank for global remote"><div class="sub">Blank means worldwide, with no location filter. Add countries only if the role restricts where someone can work.</div></div>
           <div class="field"><label for="rClient">Client. Nobody who works there is ever contacted.</label>
             <input type="text" id="rClient" placeholder="Client name, e.g. Kraken" style="margin-bottom:6px">
             <input type="text" id="rClientUrl" placeholder="LinkedIn company page, e.g. linkedin.com/company/krakenfx" style="margin-bottom:6px">
@@ -1080,7 +1080,7 @@ function toStep3(){
   if (curl && !/linkedin\.com\/company\/[^/?#]+/i.test(curl)) return toast('The client link must be a LinkedIn company page, like linkedin.com/company/krakenfx', true);
   const cname=$('#rClient').value.trim();
   R.client = (cname||curl) ? { name:cname, url:curl, otherNames:splitList($('#rClientOther').value) } : null;
-  if (wt==='remote' && !R.candidateLocations.length) return toast('Say where candidates can be based', true);
+  // An empty candidate-location list deliberately means global remote.
   $('#rTitles').value=(R.titles||[]).join('\n'); $('#rDomain').value=(R.domain||[]).join(', ').replace(/"/g,'');
   $('#rSkills').value=(R.skillsChosen||[]).join(', '); $('#rExclude').value=(R.exclude||[]).join(', ');
   $('#rKey').value=(R.recruiterSkills||[]).join(', ');

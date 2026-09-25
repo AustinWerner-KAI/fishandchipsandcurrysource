@@ -119,3 +119,18 @@ test('each brief determines its domain; quantitative science is not a trading si
   assert.deepEqual(healthcare.domain, []);
   assert.doesNotMatch(buildBoolean({titles:['Research Engineer'],skills:['&','AND','LLM']}), /AND &|AND AND/);
 });
+
+test('global location drafts remote work without country restrictions', () => {
+  const role=draftRole('Systems & Research Engineer\nLocation: Global\nBuild model serving systems.');
+  assert.equal(role.workType,'remote');assert.deepEqual(role.candidateLocations,[]);
+});
+
+test('global remote search omits location filters but respects explicit remote countries', async () => {
+  const {searchLocations,urlForRole}=await import('../src/actions/search.js');
+  assert.deepEqual(searchLocations({workType:'remote',location:'Global',candidateLocations:['Global']}),[]);
+  assert.deepEqual(searchLocations({workType:'remote',location:'London',candidateLocations:[]}),[]);
+  assert.deepEqual(searchLocations({workType:'remote',location:'Global',candidateLocations:['UK']}),['UK']);
+  assert.deepEqual(searchLocations({workType:'onsite',location:'London'}),['London']);
+  const url=await urlForRole(null,{name:'test',role:{boolean:'engineer',workType:'remote',location:'Worldwide',candidateLocations:[]}});
+  assert.equal(new URL(url).searchParams.has('geoUrn'),false);
+});
