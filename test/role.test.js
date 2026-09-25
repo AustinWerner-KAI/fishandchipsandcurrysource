@@ -16,9 +16,10 @@ test('draft reads title, location, work type, domain and skills from a spec', ()
   assert.equal(d.workType, 'hybrid');
   assert.deepEqual(d.candidateLocations, ['Dubai, UAE']);
   assert.ok(d.titles.includes('Compliance Director'));
-  assert.ok(d.domain.includes('crypto'));
+  assert.deepEqual(d.domain, []);
+  assert.ok(d.suggestedDomain.includes('crypto'));
   assert.ok(d.skills.includes('aml'));
-  assert.match(d.boolean, /^\("Head of Compliance" OR .*\) AND \(crypto OR "digital asset" OR blockchain OR web3 OR fintech OR startup\) NOT \(recruiter OR "talent acquisition" OR headhunter\)$/);
+  assert.match(d.boolean, /^\("Head of Compliance" OR .*\) NOT \(recruiter OR "talent acquisition" OR headhunter\)$/);
   assert.doesNotMatch(d.boolean, /aml/, 'skills are suggestions, not in the first boolean');
 });
 
@@ -41,7 +42,7 @@ test('compound titles: modifier becomes an AND term, core title gets the seniori
   assert.deepEqual(splitTitle('Senior Smart Contract Engineer').modifiers, []);
   assert.deepEqual(splitTitle('Head of Compliance').modifiers, []);
   const d = draftRole('Senior Cloud Security Engineer\nLocation: New York (hybrid)\nWe are a crypto exchange.');
-  assert.equal(d.boolean, 'Cloud AND ("Security Engineer" OR "Senior Security Engineer" OR "Lead Security Engineer" OR "Principal Security Engineer") AND (crypto OR "digital asset" OR blockchain OR web3 OR fintech OR startup) NOT (recruiter OR "talent acquisition" OR headhunter)');
+  assert.equal(d.boolean, 'Cloud AND ("Security Engineer" OR "Senior Security Engineer" OR "Lead Security Engineer" OR "Principal Security Engineer") NOT (recruiter OR "talent acquisition" OR headhunter)');
   assert.deepEqual(d.required, ['Cloud']);
 });
 
@@ -103,4 +104,18 @@ test('key skill: the one hard skill that matters, never a title word', async () 
   assert.equal(keySkill(spec, 'Senior Cloud Security Engineer'), 'Azure');
   assert.deepEqual(draftRole(spec).recruiterSkills, ['Azure']);
   assert.equal(keySkill('Head of Sales\nDubai\nGreat communicator', 'Head of Sales'), '');
+});
+
+test('each brief determines its domain; quantitative science is not a trading signal', () => {
+  const ai = draftRole('Systems & Research Engineer\nLocation: Global\nAn applied AI lab building freight and supply chain systems.\nResponsibilities: model serving, inference and benchmarking of LLMs.\nBonus: physics or quantitative-science background.');
+  assert.deepEqual(ai.domain, []);
+  assert.deepEqual(splitTitle('Systems & Research Engineer').modifiers, []);
+  assert.ok(ai.titles.includes('Systems Engineer'));
+  assert.ok(ai.titles.includes('Research Engineer'));
+  assert.doesNotMatch(ai.boolean, /AND &|trading|market making|quant\)/);
+  const trading = draftRole('Quant Researcher\nA trading firm doing market making.');
+  assert.ok(trading.suggestedDomain.includes('trading'));
+  const healthcare = draftRole('Software Engineer\nA healthcare provider building clinical software.');
+  assert.deepEqual(healthcare.domain, []);
+  assert.doesNotMatch(buildBoolean({titles:['Research Engineer'],skills:['&','AND','LLM']}), /AND &|AND AND/);
 });

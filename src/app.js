@@ -13,7 +13,7 @@ import { weeklyLimitActive } from './actions/connect.js';
 import { Jobs } from './jobs.js';
 import { log } from './log.js';
 import { learnedFor } from './excludelearn.js';
-import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor, buildSkillsBoolean, secondSearchFor, familyOf, genericTitle, withAliases, relatedTitles } from './role.js';
+import { draftRole, buildBoolean, buildSearchUrl, extractText, lookupGeo, slugFor, titleVariants, timezoneFor, buildSkillsBoolean, secondSearchFor, familyOf, genericTitle, withAliases, relatedTitles, specHints } from './role.js';
 import { isJobLink, readJobLink } from './joblink.js';
 import { checkRole } from './rolecheck.js';
 import { vocab as learnedVocab, recordLesson, summary as learnSummary } from './rolelearn.js';
@@ -487,7 +487,8 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const titles = b.titles?.length ? b.titles : relatedTitles(b.title, b.text || '', titleVariants(b.title));
         const key = (b.recruiterSkills || [])[0] || '';
         // a generic engineering title carries its key skill in Search 1 (see draftRole)
-        const anyOf = genericTitle(b.title || '') && key ? [withAliases(key)] : [];
+        const modelSystems = (b.specHints || specHints(b.text || '')).modelSystems || [];
+        const anyOf = modelSystems.length ? [modelSystems] : genericTitle(b.title || '') && key ? [withAliases(key)] : [];
         const boolean = buildBoolean({ titles, domain: b.domain || [], skills: b.skills || [], anyOf, exclude: b.exclude || [] });
         const family = familyOf(b.title || '', b.text || '');
         const boolean2 = buildSkillsBoolean({ key, required: b.skills || [], family, title: b.title || '', domain: b.domain || [], text: b.text || '', hints: b.specHints || null, exclude: b.exclude || [] });

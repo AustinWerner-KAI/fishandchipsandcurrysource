@@ -54,7 +54,7 @@ test('places, pay, work type and links are never titles', () => {
 test('titled roles keep exactly the search Kai\'s pattern gives them', () => {
   assert.equal(draftRole('Senior Rust Engineer\nFully remote. Distributed systems.').boolean, `("Rust Engineer" OR "Senior Rust Engineer" OR "Lead Rust Engineer" OR "Principal Rust Engineer") ${EXCL}`);
   assert.equal(draftRole('Senior Cloud Security Engineer\nLocation: New York (hybrid)\nWe are a crypto exchange.').boolean,
-    `Cloud AND ("Security Engineer" OR "Senior Security Engineer" OR "Lead Security Engineer" OR "Principal Security Engineer") AND (crypto OR "digital asset" OR blockchain OR web3 OR fintech OR startup) ${EXCL}`);
+    `Cloud AND ("Security Engineer" OR "Senior Security Engineer" OR "Lead Security Engineer" OR "Principal Security Engineer") ${EXCL}`);
   assert.equal(genericTitle('Software Engineer'), true);
   assert.equal(genericTitle('Senior Backend Developer'), true);
   assert.equal(genericTitle('Rust Engineer'), false);
