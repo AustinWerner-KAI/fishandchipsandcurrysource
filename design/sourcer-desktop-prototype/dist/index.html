@@ -75,7 +75,8 @@
     [hidden]{display:none!important}.modal-wrap.open{display:grid}.nav button[aria-current="page"]{background:rgba(255,255,255,.1)}
     @media(max-width:680px){.topbar{display:flex;height:auto;flex-wrap:wrap}.topbar .search,.topbar .crumb,.topbar .icon-btn{display:none}.nav button:nth-child(n+4){display:flex}.rail{height:auto;flex-wrap:wrap}.nav{gap:0}.role-entry select{max-width:100%}}
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-  </style>
+  .search-launch{padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--paper-2);margin:20px 0}.search-launch a{text-decoration:none}.register-form{font-size:16px}.register-form label,.register-form .btn,.role-entry .btn{font-size:14px}.register-buttons{flex-wrap:wrap}#newSpec{min-height:170px}.role-entry small{font-size:12px}
+</style>
 </head>
 <body>
 <div class="app">
@@ -95,15 +96,15 @@
     <div class="rail-foot"><div class="privacy"><b><span class="dot"></span>Private on this Mac</b><p>Candidate data and drafts stay local. Final LinkedIn actions are always yours.</p></div><div class="account"><div class="avatar">AW</div><span>Austin Werner<small>Solo workspace</small></span></div></div>
   </aside>
   <main>
-    <div class="role-entry"><button class="btn primary" id="newRoleButton" onclick="startNewRole()">+ New role / search</button><label for="savedRoleSelect">Your roles</label><select id="savedRoleSelect" onchange="selectSavedRole(this.value)"><option value="">Choose a saved role</option></select><small>Prototype · roles saved in this browser · no live search</small></div>
+    <div class="role-entry"><button class="btn primary" id="newRoleButton" onclick="startNewRole()">+ Load job spec</button><label for="savedRoleSelect">Your roles</label><select id="savedRoleSelect" onchange="selectSavedRole(this.value)"><option value="">Choose a saved role</option></select><small>Saved in this browser · searches open on LinkedIn</small></div>
     <section class="screen" id="registerRole">
-      <div class="hero"><div><div class="eyebrow">New search</div><h1 id="registrationHeading">Register a new role</h1><p>Your brief becomes an editable search plan.</p></div></div>
+      <div class="hero"><div><div class="eyebrow">New search</div><h1 id="registrationHeading">Load a job spec and search</h1><p>Your brief becomes an editable search plan.</p></div></div>
       <div class="shell"><div class="panel register-form">
       <form id="roleRegistration">
         <div id="roleStepOne">
           <h2>1. Add the brief and role details</h2>
           <label for="newSpec">Job specification</label><textarea id="newSpec" required minlength="30" placeholder="Paste the full job specification here. Include responsibilities and required skills."></textarea>
-          <label for="specFile">Or load a plain-text specification (.txt)</label><input id="specFile" type="file" accept=".txt,text/plain"><p>For PDF or Word documents, copy the text into the box above.</p>
+          <label for="specFile">Upload a job specification</label><input id="specFile" type="file" accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><p>PDF, Word (.docx) or text · up to 10 MB. Files are read in your browser.</p><button type="button" class="btn" id="readSpecButton" onclick="readSpecDetails()">Read job spec</button><p id="specReadStatus" role="status"></p>
           <div class="role-grid"><div><label for="newTitle">Role title</label><input id="newTitle" required maxlength="160" placeholder="e.g. Senior Rust Engineer"></div><div><label for="newLocation">Office location or eligible remote locations</label><input id="newLocation" required maxlength="200" placeholder="e.g. London or UK and EU"></div></div>
           <label for="newWorkType">Work arrangement</label><select id="newWorkType"><option>Hybrid</option><option>On-site</option><option>Remote</option></select>
           <label for="newSkills">Required skills (comma separated)</label><input id="newSkills" required placeholder="e.g. Rust, distributed systems, Kubernetes"><p>These are search requirements. Use only essential skills; you can edit the resulting Boolean queries.</p>
@@ -114,11 +115,11 @@
           <h2>2. Review your search plan</h2><p id="newRoleSummary"></p><p>These draft queries are assembled from your title and skills. Review them before saving. Location is a separate filter.</p>
           <label for="newQueryOne">Search 1 · role title and required skills</label><textarea id="newQueryOne"></textarea>
           <label for="newQueryTwo">Search 2 · required skills without the title restriction</label><textarea id="newQueryTwo"></textarea>
-          <div class="register-buttons"><button type="button" class="btn" onclick="backToRoleDetails()">← Edit details</button><button type="button" class="btn primary" onclick="saveRegisteredRole()">Register role</button></div>
+          <div class="register-buttons"><button type="button" class="btn" onclick="backToRoleDetails()">← Edit details</button><button type="button" class="btn primary" onclick="saveRegisteredRole()">Save role & continue to search</button></div>
         </div>
       </form>
       <p id="registrationError" class="register-error" role="alert"></p>
-      <div id="registeredRole" hidden><h2 id="registeredTitle"></h2><p id="registeredMeta"></p><span class="status-pill">Registered · not searched yet</span><h3>Job specification</h3><p id="registeredSpec" style="white-space:pre-wrap"></p><h3>Search 1</h3><pre id="registeredQueryOne"></pre><h3>Search 2</h3><pre id="registeredQueryTwo"></pre><p>This role is saved in this browser. Running a live search requires the local Sourcer application; the hosted prototype is not connected to LinkedIn.</p><button class="btn" onclick="editRegisteredRole()">Edit this role</button><button class="btn" onclick="startNewRole()">+ Register another role</button></div>
+      <div id="registeredRole" hidden><h2 id="registeredTitle"></h2><p id="registeredMeta"></p><div class="search-launch"><h3>3. Search for candidates</h3><p id="locationSearchNote"></p><div class="register-buttons"><a class="btn primary" id="runSearchOne" target="_blank" rel="noopener noreferrer">Search LinkedIn · title + skills ↗</a><a class="btn" id="runSearchTwo" target="_blank" rel="noopener noreferrer">Search LinkedIn · skills ↗</a></div><p id="searchLaunchStatus" role="status">Ready to open your tailored searches.</p><p>Results open on LinkedIn using your signed-in browser. They are not automatically imported here. Work arrangement and any unrecognised location must be set on LinkedIn.</p></div><h3>Job specification</h3><p id="registeredSpec" style="white-space:pre-wrap"></p><h3>Search 1</h3><pre id="registeredQueryOne"></pre><h3>Search 2</h3><pre id="registeredQueryTwo"></pre><p>Your brief and both search queries are saved in this browser. Automated sourcing and importing results require the local Sourcer application.</p><button class="btn" onclick="editRegisteredRole()">Edit this role</button><button class="btn" onclick="startNewRole()">+ Register another role</button></div>
       </div></div>
     </section>
     <header class="topbar"><div class="crumb">Workspace&nbsp; / &nbsp;<b>Senior Cloud Security Engineer</b></div><div class="top-spacer"></div><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><input placeholder="Search people or roles"><span class="kbd">⌘K</span></label><button class="li-login" id="linkedInLogin" onclick="connectLinkedIn()"><span class="li-mark">in</span><span id="linkedInLabel">Log in to LinkedIn<small>Required for live search</small></span></button><button class="icon-btn" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4zM10 20h4"/></svg></button></header>
@@ -198,7 +199,10 @@ function toast(text){const t=$('#toast');t.textContent=text;t.classList.add('sho
 $('#actionModal').addEventListener('click',e=>{if(e.target.id==='actionModal')closeModal()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
 renderList();renderDetail();
 </script>
+<script src="role-engine.js"></script>
+<script src="vendor/mammoth.browser.min.js"></script>
 <script src="roles.js"></script>
 <script src="workspace.js"></script>
+<script src="search-flow.js"></script>
 </body>
 </html>
