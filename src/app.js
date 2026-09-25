@@ -27,6 +27,7 @@ import { learn, rankLearned, noteStats } from './learn.js';
 import { allClients, offLimits } from './offlimits.js';
 import { askFor, pending } from './requests.js';
 import { searchLocations } from './actions/search.js';
+import { firstInMailDue } from './actions/inmail.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
 
@@ -59,7 +60,7 @@ export function inmailList(store, cfg, now = new Date(), clients = allClients())
       if (now - new Date(sent.sentAt) >= (im.followUpAfterDays ?? 4) * 86400000) { const r = renderChecked(im.followUp, l, cfg.role); out.push({ ...item, kind: 'followUp', text: r.text, problem: item.problem || r.problem }); }
       continue;
     }
-    if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000) { const r = renderChecked(im.body, l, cfg.role); firsts.push({ ...item, kind: 'inmail', text: r.text, problem: item.problem || r.problem }); }
+    if (firstInMailDue(l, im, now.getTime())) { const r = renderChecked(im.body, l, cfg.role); firsts.push({ ...item, kind: 'inmail', text: r.text, problem: item.problem || r.problem }); }
   }
   // A new InMail costs a credit: offer only as many as are left this month, best matches first.
   const credits = inmailCredits(store, im.monthlyCredits ?? 30, now, ACCOUNT_TZ);

@@ -253,7 +253,7 @@ Each person gets a 0 to 100 match with readable reasons; Kai approves; the run c
 3. Replies: open threads, check who spoke last. A reply stops everything automatic and notifies the Mac.
 4. Companies: read each new employer's page once for sector and headcount.
 5. Connect: approved Recruiter finds are swapped for their /in/ profile (one profile view), then invited with the role's note.
-6. InMail: for approved people not connecting. The first is always a rehearsal, filled in but not sent, until Kai approves the wording.
+6. InMail: for approved people whose connection invitation remains unanswered after the campaign's configured delay. The first is always a rehearsal, filled in but not sent, until Kai approves the wording.
 
 **Limits** (limits.js), per LinkedIn account, with the day counted in Dubai time:
 

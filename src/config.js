@@ -38,6 +38,7 @@ export function loadCampaign(name) {
   if (!name) throw new Error('Campaign name required. Campaign files live in campaigns/<name>.json');
   const file = path.join(CAMPAIGN_DIR, `${name}.json`);
   if (!fs.existsSync(file)) throw new Error(`No campaign file at ${file}`);
+  fs.chmodSync(file, 0o600);
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
   const cfg = {
     ...DEFAULTS,
@@ -56,7 +57,8 @@ export function patchCampaign(name, patch) {
   const file = path.join(CAMPAIGN_DIR, `${name}.json`);
   const raw = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
   Object.assign(raw, patch);
-  fs.writeFileSync(file, JSON.stringify(raw, null, 2));
+  fs.writeFileSync(file, JSON.stringify(raw, null, 2), { mode: 0o600 });
+  fs.chmodSync(file, 0o600);
   return loadCampaign(name);
 }
 
@@ -88,6 +90,14 @@ export function validate(cfg) {
   const fd = cfg.firstDegree;
   if (fd && (typeof fd.message !== 'string' || !fd.message.trim())) errs.push('1st connections: the message is empty');
   if (fd && !(Number(fd.followUpAfterDays) >= 1)) errs.push('1st connections: follow-up at least 1 day later');
+  const im = cfg.inmail;
+  const whole = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+  if (im) {
+    if (!whole(im.afterDays, 1, 30)) errs.push('InMail: wait must be a whole number from 1 to 30 days');
+    if (!whole(im.followUpAfterDays, 1, 30)) errs.push('InMail: follow-up must be a whole number from 1 to 30 days');
+    if (!whole(im.monthlyCredits, 0, 150)) errs.push('InMail: monthly credits must be a whole number from 0 to 150');
+    if (!whole(im.perDay, 0, 50)) errs.push('InMail: daily cap must be a whole number from 0 to 50');
+  }
   const wh = cfg.workingHours;
   if (wh) {
     try { new Intl.DateTimeFormat('en', { timeZone: wh.timezone || 'Asia/Dubai' }); } catch { errs.push(`working hours: "${wh.timezone}" is not a timezone (try America/New_York)`); }

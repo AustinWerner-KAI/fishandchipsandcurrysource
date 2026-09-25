@@ -26,4 +26,8 @@ test('bad configs are rejected', () => {
   assert.throws(() => loadCampaign('bad'), /connects above 25/);
   assert.throws(() => loadCampaign('bad'), /connection note over 300/);
   assert.throws(() => loadCampaign('missing'), /No campaign file/);
+  fs.writeFileSync(path.join(dir, 'bad-inmail.json'), JSON.stringify({
+    inmail: { afterDays: 0, followUpAfterDays: 31, monthlyCredits: 151, perDay: 51, subject: 'x', body: 'x', followUp: 'x' },
+  }));
+  assert.throws(() => loadCampaign('bad-inmail'), /InMail: wait must be a whole number from 1 to 30 days/);
 });

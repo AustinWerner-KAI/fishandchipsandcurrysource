@@ -186,6 +186,9 @@ export async function snap(page, label) {
     ensureDirs();
     const file = path.join(SCREENSHOT_DIR, `${new Date().toISOString().replace(/[:.]/g, '-')}-${label}.png`);
     await page.screenshot({ path: file, fullPage: false });
+    fs.chmodSync(file, 0o600);
+    const old = fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('.png')).sort().slice(0, -20);
+    for (const f of old) fs.rmSync(path.join(SCREENSHOT_DIR, f), { force: true });
     log('screenshot', file);
     return file;
   } catch (e) {

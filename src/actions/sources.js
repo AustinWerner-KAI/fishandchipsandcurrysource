@@ -184,10 +184,11 @@ export async function runSources(page, store, cfg, { maxLookups = 8, search = se
         }
       }
       else {
+        const exportableSources = (f.sources || []).filter(s => s !== 'github');
         const lead = store.upsertLead({
           url: r.url, name: r.row.name, headline: r.row.headline, location: r.row.location,
           degree: r.row.degree, campaign: cfg.name,
-          notes: `found on ${(f.sources || []).join(', ')}${f.github ? ` (github/${f.github})` : ''}`,
+          notes: exportableSources.length ? `found on ${exportableSources.join(', ')}` : '',
         });
         lead.foundOn = foundOn;
         matched++;

@@ -10,7 +10,13 @@ export function log(...parts) {
   console.log(line);
   try {
     ensureDirs();
-    fs.appendFileSync(LOG_FILE, line + '\n');
+    if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > 5 * 1024 * 1024) {
+      fs.rmSync(`${LOG_FILE}.1`, { force: true });
+      fs.renameSync(LOG_FILE, `${LOG_FILE}.1`);
+      fs.chmodSync(`${LOG_FILE}.1`, 0o600);
+    }
+    fs.appendFileSync(LOG_FILE, line + '\n', { mode: 0o600 });
+    fs.chmodSync(LOG_FILE, 0o600);
   } catch {
     // logging must never break a run
   }

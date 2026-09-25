@@ -74,7 +74,7 @@ All page selectors live in `src/selectors.js`. If connects or messages start fai
 - Hard stop on any LinkedIn security check. It never tries to click through one.
 - Connect and Message buttons are matched by the person's name inside their own profile card, so a "People you may know" card is never clicked.
 - A message is only recorded as sent when LinkedIn confirms it, and a thread that already ends with our text is never sent to again.
-- Never sends InMails. If LinkedIn opens the InMail composer instead of a normal thread, it backs out.
+- Recruiter InMail is only available after an invitation has gone unanswered for the configured delay. The first eligible InMail is rehearsed without sending and requires wording approval before automation continues.
 - Once LinkedIn's weekly invitation limit is hit, no connection requests go out for 7 days.
 - Daily caps per campaign, validated to sane maximums (25 connects, 40 messages).
 - Working hours and days, in the timezone set on the campaign (Dubai by default).

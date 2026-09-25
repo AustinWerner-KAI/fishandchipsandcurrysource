@@ -66,7 +66,8 @@ test('a public find is filed, placed on LinkedIn, and never written down with an
   const lead = s.get('https://www.linkedin.com/in/ada/');
   assert.ok(lead, 'the one placed on LinkedIn joins the normal list');
   assert.equal(lead.campaign, 'c1');
-  assert.match(lead.notes, /found on github, eips \(github\/adal\)/);
+  assert.equal(lead.notes, 'found on eips');
+  assert.ok(!lead.notes.includes('adal'));
   assert.equal(lead.status, 'new');
   assert.equal(lead.approved, false, 'nothing is approved without you');
 

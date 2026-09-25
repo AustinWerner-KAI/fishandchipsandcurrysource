@@ -16,5 +16,8 @@ export const SOURCE_UA = `sourcer/1.0 (+${contactSet() ? process.env.SOURCER_CON
 export const CAMPAIGN_DIR = path.resolve(process.env.SOURCER_CAMPAIGNS || path.join(process.cwd(), 'campaigns'));
 
 export function ensureDirs() {
-  for (const d of [HOME, PROFILE_DIR, SCREENSHOT_DIR]) fs.mkdirSync(d, { recursive: true });
+  for (const d of [HOME, PROFILE_DIR, SCREENSHOT_DIR, CAMPAIGN_DIR]) {
+    fs.mkdirSync(d, { recursive: true, mode: 0o700 });
+    fs.chmodSync(d, 0o700);
+  }
 }

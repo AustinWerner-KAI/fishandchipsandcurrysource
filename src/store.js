@@ -94,6 +94,7 @@ export class Store {
     let raw;
     try {
       raw = fs.readFileSync(this.file, 'utf8');
+      fs.chmodSync(this.file, 0o600);
     } catch (e) {
       if (e.code === 'ENOENT') { this.data = EMPTY(); this.snapshot(); return this; }
       throw e;
@@ -184,8 +185,9 @@ export class Store {
       try { disk = parseDb(fs.readFileSync(this.file, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
       this.data = this.merged(disk);
       const tmp = `${this.file}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+      fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, this.file);
+      fs.chmodSync(this.file, 0o600);
       this.snapshot();
     } finally {
       fs.rmSync(lock, { recursive: true, force: true });
