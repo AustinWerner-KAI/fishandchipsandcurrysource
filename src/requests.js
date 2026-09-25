@@ -7,20 +7,42 @@ import { HOME, ensureDirs } from './paths.js';
 const FILE = () => path.join(HOME, 'requests.json');
 
 function read() {
-  try { return JSON.parse(fs.readFileSync(FILE(), 'utf8')); } catch { return {}; }
+  try { return JSON.parse(fs.readFileSync(FILE(), 'utf8')); }
+  catch (e) { if (e.code === 'ENOENT') return {}; throw e; }
 }
 function write(all) {
   ensureDirs();
-  fs.writeFileSync(FILE(), JSON.stringify(all, null, 2), { mode: 0o600 });
+  const tmp = `${FILE()}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(all, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, FILE());
+  fs.chmodSync(FILE(), 0o600);
+}
+function locked(fn) {
+  ensureDirs();
+  const lock = `${FILE()}.lock`;
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try { fs.mkdirSync(lock, { mode: 0o700 }); break; }
+    catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > 10000) { fs.rmSync(lock, { recursive: true, force: true }); continue; } } catch {}
+      if (Date.now() > deadline) throw new Error('requests.json is locked by another process');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  try { return fn(); }
+  finally { fs.rmSync(lock, { recursive: true, force: true }); }
 }
 
 export function askFor(campaign, what = 'search') {
-  const all = read();
-  const list = new Set(all[campaign] || []);
-  list.add(what);
-  all[campaign] = [...list];
-  write(all);
-  return all[campaign];
+  return locked(() => {
+    const all = read();
+    const list = new Set(all[campaign] || []);
+    list.add(what);
+    all[campaign] = [...list];
+    write(all);
+    return all[campaign];
+  });
 }
 
 export function pending(campaign) {
@@ -30,8 +52,10 @@ export function pending(campaign) {
 
 // Returns what was asked for and clears it, so a request never runs twice.
 export function takeRequests(campaign) {
-  const all = read();
-  const mine = all[campaign] || [];
-  if (mine.length) { delete all[campaign]; write(all); }
-  return mine;
+  return locked(() => {
+    const all = read();
+    const mine = all[campaign] || [];
+    if (mine.length) { delete all[campaign]; write(all); }
+    return mine;
+  });
 }

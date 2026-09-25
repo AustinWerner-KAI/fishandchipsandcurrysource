@@ -26,4 +26,20 @@ test('bad configs are rejected', () => {
   assert.throws(() => loadCampaign('bad'), /connects above 25/);
   assert.throws(() => loadCampaign('bad'), /connection note over 300/);
   assert.throws(() => loadCampaign('missing'), /No campaign file/);
+  fs.writeFileSync(path.join(dir, 'bad-inmail.json'), JSON.stringify({
+    inmail: { afterDays: 0, followUpAfterDays: 31, monthlyCredits: 151, perDay: 51, subject: 'x', body: 'x', followUp: 'x' },
+  }));
+  assert.throws(() => loadCampaign('bad-inmail'), /InMail: wait must be a whole number from 1 to 30 days/);
+});
+
+test('campaign patches preserve current fields and invalid patches preserve disk', async () => {
+  const { patchCampaign } = await import('../src/config.js');
+  patchCampaign('transaction', { role: { title: 'Original', geo: {} } });
+  patchCampaign('transaction', { role: { title: 'Edited', geo: {} } });
+  patchCampaign('transaction', raw => ({ role: { ...raw.role, geo: { london: '123' } } }));
+  assert.equal(loadCampaign('transaction').role.title, 'Edited');
+  assert.deepEqual(loadCampaign('transaction').role.geo, { london: '123' });
+  const before = fs.readFileSync(path.join(dir, 'transaction.json'), 'utf8');
+  assert.throws(() => patchCampaign('transaction', { dailyCaps: { connects: 999 } }));
+  assert.equal(fs.readFileSync(path.join(dir, 'transaction.json'), 'utf8'), before);
 });

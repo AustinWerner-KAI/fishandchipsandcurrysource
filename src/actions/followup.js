@@ -31,7 +31,7 @@ export async function ensureOwnName(page, store, ops = linkedin) {
 // Runs at most once every cfg.acceptanceCheckEveryHours.
 export async function sweepAcceptances(page, store, cfg, { force = false } = {}) {
   store.load();
-  const invited = store.leads({ campaign: cfg.name, status: 'invited' });
+  const invited = store.leads({ status: 'invited' });
   if (!invited.length) return 0;
   const last = store.data.meta.lastAcceptanceSweep;
   const every = (cfg.acceptanceCheckEveryHours ?? 3) * HOUR;
@@ -49,7 +49,7 @@ export async function sweepAcceptances(page, store, cfg, { force = false } = {})
   if (!set.size) await snap(page, 'connections-empty');
   store.refresh();
   let n = 0;
-  for (const l of store.leads({ campaign: cfg.name, status: 'invited' })) {
+  for (const l of store.leads({ status: 'invited' })) {
     const slug = (l.url.match(/\/in\/([^/]+)/) || [])[1];
     if (slug && set.has(slug.toLowerCase())) {
       store.setStatus(l.url, 'accepted', { acceptedAt: new Date().toISOString() });
@@ -181,6 +181,8 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     lead = store.refresh(lead.url) || lead;
     store.recordAction('profileViews', lead.url);
     lead.lastCheckedAt = new Date().toISOString();
+    store.save();
+    lead = store.get(lead.url);
     if (!t.opened) {
       if (t.reason === 'off-limits') markOffLimits(store, lead, t.client);
       else if (t.reason === 'not-connected') {
@@ -229,6 +231,13 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
       recordSent(store, lead, msg);
       await ops.closeThread(page);
       store.save();
+      continue;
+    }
+    // Navigation can take seconds: honour cancellations made while opening the thread.
+    lead = store.refresh(lead.url);
+    const currentMessage = lead && dueMessage(lead, cfg, new Date());
+    if (stopRequested() || !currentMessage || JSON.stringify(currentMessage) !== JSON.stringify(msg)) {
+      await ops.closeThread(page);
       continue;
     }
     let ok = false;
@@ -288,9 +297,11 @@ export async function sweepReplies(page, store, cfg, { max = 15, ops = linkedin,
       continue;
     }
     budget--;
-    const lead = store.refresh(picked.url) || picked;
+    let lead = store.refresh(picked.url) || picked;
     store.recordAction('profileViews', lead.url);
     lead.lastCheckedAt = new Date().toISOString();
+    store.save();
+    lead = store.get(lead.url);
     if (t.opened) {
       if (t.lastFrom === 'them' || (t.theySpoke && !lead.queue.length && !lead.direct)) { markReplied(store, lead, t); replies++; }
       else if ((cfg.mode === 'candidates' || lead.direct) && !lead.queue.length && lead.messages.length >= (lead.direct ? 2 : cfg.followUps.length) && lead.messages.length

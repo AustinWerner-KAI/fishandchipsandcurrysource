@@ -62,11 +62,16 @@ export class Jobs {
     this.push(`>>> ${name}${campaign ? ' ' + campaign : ''} started`);
     child.stdout.on('data', d => this.push(d));
     child.stderr.on('data', d => this.push(d));
-    child.on('exit', (code, signal) => {
+    let finished = false;
+    const finish = (code, signal) => {
+      if (finished) return;
+      finished = true;
       this.push(`<<< ${name} finished (${signal ? 'stopped' : 'exit ' + code})`);
       this.history.push({ ...job, child: undefined, endedAt: new Date().toISOString(), code, signal });
       if (this.current === job) this.current = null;
-    });
+    };
+    child.once('exit', finish);
+    child.once('error', error => { this.push(`Could not start ${name}: ${error.message}`); finish(1, null); });
     return this.status();
   }
 

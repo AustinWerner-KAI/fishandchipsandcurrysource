@@ -26,6 +26,7 @@ import { rankLeads, cleanLead } from './rank.js';
 import { learn, rankLearned, noteStats } from './learn.js';
 import { allClients, offLimits } from './offlimits.js';
 import { askFor, pending } from './requests.js';
+import { firstInMailDue } from './actions/inmail.js';
 import { searchLocations } from './actions/search.js';
 
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
@@ -59,7 +60,7 @@ export function inmailList(store, cfg, now = new Date(), clients = allClients())
       if (now - new Date(sent.sentAt) >= (im.followUpAfterDays ?? 4) * 86400000) { const r = renderChecked(im.followUp, l, cfg.role); out.push({ ...item, kind: 'followUp', text: r.text, problem: item.problem || r.problem }); }
       continue;
     }
-    if (now - new Date(l.invitedAt) >= (im.afterDays ?? 7) * 86400000) { const r = renderChecked(im.body, l, cfg.role); firsts.push({ ...item, kind: 'inmail', text: r.text, problem: item.problem || r.problem }); }
+    if (firstInMailDue(l, im, now.getTime())) { const r = renderChecked(im.body, l, cfg.role); firsts.push({ ...item, kind: 'inmail', text: r.text, problem: item.problem || r.problem }); }
   }
   // A new InMail costs a credit: offer only as many as are left this month, best matches first.
   const credits = inmailCredits(store, im.monthlyCredits ?? 30, now, ACCOUNT_TZ);
@@ -176,18 +177,8 @@ function readCampaignRaw(name) {
 
 export function saveCampaign(name, patch) {
   if (!NAME_RE.test(name)) throw new Error('Campaign name: letters, numbers, dashes only');
-  fs.mkdirSync(CAMPAIGN_DIR, { recursive: true });
-  const f = path.join(CAMPAIGN_DIR, `${name}.json`);
-  const before = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null;
-  const raw = before ? JSON.parse(before) : {};
-  for (const k of EDITABLE) if (k in patch) raw[k] = patch[k];
-  fs.writeFileSync(f, JSON.stringify(raw, null, 2));
-  try {
-    return loadCampaign(name);           // validates through the same path the runner uses
-  } catch (e) {
-    if (before === null) fs.rmSync(f, { force: true }); else fs.writeFileSync(f, before);
-    throw e;
-  }
+  const allowed = Object.fromEntries(Object.entries(patch).filter(([key]) => EDITABLE.includes(key)));
+  return patchCampaign(name, raw => ({ ...allowed, ...(allowed.role ? { role: { ...allowed.role, geo: { ...(allowed.role.geo || {}), ...(raw.role?.geo || {}) } } } : {}) }));
 }
 
 // The search the role would run right now, with the location ids we already know. Missing ones
@@ -371,7 +362,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
         const f = path.join(CAMPAIGN_DIR, `${name}.json`);
         if (!fs.existsSync(f)) return json(404, { error: 'no such role' });
         const j = jobs.status();
-        if (j.running && j.campaign === name) return json(400, { error: 'Stop the job running for this role first' });
+        if (j.running && (j.campaign === name || ['run', 'once'].includes(j.name))) return json(400, { error: 'Stop the job running for this role first' });
         const store = new Store();
         if (b.dryRun) return json(200, { ok: true, ...store.deleteCampaign(name, { dryRun: true }) });
         const counts = store.deleteCampaign(name);
@@ -505,11 +496,12 @@ export function createApp({ jobs = new Jobs() } = {}) {
         if (!raw?.role) return json(400, { error: 'Pick a role first' });
         const term = String(b.term || '').trim().toLowerCase();
         if (!term) return json(400, { error: 'nothing to undo' });
-        const off = new Set((raw.role.learnedExcludeOff || []).map(t => String(t).toLowerCase()));
-        if (b.on) off.delete(term); else off.add(term);
-        try { patchCampaign(b.campaign, { role: { ...raw.role, learnedExcludeOff: [...off] } }); }
-        catch (e) { log('undo saved, but the role has a problem to fix:', e.message); }
-        return json(200, { ok: true, off: [...off] });
+        const cfg = patchCampaign(b.campaign, current => {
+          const off = new Set((current.role?.learnedExcludeOff || []).map(t => String(t).toLowerCase()));
+          if (b.on) off.delete(term); else off.add(term);
+          return { role: { ...current.role, learnedExcludeOff: [...off] } };
+        });
+        return json(200, { ok: true, off: cfg.role.learnedExcludeOff });
       }
       if (u.pathname === '/api/role/check') {
         return json(200, { checks: checkRole(b.role || {}, { text: String(b.text || '') }) });

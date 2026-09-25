@@ -81,8 +81,9 @@ export async function closeComposer(page, composer) {
   await sleep(400);
 }
 
-// The InMail lane: for approved people Sourcer can reach in Recruiter. The first one is always a
-// rehearsal (filled in, not sent) so Kai can check it; after he approves, the rest go by themselves.
+// The InMail lane: for approved people whose invitation has gone unanswered for the configured
+// delay and whom Sourcer can still reach in Recruiter. The first one is always a rehearsal (filled
+// in, not sent) so Kai can check it; after he approves, the rest go by themselves.
 import { ACCOUNT_TZ, remaining, humanPauseMs, pauseFor, inmailCredits } from '../limits.js';
 import { renderChecked } from '../template.js';
 import { allClients, offLimits } from '../offlimits.js';
@@ -92,6 +93,12 @@ import { cleanLead } from '../rank.js';
 import { stopRequested } from '../stop.js';
 import { notify } from '../notify.js';
 import { isRecruiterUrl } from '../store.js';
+
+export function firstInMailDue(lead, im, now = Date.now()) {
+  const invited = new Date(lead?.invitedAt || '').getTime();
+  const waitMs = (im?.afterDays ?? 7) * 86400000;
+  return lead?.status === 'invited' && !lead.preexisting && Number.isFinite(invited) && now - invited >= waitMs && !lead.inmail?.sentAt;
+}
 
 export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterInMail }, pause = true } = {}) {
   const im = cfg.inmail;
@@ -107,8 +114,9 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
 
   const clients = allClients();
   const model = learn(store.leads({ campaign: cfg.name }), cfg.role, Date.now(), clients);
-  const people = rankLearned(store.leads({ campaign: cfg.name, status: 'new' }), cfg.role, model)
-    .filter(l => (cfg.autoApprove || l.approved) && cleanLead(l).degree !== '1st' && !offLimits(l, clients) && !l.inmail?.sentAt)
+  const now = Date.now();
+  const people = rankLearned(store.leads({ campaign: cfg.name, status: 'invited' }), cfg.role, model)
+    .filter(l => (cfg.autoApprove || l.approved) && cleanLead(l).degree !== '1st' && !offLimits(l, clients) && firstInMailDue(l, im, now))
     .filter(l => !tooNewInRole(l, cfg.minTenureMonths ?? MIN_TENURE_MONTHS))
     .filter(l => !tooJunior(l, minExperienceFor(cfg)))
     .filter(l => isRecruiterUrl(l.url) || l.recruiterUrl)
@@ -120,7 +128,7 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
     if (budget <= 0 || stopRequested()) break;
     if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) < 1) { log('inmail: profile view cap reached'); break; }
     const lead = store.refresh(picked.url);
-    if (!lead || lead.status !== 'new' || !(cfg.autoApprove || lead.approved)) continue;
+    if (!lead || !firstInMailDue(lead, im) || !(cfg.autoApprove || lead.approved)) continue;
     const subject = renderChecked(im.subject, lead, cfg.role);
     const body = renderChecked(im.body, lead, cfg.role);
     if (subject.problem || body.problem) { lead.error = subject.problem || body.problem; store.save(); continue; }

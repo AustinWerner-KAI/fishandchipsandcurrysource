@@ -2,7 +2,7 @@ import { collectSearchResults, resolveGeo } from '../linkedin.js';
 import { log, warn } from '../log.js';
 import { sleep, humanPauseMs } from '../limits.js';
 import { buildSearchUrl, lookupGeo, widenBoolean, secondSearchFor } from '../role.js';
-import { patchCampaign, loadCampaign } from '../config.js';
+import { patchCampaign } from '../config.js';
 import { stopRequested } from '../stop.js';
 import { sweepStart, sweepStep, sweepSet, sweepEnd } from '../sweeps.js';
 import { withLearnedNot } from '../excludelearn.js';
@@ -33,7 +33,7 @@ export async function urlForRole(page, cfg, learned = []) {
     else warn(`could not find "${name}" on LinkedIn. Searching without that location filter. Open the search on LinkedIn, set the location by hand and paste the URL into the campaign settings.`);
   }
   if (JSON.stringify(geo) !== JSON.stringify(role.geo || {})) {
-    try { const now = loadCampaign(cfg.name).role || role; patchCampaign(cfg.name, { role: { ...now, geo: { ...(now.geo || {}), ...geo } } }); } catch (e) { warn('could not save location ids', e.message); }
+    try { patchCampaign(cfg.name, raw => ({ role: { ...raw.role, geo: { ...(raw.role?.geo || {}), ...geo } } })); } catch (e) { warn('could not save location ids', e.message); }
   }
   return buildSearchUrl(withLearnedNot(role.boolean, learned), ids);
 }

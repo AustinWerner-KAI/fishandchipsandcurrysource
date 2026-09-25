@@ -57,7 +57,11 @@ export function exportCsv(store, cfg, { status } = {}) {
   const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const row = l => {
     const co = store.companyFor(l);
-    return { ...l, sector: co?.sector || l.sector || '', size: co?.sizeText || '', tenure: tenureLabel(l.tenureMonths ?? null) };
+    const notes = String(l.notes || '').replace(/\s*\(github\/[^)]+\)/ig, '').replace(/^found on\s+(.+)$/i, (_m, list) => {
+      const sources = list.split(',').map(s => s.trim()).filter(s => s && s.toLowerCase() !== 'github');
+      return sources.length ? `found on ${sources.join(', ')}` : '';
+    });
+    return { ...l, notes, sector: co?.sector || l.sector || '', size: co?.sizeText || '', tenure: tenureLabel(l.tenureMonths ?? null) };
   };
   return [cols.join(','), ...leads.map(row).map(l => cols.map(c => esc(l[c])).join(','))].join('\n') + '\n';
 }

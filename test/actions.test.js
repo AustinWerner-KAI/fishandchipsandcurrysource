@@ -216,6 +216,12 @@ test('import, approve, queue, export', () => {
   const out = exportCsv(s, cfg);
   assert.equal(out.split('\n').length, 5); // header + 3 rows + trailing newline
   assert.match(out, /"Three, T"/);
+  s.get('linkedin.com/in/one').notes = 'found on github, eips (github/private-handle)';
+  s.save();
+  const safe = exportCsv(s, cfg);
+  assert.ok(!safe.includes('private-handle'));
+  assert.ok(!safe.includes('found on github'));
+  assert.match(safe, /found on eips/);
   assert.deepEqual(parseCsv(['a,b', '1,"x,y"']), [{ a: '1', b: 'x,y' }]);
 });
 
@@ -439,8 +445,14 @@ test('InMail lane: rehearses first, then sends, stays inside the credits and nev
   const { runInMails, creditsFromText } = await import('../src/actions/inmail.js');
   assert.deepEqual(creditsFromText('Preview | 1/84 InMail Credits'), { cost: 1, left: 84 });
   const s = fresh();
-  const icfg = { ...cfg, inmail: { subject: '{role} in {location}', body: 'Hi {firstName}, about the {role} role.', monthlyCredits: 30, perDay: 2, viaRecruiter: true }, role: { title: 'Cloud Engineer', location: 'New York' } };
-  for (const n of ['Ana', 'Ben', 'Cara']) s.upsertLead({ url: `https://www.linkedin.com/talent/profile/AAA${n}`, name: `${n} Smith`, headline: 'Security Engineer', campaign: 'c1', approved: true, degree: '2nd' });
+  const icfg = { ...cfg, inmail: { afterDays: 7, subject: '{role} in {location}', body: 'Hi {firstName}, about the {role} role.', monthlyCredits: 30, perDay: 2, viaRecruiter: true }, role: { title: 'Cloud Engineer', location: 'New York' } };
+  for (const n of ['Ana', 'Ben', 'Cara']) {
+    const lead = s.upsertLead({ url: `https://www.linkedin.com/talent/profile/AAA${n}`, name: `${n} Smith`, headline: 'Security Engineer', campaign: 'c1', approved: true, degree: '2nd' });
+    s.setStatus(lead.url, 'invited', { invitedAt: new Date(Date.now() - 8 * 86400e3).toISOString() });
+  }
+  const freshInvite = s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/FRESH', name: 'Fresh Invite', campaign: 'c1', approved: true, degree: '2nd' });
+  s.setStatus(freshInvite.url, 'invited', { invitedAt: new Date().toISOString() });
+  s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/NEVER', name: 'Never Invited', campaign: 'c1', approved: true, degree: '2nd' });
   s.upsertLead({ url: 'https://www.linkedin.com/talent/profile/FIRST', name: 'Al Ready', campaign: 'c1', approved: true, degree: '1st' });
   s.save();
   const calls = [];
@@ -463,6 +475,8 @@ test('InMail lane: rehearses first, then sends, stays inside the credits and nev
   assert.equal(s.actionsSince('2000-01-01', 'inmail').length, 2);
   assert.equal(s.get('https://www.linkedin.com/talent/profile/FIRST').status, 'new');   // 1st connections are free elsewhere
   assert.ok(!calls.some(c => c.url.includes('FIRST')));
+  assert.ok(!calls.some(c => c.url.includes('FRESH')));
+  assert.ok(!calls.some(c => c.url.includes('NEVER')));
   assert.match(calls[1].body, /^Hi (Ana|Ben|Cara), about the Cloud Engineer role\.$/);
 });
 
@@ -475,6 +489,7 @@ test('a search asked for mid-run is picked up once, for the right role', async (
   assert.deepEqual(takeRequests('role-one'), ['search']);
   assert.deepEqual(takeRequests('role-one'), []);
   assert.deepEqual(pending('role-two'), ['search']);
+  assert.equal(fs.statSync(path.join(home, 'requests.json')).mode & 0o777, 0o600);
 });
 
 // ---- 24 Sep: what Kai found using it for real ----
@@ -621,4 +636,25 @@ test('anybody excluded by hand is never put back by a later search', async () =>
   // and deleting the whole role does not un-exclude them either
   assert.equal(s.deleteCampaign('c1').kept, 1);
   assert.ok(s.get('linkedin.com/in/x1'), 'still on file after the role is gone');
+});
+
+test('cancellation while opening a thread prevents sending', async () => {
+  const s = fresh();
+  const lead = s.upsertLead({ url: 'linkedin.com/in/cancel-test', name: 'Ann Example', campaign: 'c1', approved: true });
+  s.setStatus(lead.url, 'accepted'); lead.queue.push({ text: 'Hello Ann' }); s.save();
+  let sends = 0;
+  await runMessages(null, s, cfg, { pause: false, ops: {
+    openThread: async () => { const other = new Store(s.file); other.get(lead.url).queue = []; other.save(); return { opened: true, lastFrom: 'me', lastText: 'Earlier', editor: {} }; },
+    sendMessageInOpenThread: async () => { sends++; return true; }, closeThread: async () => {},
+  }});
+  assert.equal(sends, 0);
+});
+
+test('successful messages consume profile-view budget', async () => {
+  const s = fresh();
+  for (const slug of ['cap-a','cap-b']) { const l=s.upsertLead({url:'linkedin.com/in/'+slug,name:'Ann Example',campaign:'c1',approved:true});s.setStatus(l.url,'accepted');l.queue.push({text:'Hello Ann'}); }
+  s.save(); let opened=0;
+  await runMessages(null,s,{...cfg,dailyCaps:{...cfg.dailyCaps,profileViews:1}},{pause:false,ops:{openThread:async()=>{opened++;return {opened:true,lastFrom:'me',lastText:'Earlier',editor:{}};},sendMessageInOpenThread:async()=>true,closeThread:async()=>{}}});
+  assert.equal(opened,1);
+  assert.equal(s.data.actions.filter(a=>a.type==='profileViews').length,1);
 });
