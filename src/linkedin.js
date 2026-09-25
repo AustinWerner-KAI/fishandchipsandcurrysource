@@ -3,6 +3,7 @@
 //
 // Every action button is looked up inside the profile's top card AND by the person's name
 // ("Invite Jane Doe to connect"), so a suggested-people card further down the page is never clicked.
+import { stopRequested } from './stop.js';
 import { SEL, firstVisible, anyPresent, withName } from './selectors.js';
 import { findOrAsk, forget } from './heal.js';
 import { goto, guard, humanScroll, snap, saveDom, typeLikeHuman } from './browser.js';
@@ -97,6 +98,8 @@ async function topCardButtons(page, name) {
 
 // Returns one of: 'sent' | 'already-connected' | 'pending' | 'no-button' | 'weekly-limit' | 'email-required' | 'failed'
 export async function sendConnectionRequest(page, url, note, { clients, store = null } = {}) {
+  const allowed = () => !stopRequested() && (!store || (store.refresh(url)?.approved === true && store.get(url)?.status === 'new'));
+  if (!allowed()) return { result: 'cancelled', info: {} };
   const info = await openProfile(page, url);
   const client = clientOnProfile(info, clients);
   if (client) return { result: 'off-limits', info, client };
@@ -120,6 +123,7 @@ export async function sendConnectionRequest(page, url, note, { clients, store = 
     await snap(page, 'no-connect-button');
     return { result: 'no-button', info };
   }
+  if (!allowed()) return { result: 'cancelled', info };
   await btn.click();
   await sleep(randomBetween(900, 1800));
   await guard(page);
@@ -192,6 +196,7 @@ export async function sendConnectionRequest(page, url, note, { clients, store = 
     return { result: sendFound.asked ? 'needs-you' : 'failed', info, usedSteps };
   }
   if (sendFound.viaLearned) usedSteps.push('sendInviteButton');
+  if (!allowed()) { await dismissModal(page); return { result: 'cancelled', info }; }
   await send.click();
   await sleep(randomBetween(1200, 2200));
   await guard(page);

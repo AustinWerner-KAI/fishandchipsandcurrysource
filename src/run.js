@@ -101,9 +101,9 @@ export async function runCampaign(cfg, { once = false, headless = false } = {}) 
     do {
       if (fatal) throw fatal;
       if (stopRequested()) { log('stopped'); break; }
-      // One browser, every role: each pass goes through all the roles that are inside their hours.
+      // Each run is scoped to the selected role; other saved roles are never approached.
       // Kai pressing Search while this is running leaves a request, which is picked up here.
-      const names = once ? [cfg.name] : [cfg.name, ...listCampaigns().filter(n => n !== cfg.name)];
+      const names = [cfg.name]; // Consent applies only to the selected role.
       let worked = false;
       for (const name of names) {
         if (fatal) throw fatal;

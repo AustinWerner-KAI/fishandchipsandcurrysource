@@ -658,3 +658,18 @@ test('successful messages consume profile-view budget', async () => {
   assert.equal(opened,1);
   assert.equal(s.data.actions.filter(a=>a.type==='profileViews').length,1);
 });
+
+test('autoApprove cannot bypass individual approval for invitations', async () => {
+  const s=fresh();
+  s.upsertLead({url:'linkedin.com/in/unapproved',name:'Ann Example',campaign:'c1',approved:false});s.save();
+  let called=false;
+  const r=await runConnect(null,s,{...cfg,autoApprove:true},{pause:false,ops:{sendConnectionRequest:async()=>{called=true;throw new Error('Must not send');}}});
+  assert.equal(r.sent,0);assert.equal(called,false);
+});
+
+test('invitation browser boundary rejects an unapproved profile before navigation', async () => {
+  const {sendConnectionRequest}=await import('../src/linkedin.js');
+  const s=fresh();s.upsertLead({url:'linkedin.com/in/not-selected',campaign:'c1',approved:false});s.save();
+  const result=await sendConnectionRequest(null,'https://www.linkedin.com/in/not-selected/','Hello',{store:s});
+  assert.equal(result.result,'cancelled');
+});

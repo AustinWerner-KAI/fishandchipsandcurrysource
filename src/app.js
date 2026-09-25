@@ -343,6 +343,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
 
       if (u.pathname === '/api/job') {
         if (b.action === 'stop') return json(200, jobs.stop());
+        if (['run','once','connect','followup'].includes(b.action) && b.outreachConsent !== true) return json(400, { error: 'Confirm this outreach batch before sending invitations or messages.' });
         const args = [];
         if (b.campaign && !NAME_RE.test(b.campaign)) return json(400, { error: 'bad role name' });
         if (['run', 'once', 'search', 'connect', 'followup'].includes(b.action) && !readCampaignRaw(b.campaign)) return json(400, { error: 'Pick a role first' });
@@ -355,7 +356,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
           askFor(b.campaign, 'search');
           return json(200, { ...busy, queued: 'search' });
         }
-        return json(200, jobs.start(b.action, { campaign: b.campaign, args }));
+        return json(200, jobs.start(b.action === 'run' ? 'once' : b.action, { campaign: b.campaign, args }));
       }
       // The X on a role tab. Its people who were never contacted go with it; anyone already
       // contacted stays on file so a later search cannot approach them a second time.
@@ -674,7 +675,7 @@ function watchForUpdates(jobs) {
     // never in the middle of a login or a recording Kai is doing by hand: try again later
     if (cur.running && ['login', 'login-recruiter', 'record', 'probe'].includes(cur.name)) { changedAt = Date.now(); return; }
     log('Sourcer was updated. Restarting to load the new version.');
-    if (cur.running && ['run', 'search', 'once', 'followup', 'connect'].includes(cur.name)) {
+    if (cur.running && cur.name === 'search') {
       fs.writeFileSync(RESUME, JSON.stringify({ name: cur.name, campaign: cur.campaign, args: jobs.current?.args || [], at: new Date().toISOString() }), { mode: 0o600 });
     }
     if (cur.running) jobs.stop({ grace: 90000 });      // the person being contacted is finished first
@@ -686,7 +687,7 @@ function resumeJob(jobs) {
   try {
     const r = JSON.parse(fs.readFileSync(RESUME, 'utf8'));
     fs.rmSync(RESUME, { force: true });
-    if (r?.name && Date.now() - new Date(r.at) < 10 * 60000) {
+    if (r?.name === 'search' && Date.now() - new Date(r.at) < 10 * 60000) {
       log(`carrying on with ${r.name} after the update`);
       jobs.start(r.name, { campaign: r.campaign, args: r.args || [] });
     }

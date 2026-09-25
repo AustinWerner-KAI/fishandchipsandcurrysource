@@ -234,7 +234,7 @@ details.card[open]>summary{margin-bottom:10px}
         </div>
         <div class="row">
           <button class="primary" id="btnSearch" onclick="job('search')">Search</button>
-          <button id="btnRun" onclick="job('run')">Run all day</button>
+          <button id="btnRun" onclick="job('run')">Review outreach batch</button>
           <button class="danger" id="btnStop" onclick="job('stop')" disabled>Stop</button>
         </div>
       </div>
@@ -271,16 +271,16 @@ details.card[open]>summary{margin-bottom:10px}
 
     <section class="card" id="peopleCard">
       <div class="row between">
-        <h2 style="margin:0">People <span id="leadCount"></span></h2>
+        <h2 style="margin:0">Profiles to review <span id="leadCount"></span></h2>
         <div class="row">
           <select class="hide" id="sortBy" aria-label="Sort" style="width:auto;padding:3px 6px" onchange="sortBy=this.value;render()"><option value="match">Best match</option><option value="latest">Latest</option></select>
-          <button class="small" id="btnApproveTop" onclick="approveTop()">Approve top <span id="topN">15</span></button>
+          <button hidden class="small" id="btnApproveTop" onclick="approveTop()">Approve top <span id="topN">15</span></button>
           <button class="small" onclick="approveVisible(false)">Un-approve shown</button>
           <a class="sub" id="exportLink" href="#">Export CSV</a>
           <button class="small danger" onclick="clearList()">Clear list</button>
         </div>
       </div>
-      <div class="filters" id="filters"></div>
+      <p class="sub">Search only collects profiles. Review each person and tick their approval box. Nothing is sent until you confirm an outreach batch.</p><div class="filters" id="filters"></div>
       <div class="sub" id="today" style="margin-bottom:2px"></div>
       <div class="sub" id="learnLine" style="margin-bottom:8px"></div>
       <div class="scroll"><table><thead><tr><th>Match</th><th>Person</th><th>Status</th><th>OK</th><th>Next</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
@@ -340,7 +340,7 @@ details.card[open]>summary{margin-bottom:10px}
         </div>
       </div>
       <div class="row" style="margin-top:12px">
-        <button class="small" id="btnOnce" onclick="job('once')">Run one pass now</button>
+        <button class="small" id="btnOnce" onclick="job('once')">Review outreach batch</button>
         <button class="small" id="btnRecord" onclick="recordRoute()">Show me once (record)</button>
         <span class="sub">Data: <span id="home"></span></span>
       </div>
@@ -934,7 +934,7 @@ function renderStart(){
     const who = approved ? ` <button class="link" onclick="filter='approved';render()">${names.slice(0,4).map(esc).join(', ')}${names.length>4?` and ${names.length-4} more`:''}</button>` : '';
     const what = [approved?`invite ${approved} ${approved===1?'person':'people'}${who}`:'', lined?`message ${lined} 1st ${lined===1?'connection':'connections'}`:''].filter(Boolean).join(' and ');
     const when = !wh || h.open ? 'Starts now.' : `Starts ${h.nextStart ? whenIn(h.nextStart, wh.timezone) : 'on the next working day'}.`;
-    html += bar('', `<b>Ready:</b> ${what}. Up to ${cap} invites a day. ${when}`, `<button class="primary" onclick="startOutreach()">Start outreach</button>`);
+    html += bar('', `<b>Ready:</b> ${what}. Up to ${cap} invites a day. ${when}`, `<button class="primary" onclick="startOutreach()">Review outreach batch</button>`);
   } else if (S.leads.length) {
     html += bar('', invited ? `<b>Done for now.</b> Invited ${invited} today.${last} Tick more people in To approve to keep going.` : `<b>Nothing to send yet.</b> Tick the people you want in To approve, then Start outreach.`);
   }
@@ -954,11 +954,7 @@ async function inmailApprove(ok){
   if (!confirm('Send InMails from Recruiter Lite from now on? They go to the best matches, up to your daily limit, and each uses one credit.')) return;
   await api('/api/inmail-approve',{ok:true}); toast('InMails will go on the next run.'); load();
 }
-async function startOutreach(){
-  const approved = S.leads.filter(l=>l.approved && l.status==='new' && !isFirst(l) && !l.offLimits).length;
-  if (!confirm(`Start outreach?\n\nSourcer opens Chrome and sends the connection notes to your ${approved} approved people, a few minutes apart, inside working hours. Follow-ups go automatically after they accept.\n\nKeep this page open and the Mac awake.`)) return;
-  await job('run', true);
-}
+async function startOutreach(){ return job('once'); }
 async function job(action, confirmed){
   if (action==='stop') { await api('/api/job',{action:'stop'}); return load(); }
   // one Chrome for everything: a search asked for mid-run happens on the next pass
@@ -967,8 +963,14 @@ async function job(action, confirmed){
     toast('Searching in a second tab of the same Chrome. Watch Activity.');
     return load();
   }
-  if (action==='run' && !confirmed && !confirm('Run all day inside working hours? A Chrome window opens and works through approved people. Keep this window open and the Mac awake.')) return;
-  await api('/api/job',{action, campaign:S.campaign});
+  const sending = ['run','once','connect','followup'].includes(action);
+  if (sending) {
+    const approved = S.leads.filter(isApproved);
+    const people = approved.map(l=>l.name||l.url).join('\n') || 'No approved invitation recipients';
+    const followupPeople = (S.leads||[]).filter(l=>['invited','accepted','messaged'].includes(l.status)).map(l=>l.name||l.url).join('\n') || 'None';
+    if (!confirm(`Send one outreach batch for ${S.cfg.role?.title||S.campaign}?\n\nApproved invitation recipients:\n${people}\n\nPreviously contacted people who may receive due messages or InMails:\n${followupPeople}\n\nSending stays within your limits. Search alone never sends invitations. It stops after this pass; another batch requires confirmation.`)) return;
+  }
+  await api('/api/job',{action, campaign:S.campaign, outreachConsent:sending});
   lastLog = 0; $('#log').textContent=''; $('#activity').open = true;
   load(); pollLog();
 }

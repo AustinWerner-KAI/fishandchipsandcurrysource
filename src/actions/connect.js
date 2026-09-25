@@ -65,7 +65,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
   const minTenure = cfg.minTenureMonths ?? MIN_TENURE_MONTHS;
   const minExperience = minExperienceFor(cfg);
   const candidates = store.leads({ campaign: cfg.name, status: 'new' })
-    .filter(l => cfg.autoApprove || l.approved)
+    .filter(l => l.approved)
     .filter(l => cleanLead(l).degree !== '1st')          // already connected: they go in the 1st connections list
     .filter(l => !offLimits(l, clients))                 // works at a client: never contacted
     .filter(l => !tooNewInRole(l, minTenure))            // under a year at their employer: left alone
@@ -105,14 +105,14 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
 
     // fresh copy: the dashboard may have un-approved this person since the list was built
     let lead = store.refresh(picked.url);
-    if (!lead || lead.status !== 'new' || !(cfg.autoApprove || lead.approved)) continue;
+    if (!lead || lead.status !== 'new' || !(lead.approved)) continue;
 
     // Found in Recruiter: look up their normal profile first (one profile view)
     if (isRecruiterUrl(lead.url)) {
       lead = await resolveRecruiterLead(page, store, lead, ops, pause);
       if (!lead) continue;
       // Kai may have excluded or un-ticked them during the lookup
-      if (lead.status !== 'new' || !(cfg.autoApprove || lead.approved)) continue;
+      if (lead.status !== 'new' || !(lead.approved)) continue;
     }
 
     // the note that gets accepted most is sent most (each note gets a fair trial first)
@@ -148,6 +148,7 @@ export async function runConnect(page, store, cfg, { max, ops = linkedin, pause 
     if (r.info?.companyText && !cur.company) cur.company = r.info.companyText;
 
     switch (r.result) {
+      case 'cancelled': break;
       case 'needs-you':
         store.save();
         notify('Sourcer needs you', 'LinkedIn moved a button. Open Sourcer and say which one it is.');

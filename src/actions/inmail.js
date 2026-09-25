@@ -118,7 +118,7 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
   const model = learn(store.leads({ campaign: cfg.name }), cfg.role, Date.now(), clients);
   const now = Date.now();
   const people = rankLearned(store.leads({ campaign: cfg.name, status: 'invited' }), cfg.role, model)
-    .filter(l => (cfg.autoApprove || l.approved) && cleanLead(l).degree !== '1st' && !offLimits(l, clients) && firstInMailDue(l, im, now))
+    .filter(l => (l.approved) && cleanLead(l).degree !== '1st' && !offLimits(l, clients) && firstInMailDue(l, im, now))
     .filter(l => !tooNewInRole(l, cfg.minTenureMonths ?? MIN_TENURE_MONTHS))
     .filter(l => !tooJunior(l, minExperienceFor(cfg)))
     .filter(l => isRecruiterUrl(l.url) || l.recruiterUrl)
@@ -130,7 +130,7 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
     if (budget <= 0 || stopRequested()) break;
     if (remaining(store, cfg.dailyCaps, 'profileViews', new Date(), tz) < 1) { log('inmail: profile view cap reached'); break; }
     const lead = store.refresh(picked.url);
-    if (!lead || !firstInMailDue(lead, im) || !(cfg.autoApprove || lead.approved)) continue;
+    if (!lead || !firstInMailDue(lead, im) || !(lead.approved)) continue;
     const subject = renderChecked(im.subject, lead, cfg.role);
     const body = renderChecked(im.body, lead, cfg.role);
     if (subject.problem || body.problem) { lead.error = subject.problem || body.problem; store.save(); continue; }
