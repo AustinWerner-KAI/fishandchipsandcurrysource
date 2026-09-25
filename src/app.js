@@ -26,7 +26,7 @@ import { rankLeads, cleanLead } from './rank.js';
 import { learn, rankLearned, noteStats } from './learn.js';
 import { allClients, offLimits } from './offlimits.js';
 import { askFor, pending } from './requests.js';
-import { ROLE_MESSAGE, summaryFromSpec } from './outreach.js';
+import { ROLE_MESSAGE, summaryFromSpec, anonymousSummary } from './outreach.js';
 import { firstInMailDue } from './actions/inmail.js';
 import { searchLocations } from './actions/search.js';
 
@@ -178,6 +178,7 @@ function readCampaignRaw(name) {
 
 export function saveCampaign(name, patch) {
   if (!NAME_RE.test(name)) throw new Error('Campaign name: letters, numbers, dashes only');
+  if (patch.role?.outreachSummary) patch = { ...patch, role: { ...patch.role, outreachSummary: anonymousSummary(patch.role.outreachSummary, patch.role) } };
   const allowed = Object.fromEntries(Object.entries(patch).filter(([key]) => EDITABLE.includes(key)));
   return patchCampaign(name, raw => ({ ...allowed, ...(allowed.role ? { role: { ...allowed.role, geo: { ...(allowed.role.geo || {}), ...(raw.role?.geo || {}) } } } : {}) }));
 }
@@ -212,7 +213,7 @@ export function state(jobs, campaignName) {
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     search2: cfg?.role ? secondSearchFor(cfg.role) : '',
-    roleMessagePreviews: cfg ? { inmail: renderChecked(cfg.inmail?.body || '', {firstName:'Alex'}, cfg.role).text, firstDegree: renderChecked(cfg.firstDegree?.message || '', {firstName:'Alex'}, cfg.role).text } : null,
+    roleMessagePreviews: cfg ? { inmail: renderChecked(cfg.inmail?.body || '', {firstName:'Alex'}, cfg.role).text || 'Blocked: remove the confidential hiring company name from this template.', firstDegree: renderChecked(cfg.firstDegree?.message || '', {firstName:'Alex'}, cfg.role).text } : null,
     // what Kai's excludes taught both searches, and what he turned off
     learnedNot: cfg?.role ? learnedFor(store, cfg) : [],
     learnedOff: cfg?.role?.learnedExcludeOff || [],

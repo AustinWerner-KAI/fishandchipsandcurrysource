@@ -1,3 +1,4 @@
+import { containsHiringCompany } from '../outreach.js';
 // Sends an InMail from the candidate's Recruiter Lite profile: the same steps Kai showed on
 // 22 Sep (Message button, subject, message, Send). Rehearsal mode fills everything in and stops
 // before Send, so a new layout is caught before a candidate ever sees anything.
@@ -28,7 +29,8 @@ export async function readComposerCredits(page) {
 }
 
 // Returns { sent, rehearsed, credits, reason? }
-export async function sendRecruiterInMail(page, url, { subject, body, rehearse = true }) {
+export async function sendRecruiterInMail(page, url, { subject, body, rehearse = true, role = {} }) {
+  if (containsHiringCompany(subject, role) || containsHiringCompany(body, role)) return { sent: false, reason: 'Hiring company name is confidential' };
   if (!/\/talent\//.test(String(url))) return { sent: false, reason: 'not a Recruiter profile' };
   await goto(page, url);
   await guard(page);
@@ -136,7 +138,7 @@ export async function runInMails(page, store, cfg, { max, ops = { sendRecruiterI
     const rehearse = !store.data.meta.inmailApprovedAt;
     const url = lead.recruiterUrl || lead.url;
     let r;
-    try { r = await ops.sendRecruiterInMail(page, url, { subject: subject.text, body: body.text, rehearse }); }
+    try { r = await ops.sendRecruiterInMail(page, url, { subject: subject.text, body: body.text, rehearse, role: cfg.role || {} }); }
     catch (e) {
       if (e.name === 'CheckpointError' || e.name === 'NotLoggedInError') throw e;
       warn('inmail failed', url, e.message);

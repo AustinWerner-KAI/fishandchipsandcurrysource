@@ -1,3 +1,4 @@
+import { containsHiringCompany } from '../outreach.js';
 import * as linkedin from '../linkedin.js';
 import { sameText } from '../linkedin.js';
 import { goto, humanScroll, snap } from '../browser.js';
@@ -69,7 +70,7 @@ export function dueMessage(lead, cfg, now = new Date()) {
   const q = lead.queue?.[0];
   if (q) {
     if (q.notBefore && new Date(q.notBefore) > now) return null;
-    return { text: q.text, source: 'queue', note: q.note, resume: !!q.resume };
+    return { text: q.text, ...(containsHiringCompany(q.text, cfg.role || {}) ? {problem:'Hiring company name is confidential. Remove it from the queued message.'} : {}), source: 'queue', note: q.note, resume: !!q.resume };
   }
   // once they have ever replied, only Kai's own queued messages go; no template, in any lane
   if (lead.repliedAt) return null;
@@ -236,7 +237,7 @@ export async function runMessages(page, store, cfg, { max, ops = linkedin, pause
     // Navigation can take seconds: honour cancellations made while opening the thread.
     lead = store.refresh(lead.url);
     const currentMessage = lead && dueMessage(lead, cfg, new Date());
-    if (stopRequested() || !currentMessage || JSON.stringify(currentMessage) !== JSON.stringify(msg)) {
+    if (stopRequested() || !currentMessage || currentMessage.problem || JSON.stringify(currentMessage) !== JSON.stringify(msg)) {
       await ops.closeThread(page);
       continue;
     }

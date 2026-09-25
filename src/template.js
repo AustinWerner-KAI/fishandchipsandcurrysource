@@ -1,4 +1,4 @@
-import { rolePitch, summaryFromSpec } from './outreach.js';
+import { rolePitch, summaryFromSpec, anonymousSummary, containsHiringCompany } from './outreach.js';
 // {firstName} {name} {company} {headline} plus, from the campaign's role, {role} {location} {workType}.
 // Unknown tags render empty. Squeezes double spaces and orphaned punctuation left by an empty tag.
 const WORK_TYPE_TEXT = { onsite: 'On site', hybrid: 'Hybrid, in the office part of the week', remote: 'Fully remote' };
@@ -6,7 +6,7 @@ const WORK_TYPE_TEXT = { onsite: 'On site', hybrid: 'Hybrid, in the office part 
 export function roleVars(role) {
   if (!role) return { role: '', location: '', workType: '', roleSummary: '', rolePitch: '' };
   const where = role.workType === 'remote' && role.candidateLocations?.length ? role.candidateLocations.join(' / ') : (role.location || '');
-  return { roleSummary: role.outreachSummary ?? summaryFromSpec(role.specText), rolePitch: rolePitch(role), role: role.title || '', location: where, workType: WORK_TYPE_TEXT[role.workType] || '' };
+  return { roleSummary: anonymousSummary(role.outreachSummary ?? summaryFromSpec(role.specText), role), rolePitch: rolePitch(role), role: role.title || '', location: where, workType: WORK_TYPE_TEXT[role.workType] || '' };
 }
 
 export const TAGS = ['firstName', 'name', 'company', 'headline', 'role', 'location', 'workType', 'roleSummary', 'rolePitch'];
@@ -41,6 +41,7 @@ const usesName = t => [...String(t || '').matchAll(TAG_RE)].some(m => normTag(m[
 export function renderChecked(template, lead = {}, role = null) {
   const text = render(template, lead, role);
   let problem = '';
+  if (containsHiringCompany(text, role || {})) return { text: '', problem: 'Hiring company name is confidential. Remove it from the message; describe the sector instead.' };
   if (usesName(template) && !nameFor(lead)) problem = 'no first name found, press Set first name';
   else if (unknownTags(template).length) problem = `unknown tag ${unknownTags(template)[0]}`;
   else if (/\{\w*\}/.test(text)) problem = 'a tag was not filled';

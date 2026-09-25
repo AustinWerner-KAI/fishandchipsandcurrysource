@@ -21,11 +21,11 @@ export function summaryFromSpec(spec) {
   const aboutRole = section(/^(?:about the role|the role)[: ]*$/i);
   const parts = [sentences(company)[0], ...sentences(responsibilities || aboutRole).slice(0, 2)].filter(Boolean);
   // Do not truncate a fact halfway through a sentence. Unstructured briefs need manual review.
-  return parts.filter(s => s.length <= 1000).join(' ').trim();
+  return anonymousSummary(parts.filter(s => s.length <= 1000).join(' ').trim(), { specText: spec });
 }
 
 export function rolePitch(role = {}) {
-  const summary = typeof role.outreachSummary === 'string' ? role.outreachSummary.trim() : summaryFromSpec(role.specText);
+  const summary = anonymousSummary(typeof role.outreachSummary === 'string' ? role.outreachSummary.trim() : summaryFromSpec(role.specText), role);
   const location = role.workType === 'remote' && role.candidateLocations?.length ? role.candidateLocations.join(' / ') : role.location;
   const workType = { onsite: 'On site', hybrid: 'Hybrid', remote: 'Remote' }[role.workType];
   return [role.title ? `I'm recruiting for a ${role.title} role.` : "I'm recruiting for a new role.", summary,
@@ -38,4 +38,35 @@ export function upgradeOutreach(raw) {
     ...(raw.inmail?.body === LEGACY_INMAIL ? { inmail: { ...raw.inmail, body: ROLE_MESSAGE } } : {}),
     ...(raw.firstDegree?.message === LEGACY_FIRST_MESSAGE ? { firstDegree: { ...raw.firstDegree, message: ROLE_MESSAGE } } : {}),
   };
+}
+
+// Hiring-company identity is private. Keep aliases separate from candidate employers.
+export function hiringCompanyNames(role = {}) {
+  const names = [role.company, role.client?.name, ...(role.client?.otherNames || []), ...(role.confidentialCompanyNames || [])];
+  const spec = String(role.specText || '');
+  for (const match of spec.matchAll(/^(?:Company|Employer|Client)\s*:\s*(.+)$/gmi)) names.push(match[1].trim());
+  for (const match of spec.matchAll(/^About\s+(.+)$/gmi)) {
+    const name = match[1].trim().replace(/:$/, '');
+    if (!/^(?:the role|the company|us|you|the team|this role|the position)$/i.test(name)) names.push(name);
+  }
+  const companySection = spec.match(/(?:^|\n)About (?!the role)(?:the company|us)[: ]*\n([\s\S]*?)(?=\n(?:About|Key Responsibilities|Responsibilities|Requirements)|$)/i)?.[1];
+  const namedSubject = companySection?.replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim().match(/^(.{2,80}?)\s+(?:is|are)\s/i)?.[1];
+  if (namedSubject && !/^(?:we|our client|the company|our company)$/i.test(namedSubject)) names.push(namedSubject);
+  const expanded = names.filter(n => typeof n === 'string' && n.trim().length > 1).map(n => n.trim());
+  for (const name of [...expanded]) {
+    const short = name.replace(/\s+(?:group|inc\.?|ltd\.?|limited|llc|corporation|corp\.?)$/i, '').trim();
+    if (short.length > 1 && short !== name) expanded.push(short);
+  }
+  return [...new Set(expanded)].sort((a,b) => b.length-a.length);
+}
+function namePattern(name) {
+  return new RegExp('(?<![\\p{L}\\p{N}])' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}])', 'giu');
+}
+export function containsHiringCompany(text, role) {
+  return hiringCompanyNames(role).some(name => namePattern(name).test(String(text || '')));
+}
+export function anonymousSummary(text, role = {}) {
+  let result = String(text || '').replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+  for (const name of hiringCompanyNames(role)) result = result.replace(namePattern(name), 'the company');
+  return result.replace(/^the company/i, 'The company');
 }
