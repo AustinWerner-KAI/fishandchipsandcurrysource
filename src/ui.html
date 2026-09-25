@@ -218,7 +218,7 @@ details.card[open]>summary{margin-bottom:10px}
         <div class="field"><label for="rBoolean">Search 1 · by title. Edit freely.</label><textarea id="rBoolean" style="min-height:90px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea></div>
         <div class="field"><label for="rBoolean2">Search 2 · by skills, built differently. Edit freely.</label><textarea id="rBoolean2" style="min-height:90px;font:12px/1.5 ui-monospace,Menlo,monospace"></textarea></div>
       </div>
-      <div class="rcheck" id="rCheck3"></div>
+      <div class="field"><label for="rOutreachSummary">How to explain this role in outreach</label><textarea id="rOutreachSummary" style="min-height:150px"></textarea><div class="sub">Drafted from the job spec. Check the facts and edit before saving. This description updates InMail and first-connection messages that use {rolePitch}.</div></div><div class="rcheck" id="rCheck3"></div>
       <div class="row"><button onclick="keepStep3();showStep(2)">Back</button><button onclick="rebuildBoolean()">Rebuild</button><button class="primary" onclick="saveRole(true)">Save and search</button><button onclick="saveRole(false)">Save</button><button class="link" onclick="closeWizard()">Cancel</button></div>
     </div>
   </section>
@@ -302,12 +302,12 @@ details.card[open]>summary{margin-bottom:10px}
         <div>
           <div class="field"><label for="cfgNotes">Connection note. One per line. With more than one, Sourcer tries each, then sends the one that gets accepted most. Max 300 characters.</label><textarea id="cfgNotes"></textarea><div class="sub" id="noteStats" style="margin-top:4px"></div></div>
           <div class="field"><label for="cfgFollowUps">After they accept. One per line: <code>days | message</code>, add hours with <code>0 +3h |</code></label><textarea id="cfgFollowUps" style="min-height:100px"></textarea></div>
-          <div class="field"><label for="imBody">Recruiter InMail, for people not accepted after <input type="number" id="imAfter" aria-label="Days before InMail" min="1" max="30" style="width:56px"> days</label>
+          <div class="field"><label for="cfgRoleSummary">Role description for outreach</label><textarea id="cfgRoleSummary" style="min-height:150px"></textarea><div class="sub">Describe the company, what this person will own and the essential experience. If an older role has no description, add it here or load its job spec again. Save to update the previews and outgoing templates.</div></div><div class="field"><label for="imBody">Recruiter InMail, for people not accepted after <input type="number" id="imAfter" aria-label="Days before InMail" min="1" max="30" style="width:56px"> days</label>
             <input type="text" id="imSubject" aria-label="InMail subject" placeholder="subject" style="margin-bottom:6px"><textarea id="imBody" style="min-height:110px"></textarea></div>
           <div class="field"><label for="imFollow">The one InMail follow-up, <input type="number" id="imFollowAfter" aria-label="Days before follow-up" min="1" max="30" style="width:56px"> days later</label><textarea id="imFollow"></textarea></div>
           <div class="field"><label for="fdMessage">Message to 1st connections (free)</label><textarea id="fdMessage" style="min-height:110px"></textarea></div>
           <div class="field"><label for="fdFollow">Their one follow-up, <input type="number" id="fdFollowAfter" aria-label="Days before 1st connection follow-up" min="1" max="30" style="width:56px"> days later</label><textarea id="fdFollow"></textarea></div>
-          <div class="sub">Tags: {firstName} {role} {location} {workType}</div>
+          <div class="sub">Tags: {firstName} {role} {location} {workType} {roleSummary} {rolePitch}. {rolePitch} includes the title, description and location. Your custom messages are preserved.</div><details><summary>Saved message previews (example recipient: Alex)</summary><h4>InMail</h4><pre id="roleInmailPreview" style="white-space:pre-wrap"></pre><h4>First connection</h4><pre id="roleFirstPreview" style="white-space:pre-wrap"></pre></details>
         </div>
         <div>
           <div class="field"><label>Daily caps</label>
@@ -989,6 +989,9 @@ document.querySelectorAll('#settings input, #settings textarea').forEach(e=>e.ad
 $('#settings').addEventListener('toggle',()=>{ if($('#settings').open) preview(); });
 function fillSettings(){
   const c=S.cfg; if(!c) return;
+  $('#cfgRoleSummary').value=c.role?.outreachSummary||'';
+  $('#roleInmailPreview').textContent=S.roleMessagePreviews?.inmail||'No InMail configured';
+  $('#roleFirstPreview').textContent=S.roleMessagePreviews?.firstDegree||'';
   $('#cfgNotes').value=(c.connectionNotes||[]).join('\n');
   const ns=S.noteStats||[]; $('#noteStats').textContent = ns.length>1 ? ns.map((n,i)=>`Note ${i+1}: ${n.sent} sent${n.sent?`, ${Math.round((n.rate||0)*100)}% accepted`:''}`).join(' · ') : '';
   $('#cfgFollowUps').value=(c.followUps||[]).map(f=>`${f.afterDays}${f.afterHours?` +${f.afterHours}h`:''} | ${f.text}`).join('\n');
@@ -1019,7 +1022,7 @@ async function saveSettings(){
   const followUps=$('#cfgFollowUps').value.split('\n').map(s=>s.trim()).filter(Boolean).map(line=>{ const m=line.match(/^(\d+(?:\.\d+)?)\s*d?\s*(?:\+\s*(\d+)\s*h)?\s*\|\s*(.+)$/i); return m?{afterDays:+m[1],...(m[2]?{afterHours:+m[2]}:{}),text:m[3].trim()}:{afterDays:0,text:line}; });
   const inmail = $('#imBody').value.trim() ? { afterDays:+$('#imAfter').value||7, monthlyCredits:+$('#imCredits').value||0, subject:$('#imSubject').value.trim(), body:$('#imBody').value.trim(), followUpAfterDays:+$('#imFollowAfter').value||4, followUp:$('#imFollow').value.trim(), perDay:+$('#imPerDay').value||10, viaRecruiter:true } : null;
   const firstDegree = { message:$('#fdMessage').value.trim(), followUpAfterDays:+$('#fdFollowAfter').value||4, followUp:$('#fdFollow').value.trim() };
-  const config={ inmail, firstDegree, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, minTenureMonths:Math.max(0,+$('#cfgTenure').value||0), seniority:$('#cfgLevel').value, minExperienceMonths:Math.max(0,Math.round((+$('#cfgExp').value||0)*12)),
+  const config={ ...(S.cfg.role ? {role:{...S.cfg.role,outreachSummary:$('#cfgRoleSummary').value.trim()}} : {}), inmail, firstDegree, searchUrl:$('#cfgSearchUrl').value.trim(), maxSearchPages:+$('#cfgPages').value||5, minTenureMonths:Math.max(0,+$('#cfgTenure').value||0), seniority:$('#cfgLevel').value, minExperienceMonths:Math.max(0,Math.round((+$('#cfgExp').value||0)*12)),
     connectionNotes:$('#cfgNotes').value.split('\n').map(s=>s.trim()).filter(Boolean), followUps,
     dailyCaps:{connects:+$('#capConnects').value, messages:+$('#capMessages').value, profileViews:+$('#capViews').value, weeklyConnects:+$('#capWeek').value},
     workingHours:{start:$('#hStart').value, end:$('#hEnd').value, days:[...document.querySelectorAll('.day:checked')].map(e=>+e.value), timezone:currentTz},
@@ -1060,7 +1063,7 @@ function fillStep2(){ renderLink(); $('#rTitle').value=R.title||''; renderPicks(
   const cl=R.client||{}; $('#rClient').value=cl.name||''; $('#rClientUrl').value=cl.url||''; $('#rClientOther').value=(cl.otherNames||[]).join(', '); }
 function syncCand(){ const wt=document.querySelector('input[name=wt]:checked').value; $('#rCandField').classList.toggle('hide', wt!=='remote'); }
 const splitList = v => v.split(/[,\n]/).map(s=>s.trim()).filter(Boolean);
-function keepStep3(){ R.titles=splitList($('#rTitles').value); R.domain=splitList($('#rDomain').value); R.skillsChosen=splitList($('#rSkills').value); R.exclude=splitList($('#rExclude').value); R.recruiterSkills=splitList($('#rKey').value); R.boolean=$('#rBoolean').value.trim(); R.boolean2=$('#rBoolean2').value.trim(); }
+function keepStep3(){ R.outreachSummary=$('#rOutreachSummary').value.trim(); R.titles=splitList($('#rTitles').value); R.domain=splitList($('#rDomain').value); R.skillsChosen=splitList($('#rSkills').value); R.exclude=splitList($('#rExclude').value); R.recruiterSkills=splitList($('#rKey').value); R.boolean=$('#rBoolean').value.trim(); R.boolean2=$('#rBoolean2').value.trim(); }
 function toStep3(){
   const title=$('#rTitle').value.trim(); if(!title) return toast('Give the role a title', true);
   const badTitle=(R.checks||[]).find(c=>c.id==='title' && c.level==='bad');
@@ -1079,6 +1082,7 @@ function toStep3(){
   $('#rTitles').value=(R.titles||[]).join('\n'); $('#rDomain').value=(R.domain||[]).join(', ').replace(/"/g,'');
   $('#rSkills').value=(R.skillsChosen||[]).join(', '); $('#rExclude').value=(R.exclude||[]).join(', ');
   $('#rKey').value=(R.recruiterSkills||[]).join(', ');
+  $('#rOutreachSummary').value=R.outreachSummary||'';
   renderSkillChips(); renderLearning();
   showStep(3);
   $('#rBoolean2').value = R.boolean2||'';
@@ -1166,7 +1170,7 @@ async function saveRole(andSearch){
   const boolean=$('#rBoolean').value.trim();
   const edited = R.built ? boolean !== R.built : (boolean !== (prev.boolean||'') || !!prev.booleanEdited);
   const boolean2=$('#rBoolean2').value.trim().replace(/\s+/g,' ');
-  const role={ ...prev, title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, boolean2:(boolean2===R.built2) ? undefined : (boolean2||undefined), suggestedSkills:R.suggested||[], ...(R.specHints?{specHints:R.specHints}:{}), titleGuessed: R.editing ? !!(prev.titleGuessed && R.title===prev.title) : !!(R.titleGuessed && R.guess && R.title===R.guess.title), ...(R.family?{family:R.family}:{}), recruiterSkills:splitList($('#rKey').value), client:R.client||null, ...(R.team?{team:R.team}:{}) };
+  const role={ ...prev, specText:R.specText||prev.specText||'', outreachSummary:$('#rOutreachSummary').value.trim(), title:R.title, location:R.location, workType:R.workType, candidateLocations:R.candidateLocations, titles:splitList($('#rTitles').value), domain:splitList($('#rDomain').value), skills:splitList($('#rSkills').value), exclude:splitList($('#rExclude').value), boolean, booleanEdited:edited, boolean2:(boolean2===R.built2) ? undefined : (boolean2||undefined), suggestedSkills:R.suggested||[], ...(R.specHints?{specHints:R.specHints}:{}), titleGuessed: R.editing ? !!(prev.titleGuessed && R.title===prev.title) : !!(R.titleGuessed && R.guess && R.title===R.guess.title), ...(R.family?{family:R.family}:{}), recruiterSkills:splitList($('#rKey').value), client:R.client||null, ...(R.team?{team:R.team}:{}) };
   if (role.recruiterSkills.length>2) return toast('Two key skills at most', true);
   if(!role.boolean) return toast('The boolean search is empty', true);
   const p2 = boolean2 ? boolProblems(boolean2) : []; if (p2.length) return toast('Search 2: '+p2[0], true);
@@ -1174,7 +1178,7 @@ async function saveRole(andSearch){
   const checks = await checkNow();
   const bad = (checks||[]).filter(c=>c.level==='bad');
   if (bad.length && !confirm(`The role check found ${bad.length===1?'a problem':bad.length+' problems'}:\n\n${bad.map(c=>'• '+c.title+(c.detail?': '+c.detail:'')).join('\n')}\n\nSave anyway?`)) return;
-  const r=await api('/api/role/save',{ campaign:R.editing||undefined, role, ...(R.editing?{}:{ guess:R.guess, specText:R.specText }) });
+  const r=await api('/api/role/save',{ campaign:R.editing||undefined, role, ...(R.specText ? {specText:R.specText} : {}), ...(R.editing?{}:{ guess:R.guess }) });
   const taught = r.learned && (r.learned.added.length || r.learned.removed.length || !r.learned.titleRight);
   mode='role'; R=null; campaign=r.campaign; remember(campaign);
   await load();

@@ -165,7 +165,7 @@ test('role save: timezone follows the office, message 1 waits 3 hours, InMail la
   let list = inmailList(new Store(), cfg);
   assert.deepEqual(list.map(x => [x.url, x.kind]), [['https://www.linkedin.com/in/old-invite/', 'inmail']]);
   assert.equal(list[0].subject, 'Head of Sales, London, UK');
-  assert.match(list[0].text, /^Hi Ola,\n\nI'm running a search for a Head of Sales/);
+  assert.match(list[0].text, /^Hi Ola,\n\nI'm recruiting for a Head of Sales role\./);
   r = await post('/api/inmail-sent', { url: 'https://www.linkedin.com/in/old-invite/', kind: 'inmail' });
   assert.equal(r.status, 200);
   assert.deepEqual(inmailList(new Store(), cfg), []);                        // follow-up not due yet
@@ -433,4 +433,25 @@ test('excluding three consultants teaches both searches, the card sees it, and U
   await post('/api/status', { url: 'https://www.linkedin.com/in/xl-0/', status: 'new' });
   assert.deepEqual((await get('/api/state?c=' + c)).learnedNot, []);
   assert.equal((await post('/api/role/unlearn', { campaign: '../x', term: 'a' })).status, 400);
+});
+
+test('job brief and outreach description survive save, edit, and role switching', async () => {
+  const specText = 'About Example Lab\nExample Lab builds AI systems for logistics.\nKey Responsibilities\nBenchmark model serving for cost and latency.\nRequirements\nDistributed systems experience.';
+  const draft = await post('/api/role/draft', {text:specText});
+  assert.match(draft.body.draft.outreachSummary, /AI systems/);
+  const saved = await post('/api/role/save', {role:{title:'Research Engineer',location:'Global',boolean:'research'},specText});
+  assert.equal(saved.status, 200);
+  let state = await get('/api/state?c='+saved.body.campaign);
+  assert.equal(state.cfg.role.specText, specText);
+  assert.match(state.roleMessagePreviews.inmail, /AI systems/);
+  assert.match(state.roleMessagePreviews.firstDegree, /cost and latency/);
+  assert.doesNotMatch(state.roleMessagePreviews.inmail, /digital asset/);
+  const updated = await post('/api/role/save', {campaign:saved.body.campaign,role:{...state.cfg.role,outreachSummary:'Own model benchmarking and infrastructure research.'}});
+  assert.equal(updated.status,200);
+  state = await get('/api/state?c='+saved.body.campaign);
+  assert.match(state.roleMessagePreviews.inmail,/Own model benchmarking/);
+  const second = await post('/api/role/save',{role:{title:'Nurse',location:'London',boolean:'nurse',outreachSummary:'Provide community healthcare.'}});
+  const other = await get('/api/state?c='+second.body.campaign);
+  assert.match(other.roleMessagePreviews.inmail,/community healthcare/);
+  assert.doesNotMatch(other.roleMessagePreviews.inmail,/benchmarking|AI systems/);
 });

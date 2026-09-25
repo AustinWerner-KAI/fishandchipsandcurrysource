@@ -1,14 +1,15 @@
+import { rolePitch, summaryFromSpec } from './outreach.js';
 // {firstName} {name} {company} {headline} plus, from the campaign's role, {role} {location} {workType}.
 // Unknown tags render empty. Squeezes double spaces and orphaned punctuation left by an empty tag.
 const WORK_TYPE_TEXT = { onsite: 'On site', hybrid: 'Hybrid, in the office part of the week', remote: 'Fully remote' };
 
 export function roleVars(role) {
-  if (!role) return { role: '', location: '', workType: '' };
+  if (!role) return { role: '', location: '', workType: '', roleSummary: '', rolePitch: '' };
   const where = role.workType === 'remote' && role.candidateLocations?.length ? role.candidateLocations.join(' / ') : (role.location || '');
-  return { role: role.title || '', location: where, workType: WORK_TYPE_TEXT[role.workType] || '' };
+  return { roleSummary: role.outreachSummary ?? summaryFromSpec(role.specText), rolePitch: rolePitch(role), role: role.title || '', location: where, workType: WORK_TYPE_TEXT[role.workType] || '' };
 }
 
-export const TAGS = ['firstName', 'name', 'company', 'headline', 'role', 'location', 'workType'];
+export const TAGS = ['firstName', 'name', 'company', 'headline', 'role', 'location', 'workType', 'roleSummary', 'rolePitch'];
 const TAG_RE = /\{(\w+)\}|\[(\w+)\]/g;
 const normTag = key => {
   const low = key.toLowerCase();

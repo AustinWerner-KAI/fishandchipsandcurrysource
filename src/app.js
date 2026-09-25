@@ -26,6 +26,7 @@ import { rankLeads, cleanLead } from './rank.js';
 import { learn, rankLearned, noteStats } from './learn.js';
 import { allClients, offLimits } from './offlimits.js';
 import { askFor, pending } from './requests.js';
+import { ROLE_MESSAGE, summaryFromSpec } from './outreach.js';
 import { firstInMailDue } from './actions/inmail.js';
 import { searchLocations } from './actions/search.js';
 
@@ -40,7 +41,7 @@ export const DEFAULT_INMAIL = {
   perDay: 10,
   viaRecruiter: true,
   subject: '{role}, {location}',
-  body: "Hi {firstName},\n\nI'm running a search for a {role} with a growing digital asset business in {location}. {workType}.\n\nYour background looks close to what they're after, which is why I'm reaching out directly rather than posting it.\n\nWould you be open to hearing a bit more? A yes or no is fine either way.\n\nKai",
+  body: ROLE_MESSAGE,
   followUpAfterDays: 4,
   followUp: "Hi {firstName}, just bringing this back up in case it slipped past you. If the {role} role isn't for you right now, no problem at all. Happy to keep you in mind for the next one. Kai",
 };
@@ -211,6 +212,7 @@ export function state(jobs, campaignName) {
   return {
     campaigns, roles, campaign: c, cfg, cfgError, rolePreview: rolePreview(cfg),
     search2: cfg?.role ? secondSearchFor(cfg.role) : '',
+    roleMessagePreviews: cfg ? { inmail: renderChecked(cfg.inmail?.body || '', {firstName:'Alex'}, cfg.role).text, firstDegree: renderChecked(cfg.firstDegree?.message || '', {firstName:'Alex'}, cfg.role).text } : null,
     // what Kai's excludes taught both searches, and what he turned off
     learnedNot: cfg?.role ? learnedFor(store, cfg) : [],
     learnedOff: cfg?.role?.learnedExcludeOff || [],
@@ -477,7 +479,7 @@ export function createApp({ jobs = new Jobs() } = {}) {
           text = known.text;
         }
         const v = learnedVocab();
-        const draft = draftRole(text, known, v);
+        const draft = { ...draftRole(text, known, v), outreachSummary: summaryFromSpec(text) };
         return json(200, { text, link, draft, checks: checkRole(draft, { text }), learning: learnSummary(t => draftRole(t, {}, v)) });
       }
       if (u.pathname === '/api/role/boolean') {
@@ -508,7 +510,9 @@ export function createApp({ jobs = new Jobs() } = {}) {
       }
       if (u.pathname === '/api/role/save') {
         // { campaign?, role: { title, location, workType, candidateLocations, titles, domain, skills, exclude, boolean } }
-        const role = b.role || {};
+        const role = { ...(b.role || {}) };
+        if (typeof b.specText === 'string') role.specText = b.specText;
+        if (role.outreachSummary === undefined && role.specText) role.outreachSummary = summaryFromSpec(role.specText);
         if (!role.title) return json(400, { error: 'Give the role a title' });
         if (!role.boolean) return json(400, { error: 'The boolean search is empty' });
         if (b.campaign && !NAME_RE.test(b.campaign)) return json(400, { error: 'bad role name' });

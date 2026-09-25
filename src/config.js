@@ -3,6 +3,7 @@ import path from 'node:path';
 import { CAMPAIGN_DIR } from './paths.js';
 import { DEFAULT_CAPS } from './limits.js';
 import { WORK_TYPES } from './role.js';
+import { ROLE_MESSAGE, upgradeOutreach } from './outreach.js';
 import { unknownTags } from './template.js';
 
 const DEFAULTS = {
@@ -16,7 +17,7 @@ const DEFAULTS = {
   followUps: [],                 // candidates mode: [{ afterDays: 2, afterHours: 0, text: '...' }]
   // Already 1st degree connections: messages are free (no InMail credit). Sent by the runner as LinkedIn messages.
   firstDegree: {
-    message: "Hi {firstName},\n\nHope you're well. I'm running a search for a {role} with a growing digital asset business in {location}. {workType}.\n\nYour background looks close to what they're after, so you were one of the first people I thought of.\n\nOpen to hearing a bit more? A yes or no is fine either way.\n\nKai",
+    message: ROLE_MESSAGE,
     followUpAfterDays: 4,
     followUp: "Hi {firstName}, just bringing this back up in case it got buried. If the timing isn't right, no problem at all. Happy to keep you in mind for the next one. Kai",
   },
@@ -44,6 +45,7 @@ export function loadCampaign(name) {
 }
 
 function campaignConfig(name, raw) {
+  raw = upgradeOutreach(raw);
   const cfg = {
     ...DEFAULTS,
     ...raw,
