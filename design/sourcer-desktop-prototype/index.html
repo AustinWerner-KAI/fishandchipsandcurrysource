@@ -70,6 +70,8 @@
     .toast{position:fixed;right:25px;bottom:24px;background:var(--forest);color:white;border-radius:15px;padding:12px 15px;font-size:10px;box-shadow:0 18px 55px rgba(10,20,16,.2);z-index:18;transform:translateY(30px);opacity:0;transition:transform 500ms var(--spring),opacity 500ms var(--spring)}.toast.show{transform:none;opacity:1}
     @media(max-width:980px){.app{grid-template-columns:76px 1fr}.rail{width:76px}.brand span,.nav-label,.nav button span,.nav .count,.rail-foot{display:none}.brand{padding-inline:7px}.nav button{justify-content:center}.nav button:hover{transform:translateY(-2px)}.workbench,.actions-layout,.role-grid{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}main{grid-column:2}.detail{min-height:0}}
     @media(max-width:680px){.app{display:block}.rail{position:static;width:100%;height:64px;flex-direction:row;align-items:center;padding:8px 12px}.brand{padding:0}.brand span{display:block}.nav{margin-left:auto;display:flex}.nav button{padding:10px}.nav button:nth-child(n+4){display:none}main{padding:10px 12px 30px}.topbar{display:none}.hero{align-items:flex-start;flex-direction:column}.hero-actions{margin-left:0}.metrics{grid-template-columns:1fr}.workbench{grid-template-columns:1fr}.candidate-list{max-height:none}.reasons,.extract-grid,.query-meta{grid-template-columns:1fr}.spec-head{display:block}.source-file{display:inline-flex;margin:10px 0 0}}
+    .role-entry{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0 16px}.role-entry select{max-width:280px;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+    .register-form{max-width:900px;padding:26px}.register-form label{display:block;font-size:13px;font-weight:600;margin:18px 0 7px}.register-form input,.register-form textarea,.register-form select{width:100%;padding:12px;border:1px solid var(--line-strong);border-radius:10px;background:var(--paper-2);font:inherit;color:var(--ink)}.register-form textarea{min-height:120px;resize:vertical}.register-form p{line-height:1.6;color:var(--muted)}.register-form [hidden]{display:none}.register-buttons{display:flex;gap:10px;margin-top:22px}.register-error{color:var(--bad)!important}.register-form h2{font:26px Georgia,serif}.register-form pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--forest);color:white;padding:18px;border-radius:12px}.register-form :focus-visible{outline:2px solid var(--good);outline-offset:3px}
   </style>
 </head>
 <body>
@@ -90,6 +92,32 @@
     <div class="rail-foot"><div class="privacy"><b><span class="dot"></span>Private on this Mac</b><p>Candidate data and drafts stay local. Final LinkedIn actions are always yours.</p></div><div class="account"><div class="avatar">AW</div><span>Austin Werner<small>Solo workspace</small></span></div></div>
   </aside>
   <main>
+    <div class="role-entry"><button class="btn primary" id="newRoleButton" onclick="startNewRole()">+ New role / search</button><label for="savedRoleSelect">Your roles</label><select id="savedRoleSelect" onchange="selectSavedRole(this.value)"><option value="">Choose a saved role</option></select><small>Prototype · roles saved in this browser · no live search</small></div>
+    <section class="screen" id="registerRole">
+      <div class="hero"><div><div class="eyebrow">New search</div><h1 id="registrationHeading">Register a new role</h1><p>Your brief becomes an editable search plan.</p></div></div>
+      <div class="shell"><div class="panel register-form">
+      <form id="roleRegistration">
+        <div id="roleStepOne">
+          <h2>1. Add the brief and role details</h2>
+          <label for="newSpec">Job specification</label><textarea id="newSpec" required minlength="30" placeholder="Paste the full job specification here. Include responsibilities and required skills."></textarea>
+          <label for="specFile">Or load a plain-text specification (.txt)</label><input id="specFile" type="file" accept=".txt,text/plain"><p>For PDF or Word documents, copy the text into the box above.</p>
+          <div class="role-grid"><div><label for="newTitle">Role title</label><input id="newTitle" required maxlength="160" placeholder="e.g. Senior Rust Engineer"></div><div><label for="newLocation">Office location or eligible remote locations</label><input id="newLocation" required maxlength="200" placeholder="e.g. London or UK and EU"></div></div>
+          <label for="newWorkType">Work arrangement</label><select id="newWorkType"><option>Hybrid</option><option>On-site</option><option>Remote</option></select>
+          <label for="newSkills">Required skills (comma separated)</label><input id="newSkills" required placeholder="e.g. Rust, distributed systems, Kubernetes"><p>These are search requirements. Use only essential skills; you can edit the resulting Boolean queries.</p>
+          <label for="newExclusions">Exclude terms (comma separated)</label><input id="newExclusions" value="recruiter, recruitment consultant">
+          <div class="register-buttons"><button class="btn primary" type="submit">Review tailored searches →</button><button class="btn" type="button" onclick="switchScreen('review')">Cancel</button></div>
+        </div>
+        <div id="roleStepTwo" hidden>
+          <h2>2. Review your search plan</h2><p id="newRoleSummary"></p><p>These draft queries are assembled from your title and skills. Review them before saving. Location is a separate filter.</p>
+          <label for="newQueryOne">Search 1 · role title and required skills</label><textarea id="newQueryOne"></textarea>
+          <label for="newQueryTwo">Search 2 · required skills without the title restriction</label><textarea id="newQueryTwo"></textarea>
+          <div class="register-buttons"><button type="button" class="btn" onclick="backToRoleDetails()">← Edit details</button><button type="button" class="btn primary" onclick="saveRegisteredRole()">Register role</button></div>
+        </div>
+      </form>
+      <p id="registrationError" class="register-error" role="alert"></p>
+      <div id="registeredRole" hidden><h2 id="registeredTitle"></h2><p id="registeredMeta"></p><span class="status-pill">Registered · not searched yet</span><h3>Job specification</h3><p id="registeredSpec" style="white-space:pre-wrap"></p><h3>Search 1</h3><pre id="registeredQueryOne"></pre><h3>Search 2</h3><pre id="registeredQueryTwo"></pre><p>This role is saved in this browser. Running a live search requires the local Sourcer application; the hosted prototype is not connected to LinkedIn.</p><button class="btn" onclick="editRegisteredRole()">Edit this role</button><button class="btn" onclick="startNewRole()">+ Register another role</button></div>
+      </div></div>
+    </section>
     <header class="topbar"><div class="crumb">Workspace&nbsp; / &nbsp;<b>Senior Cloud Security Engineer</b></div><div class="top-spacer"></div><label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><input placeholder="Search people or roles"><span class="kbd">⌘K</span></label><button class="li-login" id="linkedInLogin" onclick="connectLinkedIn()"><span class="li-mark">in</span><span id="linkedInLabel">Log in to LinkedIn<small>Required for live search</small></span></button><button class="icon-btn" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4zM10 20h4"/></svg></button></header>
 
     <section class="screen active" id="review">
@@ -167,5 +195,6 @@ function toast(text){const t=$('#toast');t.textContent=text;t.classList.add('sho
 $('#actionModal').addEventListener('click',e=>{if(e.target.id==='actionModal')closeModal()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
 renderList();renderDetail();
 </script>
+<script src="roles.js"></script>
 </body>
 </html>
